@@ -1,8 +1,11 @@
 {
-  "name": "tool",
+  "name": "markdown-to-pdf-converter",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "description": "A beautiful web app to convert Markdown to PDF with real-time preview",
+  "author": "Your Name",
+  "license": "MIT",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
