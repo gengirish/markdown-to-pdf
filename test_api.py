@@ -3,8 +3,14 @@ Test script for the Markdown to PDF API
 Run with: python test_api.py
 """
 
+import sys
+import io
 import requests
 import json
+
+# Fix encoding for Windows
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 BASE_URL = "http://localhost:8000"
 
