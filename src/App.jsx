@@ -1,7 +1,5 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { marked } from 'marked'
-import jsPDF from 'jspdf'
-import html2canvas from 'html2canvas'
 import './App.css'
 
 function App() {
@@ -9,8 +7,8 @@ function App() {
 
 ## Features
 - Real-time markdown preview
-- Live HTML rendering
-- Export to PDF with one click
+- Server-side PDF generation with Python
+- FastAPI backend for robust processing
 - Beautiful, modern UI
 
 ## How to use
@@ -32,56 +30,68 @@ const hello = () => {
 
 **Bold text** and *italic text* are supported!
 
-> This is a blockquote
+> This is a blockquote with professional styling
 
 ---
+
+### Technical Details
+This application uses:
+- **Frontend**: React + Vite
+- **Backend**: FastAPI + Python
+- **PDF Engine**: WeasyPrint
+- **Deployment**: Vercel
 
 Enjoy converting your markdown! 🎉`)
 
   const [isConverting, setIsConverting] = useState(false)
-  const previewRef = useRef(null)
+  const [error, setError] = useState(null)
 
   const convertToPdf = async () => {
-    if (!previewRef.current) return
-    
     setIsConverting(true)
+    setError(null)
     
     try {
-      // Create canvas from the preview content
-      const canvas = await html2canvas(previewRef.current, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff'
+      // Determine API URL based on environment
+      const apiUrl = import.meta.env.PROD 
+        ? '/api/convert'  // Production (Vercel)
+        : 'http://localhost:8000/api/convert'  // Local development
+      
+      // Send markdown to backend API
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          markdown: markdown,
+          filename: 'markdown-export.pdf'
+        })
       })
       
-      const imgData = canvas.toDataURL('image/png')
-      
-      // Calculate dimensions
-      const imgWidth = 210 // A4 width in mm
-      const pageHeight = 297 // A4 height in mm
-      const imgHeight = (canvas.height * imgWidth) / canvas.width
-      let heightLeft = imgHeight
-      
-      const pdf = new jsPDF('p', 'mm', 'a4')
-      let position = 0
-      
-      // Add first page
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
-      heightLeft -= pageHeight
-      
-      // Add additional pages if content is longer than one page
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight
-        pdf.addPage()
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
-        heightLeft -= pageHeight
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
+        throw new Error(errorData.detail || `Server error: ${response.status}`)
       }
       
-      pdf.save('markdown-export.pdf')
+      // Get PDF blob from response
+      const blob = await response.blob()
+      
+      // Create download link and trigger download
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'markdown-export.pdf'
+      document.body.appendChild(a)
+      a.click()
+      
+      // Cleanup
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+      
     } catch (error) {
       console.error('Error converting to PDF:', error)
-      alert('Error converting to PDF. Please try again.')
+      setError(error.message)
+      alert(`Error converting to PDF: ${error.message}`)
     } finally {
       setIsConverting(false)
     }
@@ -125,11 +135,15 @@ Enjoy converting your markdown! 🎉`)
               onClick={convertToPdf}
               disabled={isConverting}
             >
-              {isConverting ? 'Converting...' : '⬇ Download PDF'}
+              {isConverting ? '⏳ Converting...' : '⬇ Download PDF'}
             </button>
           </div>
+          {error && (
+            <div className="error-message">
+              <strong>Error:</strong> {error}
+            </div>
+          )}
           <div 
-            ref={previewRef}
             className="preview"
             dangerouslySetInnerHTML={getHtmlFromMarkdown()}
           />
@@ -137,7 +151,7 @@ Enjoy converting your markdown! 🎉`)
       </div>
       
       <footer className="footer">
-        <p>Built with React, Vite, marked, jsPDF & html2canvas</p>
+        <p>Built with React, Vite, FastAPI, Python & WeasyPrint</p>
       </footer>
     </div>
   )

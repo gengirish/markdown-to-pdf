@@ -13,26 +13,60 @@ A beautiful, modern web application to convert Markdown to PDF with real-time pr
 
 ## 🚀 Tech Stack
 
-- **React** - UI framework
-- **Vite** - Build tool and dev server
-- **marked** - Markdown parser
-- **jsPDF** - PDF generation
-- **html2canvas** - HTML to canvas conversion
-- **Vercel** - Hosting and deployment
+### Frontend
+- **React 19.2** - Modern UI framework
+- **Vite 7.3** - Lightning-fast build tool
+- **marked** - Markdown preview
+
+### Backend
+- **FastAPI 0.115** - Modern Python web framework
+- **Python 3.9+** - Backend language
+- **markdown** - Markdown parser
+- **xhtml2pdf** - PDF generation engine
+- **reportlab** - PDF library
+
+### Deployment
+- **Vercel** - Full-stack hosting (frontend + serverless functions)
 
 ## 🛠️ Installation
 
+### Prerequisites
+- Node.js 18+ and npm
+- Python 3.9+ and pip
+
+### Install Dependencies
+
 ```bash
-# Install dependencies
+# Frontend dependencies
 npm install
 
-# Start development server
-npm run dev
+# Backend dependencies
+pip install -r requirements.txt
+```
 
-# Build for production
+### Development
+
+You need TWO terminal windows:
+
+**Terminal 1 - Backend:**
+```bash
+python -m uvicorn api.index:app --reload --port 8000
+```
+
+**Terminal 2 - Frontend:**
+```bash
+npm run dev
+```
+
+Then open: **http://localhost:5173**
+
+### Production Build
+
+```bash
+# Build frontend
 npm run build
 
-# Preview production build
+# Preview
 npm run preview
 ```
 
@@ -94,38 +128,58 @@ git push
 - Horizontal rules
 - And more!
 
+## 🏗️ Architecture
+
+This is a **full-stack application** with clear separation:
+
+```
+┌─────────────┐      ┌─────────────┐      ┌─────────────┐
+│   React     │      │   FastAPI   │      │     PDF     │
+│   + Vite    │ ───► │  + Python   │ ───► │   Output    │
+│  (UI Only)  │ HTTP │ (Business)  │      │  (File)     │
+└─────────────┘      └─────────────┘      └─────────────┘
+```
+
+- **Frontend**: Handles UI, editing, and preview
+- **Backend**: Handles markdown parsing and PDF generation
+- **API**: RESTful communication between frontend and backend
+
+For detailed architecture, see `ARCHITECTURE.md`
+
 ## 🎨 Customization
 
-### Styling
+### Frontend Styling
 
-Edit `src/App.css` to customize colors, fonts, and layout.
+Edit `src/App.css` to customize colors, fonts, and layout:
 
-### Markdown Parser
+```css
+.app {
+  background: linear-gradient(135deg, #your-color 0%, #another-color 100%);
+}
+```
 
-The app uses `marked` library. Configure options in `src/App.jsx`:
+### PDF Styling
 
-```javascript
-import { marked } from 'marked'
+Edit `api/index.py` → `HTML_TEMPLATE` to customize PDF output:
 
-// Configure marked options
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-  // Add more options
-})
+```python
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: 'Your Font', sans-serif; }
+        h1 { color: #your-color; }
+    </style>
+</head>
+<body>{content}</body>
+</html>
+"""
 ```
 
 ### PDF Settings
 
-Customize PDF output in the `convertToPdf` function in `src/App.jsx`:
-
-```javascript
-const pdf = new jsPDF({
-  orientation: 'portrait', // or 'landscape'
-  unit: 'mm',
-  format: 'a4' // or 'letter', etc.
-})
-```
+Modify PDF generation in `api/index.py` for different page sizes, margins, etc.
 
 ## 🤝 Contributing
 
@@ -135,12 +189,26 @@ Contributions are welcome! Feel free to submit issues and pull requests.
 
 MIT
 
+## 📚 Documentation
+
+- **ARCHITECTURE.md** - System design and data flow
+- **DEVELOPMENT.md** - Development guide and best practices
+- **DEPLOYMENT.md** - Deployment instructions
+- **QUICKSTART.md** - Quick start guide
+
+## 🧪 API Documentation
+
+When running locally, FastAPI provides interactive API docs:
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+
 ## 🔗 Links
 
 - [Live Demo](https://your-app.vercel.app) (Update after deployment)
-- [Report Bug](https://github.com/yourusername/markdown-to-pdf/issues)
-- [Request Feature](https://github.com/yourusername/markdown-to-pdf/issues)
+- [FastAPI Docs](https://fastapi.tiangolo.com/)
+- [React Docs](https://react.dev/)
+- [Vite Docs](https://vitejs.dev/)
 
 ---
 
-Built with ❤️ using React + Vite
+Built with ❤️ using React + Vite + FastAPI + Python

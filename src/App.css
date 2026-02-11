@@ -247,6 +247,20 @@
   cursor: not-allowed;
 }
 
+.error-message {
+  background: #fff5f5;
+  border: 1px solid #fc8181;
+  color: #c53030;
+  padding: 1rem;
+  border-radius: 8px;
+  margin: 1rem 1.5rem 0;
+  font-size: 0.9rem;
+}
+
+.error-message strong {
+  font-weight: 600;
+}
+
 .footer {
   text-align: center;
   padding: 1.5rem;
