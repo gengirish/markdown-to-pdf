@@ -329,151 +329,217 @@ CERTIFICATE_TEMPLATE = """
             margin: 0;
             padding: 0;
             font-family: Helvetica, Arial, sans-serif;
-            color: #1a202c;
+            color: #2d3748;
         }}
 
-        .certificate {{
-            width: 100%;
-            padding: 36pt 50pt;
+        .page {{
+            width: 842pt;
+            height: 595pt;
+            padding: 20pt 28pt;
         }}
 
-        .border-outer {{
-            border: 3pt solid #667eea;
-            padding: 16pt;
+        .frame-outer {{
+            border: 3pt solid #4338ca;
+            padding: 8pt;
+            height: 547pt;
         }}
 
-        .border-inner {{
-            border: 1pt solid #b794f4;
-            padding: 28pt 36pt;
+        .frame-inner {{
+            border: 1pt solid #a78bfa;
+            height: 527pt;
             text-align: center;
+            padding: 0 40pt;
         }}
 
-        .logo-line {{
-            font-size: 10pt;
-            color: #667eea;
+        .spacer-top {{
+            height: 30pt;
+        }}
+
+        .org-label {{
+            font-size: 8pt;
+            color: #7c3aed;
             text-transform: uppercase;
-            margin-bottom: 2pt;
+            margin: 0;
+            padding: 0;
         }}
 
         .org-name {{
-            font-size: 20pt;
+            font-size: 16pt;
             font-weight: bold;
-            color: #553c9a;
-            margin-bottom: 14pt;
+            color: #4338ca;
+            margin: 0;
+            padding: 2pt 0 0 0;
         }}
 
-        .title {{
-            font-size: 30pt;
+        .divider {{
+            border: none;
+            border-top: 1pt solid #c4b5fd;
+            width: 120pt;
+            margin: 12pt auto;
+        }}
+
+        .cert-title {{
+            font-size: 36pt;
             font-weight: bold;
-            color: #667eea;
+            color: #4338ca;
+            margin: 0;
+            padding: 0;
+        }}
+
+        .cert-subtitle {{
+            font-size: 14pt;
+            color: #6b7280;
+            margin: 0;
+            padding: 4pt 0 0 0;
+        }}
+
+        .spacer-mid {{
+            height: 20pt;
+        }}
+
+        .presented {{
+            font-size: 9pt;
+            color: #9ca3af;
             text-transform: uppercase;
-            margin-bottom: 4pt;
+            margin: 0;
+            padding: 0;
         }}
 
-        .subtitle {{
-            font-size: 13pt;
-            color: #718096;
-            margin-bottom: 18pt;
+        .spacer-name {{
+            height: 10pt;
         }}
 
-        .presented-to {{
+        .name {{
+            font-size: 28pt;
+            font-weight: bold;
+            color: #1e1b4b;
+            margin: 0;
+            padding: 0 0 3pt 0;
+            border-bottom: 2pt solid #4338ca;
+        }}
+
+        .spacer-desc {{
+            height: 14pt;
+        }}
+
+        .desc {{
             font-size: 10pt;
-            color: #a0aec0;
-            text-transform: uppercase;
-            margin-bottom: 6pt;
+            color: #4b5563;
+            margin: 0;
+            padding: 0;
         }}
 
-        .participant-name {{
-            font-size: 26pt;
+        .course {{
+            font-size: 13pt;
             font-weight: bold;
-            color: #2d3748;
-            border-bottom: 2pt solid #667eea;
-            padding-bottom: 4pt;
-            margin-bottom: 14pt;
+            color: #4338ca;
+            margin: 0;
+            padding: 4pt 0;
         }}
 
-        .description {{
-            font-size: 11pt;
-            color: #4a5568;
-            margin-bottom: 20pt;
+        .spacer-details {{
+            height: 20pt;
         }}
 
-        .course-name {{
-            font-weight: bold;
-            color: #553c9a;
-        }}
-
-        .details-table {{
-            width: 80%;
+        .info-table {{
+            width: 600pt;
             margin-left: auto;
             margin-right: auto;
         }}
 
-        .details-table td {{
-            padding: 6pt 14pt;
+        .info-table td {{
             text-align: center;
+            padding: 0 20pt;
+            width: 33%;
         }}
 
-        .detail-label {{
-            font-size: 8pt;
-            color: #a0aec0;
+        .info-val {{
+            font-size: 10pt;
+            color: #1f2937;
+            padding-bottom: 4pt;
+            margin: 0;
+        }}
+
+        .info-line {{
+            border: none;
+            border-top: 1pt solid #d1d5db;
+            margin: 0 0 4pt 0;
+        }}
+
+        .info-lbl {{
+            font-size: 7pt;
+            color: #9ca3af;
             text-transform: uppercase;
-            border-top: 1pt solid #e2e8f0;
-            padding-top: 4pt;
-        }}
-
-        .detail-value {{
-            font-size: 11pt;
-            color: #2d3748;
-            padding-bottom: 3pt;
+            margin: 0;
         }}
 
         .cert-id {{
-            font-size: 8pt;
-            color: #cbd5e0;
-            margin-top: 10pt;
+            font-size: 7pt;
+            color: #d1d5db;
+            margin: 0;
+            padding: 14pt 0 0 0;
+        }}
+
+        .footer-note {{
+            font-size: 7pt;
+            color: #d1d5db;
+            margin: 0;
+            padding: 4pt 0 0 0;
         }}
     </style>
 </head>
 <body>
-    <div class="certificate">
-        <div class="border-outer">
-            <div class="border-inner">
-                <div class="logo-line">A N &nbsp; I N T E L L I F O R G E &nbsp; A I &nbsp; I N I T I A T I V E</div>
-                <div class="org-name">IntelliForge Learning</div>
+    <div class="page">
+        <div class="frame-outer">
+            <div class="frame-inner">
 
-                <div class="title">C E R T I F I C A T E</div>
-                <div class="subtitle">of Participation</div>
+                <div class="spacer-top"></div>
 
-                <div class="presented-to">T H I S &nbsp; I S &nbsp; P R O U D L Y &nbsp; P R E S E N T E D &nbsp; T O</div>
-                <div class="participant-name">{participant_name}</div>
+                <p class="org-label">An IntelliForge AI Initiative</p>
+                <p class="org-name">IntelliForge Learning</p>
 
-                <div class="description">
-                    For successfully participating in the training program
-                    <br/>
-                    <span class="course-name">{course_name}</span>
-                    <br/>
-                    conducted by IntelliForge Learning
-                </div>
+                <hr class="divider" />
 
-                <table class="details-table">
+                <p class="cert-title">CERTIFICATE</p>
+                <p class="cert-subtitle">of Participation</p>
+
+                <div class="spacer-mid"></div>
+
+                <p class="presented">This is proudly presented to</p>
+                <div class="spacer-name"></div>
+                <p class="name">{participant_name}</p>
+
+                <div class="spacer-desc"></div>
+
+                <p class="desc">for successfully completing the training program</p>
+                <p class="course">{course_name}</p>
+                <p class="desc">conducted by IntelliForge Learning</p>
+
+                <div class="spacer-details"></div>
+
+                <table class="info-table">
                     <tr>
                         <td>
-                            <div class="detail-value">{completion_date}</div>
-                            <div class="detail-label">Date</div>
+                            <p class="info-val">{completion_date}</p>
+                            <hr class="info-line" />
+                            <p class="info-lbl">Date</p>
                         </td>
                         <td>
-                            <div class="detail-value">{instructor_name}</div>
-                            <div class="detail-label">Instructor</div>
+                            <p class="info-val">{instructor_name}</p>
+                            <hr class="info-line" />
+                            <p class="info-lbl">Instructor</p>
                         </td>
                         <td>
-                            <div class="detail-value">learning.intelliforge.tech</div>
-                            <div class="detail-label">Platform</div>
+                            <p class="info-val">learning.intelliforge.tech</p>
+                            <hr class="info-line" />
+                            <p class="info-lbl">Verify At</p>
                         </td>
                     </tr>
                 </table>
 
-                <div class="cert-id">Certificate ID: {certificate_id}</div>
+                <p class="cert-id">Certificate ID: {certificate_id}</p>
+                <p class="footer-note">IntelliForge Learning &bull; AI Training &amp; Learning Platform</p>
+
             </div>
         </div>
     </div>
