@@ -322,227 +322,174 @@ CERTIFICATE_TEMPLATE = """
     <style>
         @page {{
             size: 842pt 595pt;
-            margin: 0;
+            margin: 18pt 24pt;
         }}
 
         body {{
-            margin: 0;
-            padding: 0;
             font-family: Helvetica, Arial, sans-serif;
-            color: #2d3748;
-        }}
-
-        .page {{
-            width: 842pt;
-            height: 595pt;
-            padding: 20pt 28pt;
-        }}
-
-        .frame-outer {{
-            border: 3pt solid #4338ca;
-            padding: 8pt;
-            height: 547pt;
-        }}
-
-        .frame-inner {{
-            border: 1pt solid #a78bfa;
-            height: 527pt;
-            text-align: center;
-            padding: 0 40pt;
-        }}
-
-        .spacer-top {{
-            height: 30pt;
-        }}
-
-        .org-label {{
-            font-size: 8pt;
-            color: #7c3aed;
-            text-transform: uppercase;
+            color: #1a1a3e;
             margin: 0;
             padding: 0;
         }}
 
-        .org-name {{
-            font-size: 16pt;
-            font-weight: bold;
-            color: #4338ca;
-            margin: 0;
-            padding: 2pt 0 0 0;
+        table {{
+            border-collapse: collapse;
         }}
 
-        .divider {{
-            border: none;
-            border-top: 1pt solid #c4b5fd;
-            width: 120pt;
-            margin: 12pt auto;
-        }}
-
-        .cert-title {{
-            font-size: 36pt;
-            font-weight: bold;
-            color: #4338ca;
-            margin: 0;
+        td {{
             padding: 0;
-        }}
-
-        .cert-subtitle {{
-            font-size: 14pt;
-            color: #6b7280;
-            margin: 0;
-            padding: 4pt 0 0 0;
-        }}
-
-        .spacer-mid {{
-            height: 20pt;
-        }}
-
-        .presented {{
-            font-size: 9pt;
-            color: #9ca3af;
-            text-transform: uppercase;
-            margin: 0;
-            padding: 0;
-        }}
-
-        .spacer-name {{
-            height: 10pt;
-        }}
-
-        .name {{
-            font-size: 28pt;
-            font-weight: bold;
-            color: #1e1b4b;
-            margin: 0;
-            padding: 0 0 3pt 0;
-            border-bottom: 2pt solid #4338ca;
-        }}
-
-        .spacer-desc {{
-            height: 14pt;
-        }}
-
-        .desc {{
-            font-size: 10pt;
-            color: #4b5563;
-            margin: 0;
-            padding: 0;
-        }}
-
-        .course {{
-            font-size: 13pt;
-            font-weight: bold;
-            color: #4338ca;
-            margin: 0;
-            padding: 4pt 0;
-        }}
-
-        .spacer-details {{
-            height: 20pt;
-        }}
-
-        .info-table {{
-            width: 600pt;
-            margin-left: auto;
-            margin-right: auto;
-        }}
-
-        .info-table td {{
-            text-align: center;
-            padding: 0 20pt;
-            width: 33%;
-        }}
-
-        .info-val {{
-            font-size: 10pt;
-            color: #1f2937;
-            padding-bottom: 4pt;
-            margin: 0;
-        }}
-
-        .info-line {{
-            border: none;
-            border-top: 1pt solid #d1d5db;
-            margin: 0 0 4pt 0;
-        }}
-
-        .info-lbl {{
-            font-size: 7pt;
-            color: #9ca3af;
-            text-transform: uppercase;
-            margin: 0;
-        }}
-
-        .cert-id {{
-            font-size: 7pt;
-            color: #d1d5db;
-            margin: 0;
-            padding: 14pt 0 0 0;
-        }}
-
-        .footer-note {{
-            font-size: 7pt;
-            color: #d1d5db;
-            margin: 0;
-            padding: 4pt 0 0 0;
         }}
     </style>
 </head>
 <body>
-    <div class="page">
-        <div class="frame-outer">
-            <div class="frame-inner">
 
-                <div class="spacer-top"></div>
+    <!-- Outer gold border -->
+    <table width="100%" style="border: 3px solid #b8960c;">
+    <tr><td style="padding: 4pt;">
 
-                <p class="org-label">An IntelliForge AI Initiative</p>
-                <p class="org-name">IntelliForge Learning</p>
+    <!-- Navy inner border -->
+    <table width="100%" style="border: 2px solid #1a1a6e;">
+    <tr><td style="padding: 4pt;">
 
-                <hr class="divider" />
+    <!-- Gold accent border -->
+    <table width="100%" style="border: 1px solid #d4af37;">
+    <tr><td style="padding: 16pt 36pt; text-align: center; background-color: #fffdf5;">
 
-                <p class="cert-title">CERTIFICATE</p>
-                <p class="cert-subtitle">of Participation</p>
+        <!-- Watermark pattern row -->
+        <table width="100%"><tr><td style="text-align: center; font-size: 7pt; color: #f0e6c8;">
+            &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670;
+        </td></tr></table>
 
-                <div class="spacer-mid"></div>
+        <!-- Top ornament -->
+        <table width="100%"><tr><td style="text-align: center; font-size: 14pt; color: #d4af37; padding: 2pt 0;">
+            &#10022; &nbsp; &#10022; &nbsp; &#10022;
+        </td></tr></table>
 
-                <p class="presented">This is proudly presented to</p>
-                <div class="spacer-name"></div>
-                <p class="name">{participant_name}</p>
+        <!-- Organization -->
+        <table width="100%"><tr><td style="text-align: center; font-size: 8pt; color: #b8960c;">
+            AN INTELLIFORGE AI INITIATIVE
+        </td></tr></table>
 
-                <div class="spacer-desc"></div>
+        <table width="100%"><tr><td style="text-align: center; font-size: 18pt; font-weight: bold; color: #1a1a6e; padding-top: 2pt;">
+            IntelliForge Learning
+        </td></tr></table>
 
-                <p class="desc">for successfully completing the training program</p>
-                <p class="course">{course_name}</p>
-                <p class="desc">conducted by IntelliForge Learning</p>
+        <!-- Gold divider -->
+        <table width="100%"><tr><td style="text-align: center; padding: 6pt 0;">
+            <table width="200pt" align="center"><tr>
+                <td width="40%" style="border-top: 1px solid #d4af37; font-size: 1pt;">&nbsp;</td>
+                <td width="20%" style="text-align: center; font-size: 8pt; color: #d4af37;">&#9733;</td>
+                <td width="40%" style="border-top: 1px solid #d4af37; font-size: 1pt;">&nbsp;</td>
+            </tr></table>
+        </td></tr></table>
 
-                <div class="spacer-details"></div>
+        <!-- Certificate title -->
+        <table width="100%"><tr><td style="text-align: center; font-size: 34pt; font-weight: bold; color: #1a1a6e;">
+            CERTIFICATE
+        </td></tr></table>
 
-                <table class="info-table">
-                    <tr>
-                        <td>
-                            <p class="info-val">{completion_date}</p>
-                            <hr class="info-line" />
-                            <p class="info-lbl">Date</p>
-                        </td>
-                        <td>
-                            <p class="info-val">{instructor_name}</p>
-                            <hr class="info-line" />
-                            <p class="info-lbl">Instructor</p>
-                        </td>
-                        <td>
-                            <p class="info-val">learning.intelliforge.tech</p>
-                            <hr class="info-line" />
-                            <p class="info-lbl">Verify At</p>
-                        </td>
-                    </tr>
-                </table>
+        <table width="100%"><tr><td style="text-align: center; font-size: 13pt; color: #8b7d3c; padding-top: 2pt;">
+            of Participation
+        </td></tr></table>
 
-                <p class="cert-id">Certificate ID: {certificate_id}</p>
-                <p class="footer-note">IntelliForge Learning &bull; AI Training &amp; Learning Platform</p>
+        <!-- Spacer -->
+        <table width="100%"><tr><td style="font-size: 12pt;">&nbsp;</td></tr></table>
 
-            </div>
-        </div>
-    </div>
+        <!-- Presented to -->
+        <table width="100%"><tr><td style="text-align: center; font-size: 9pt; color: #8b8b8b;">
+            THIS IS PROUDLY PRESENTED TO
+        </td></tr></table>
+
+        <!-- Spacer -->
+        <table width="100%"><tr><td style="font-size: 6pt;">&nbsp;</td></tr></table>
+
+        <!-- Participant name with gold underline -->
+        <table width="80%" align="center"><tr><td style="text-align: center; font-size: 28pt; font-weight: bold; color: #1a1a3e; border-bottom: 2px solid #d4af37; padding-bottom: 4pt;">
+            {participant_name}
+        </td></tr></table>
+
+        <!-- Spacer -->
+        <table width="100%"><tr><td style="font-size: 8pt;">&nbsp;</td></tr></table>
+
+        <!-- Description -->
+        <table width="100%"><tr><td style="text-align: center; font-size: 10pt; color: #4a4a6a;">
+            for successfully completing the training program
+        </td></tr></table>
+
+        <table width="100%"><tr><td style="text-align: center; font-size: 14pt; font-weight: bold; color: #1a1a6e; padding: 4pt 0;">
+            {course_name}
+        </td></tr></table>
+
+        <table width="100%"><tr><td style="text-align: center; font-size: 10pt; color: #4a4a6a;">
+            conducted by IntelliForge Learning
+        </td></tr></table>
+
+        <!-- Spacer -->
+        <table width="100%"><tr><td style="font-size: 10pt;">&nbsp;</td></tr></table>
+
+        <!-- Details row with gold accents -->
+        <table width="85%" align="center">
+            <tr>
+                <td width="30%" style="text-align: center; padding: 0 8pt;">
+                    <table width="100%">
+                        <tr><td style="text-align: center; font-size: 10pt; color: #1a1a3e; padding-bottom: 3pt;">{completion_date}</td></tr>
+                        <tr><td style="border-top: 1px solid #d4af37; text-align: center; font-size: 7pt; color: #8b8b8b; padding-top: 3pt;">DATE</td></tr>
+                    </table>
+                </td>
+                <td width="40%" style="text-align: center; padding: 0 8pt;">
+                    <table width="100%">
+                        <tr><td style="text-align: center; font-size: 10pt; color: #1a1a3e; padding-bottom: 3pt;">{instructor_name}</td></tr>
+                        <tr><td style="border-top: 1px solid #d4af37; text-align: center; font-size: 7pt; color: #8b8b8b; padding-top: 3pt;">INSTRUCTOR</td></tr>
+                    </table>
+                </td>
+                <td width="30%" style="text-align: center; padding: 0 8pt;">
+                    <table width="100%">
+                        <tr><td style="text-align: center; font-size: 10pt; color: #1a1a3e; padding-bottom: 3pt;">learning.intelliforge.tech</td></tr>
+                        <tr><td style="border-top: 1px solid #d4af37; text-align: center; font-size: 7pt; color: #8b8b8b; padding-top: 3pt;">VERIFY AT</td></tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+
+        <!-- Spacer -->
+        <table width="100%"><tr><td style="font-size: 6pt;">&nbsp;</td></tr></table>
+
+        <!-- Seal -->
+        <table width="100%"><tr><td style="text-align: center;">
+            <table width="70pt" align="center" style="border: 2px solid #d4af37;">
+            <tr><td style="text-align: center; padding: 6pt 4pt; background-color: #1a1a6e;">
+                <table width="100%"><tr><td style="text-align: center; font-size: 7pt; color: #d4af37; font-weight: bold;">VERIFIED</td></tr></table>
+                <table width="100%"><tr><td style="text-align: center; font-size: 5pt; color: #d4af37;">&#9733;</td></tr></table>
+                <table width="100%"><tr><td style="text-align: center; font-size: 5pt; color: #d4af37;">IF</td></tr></table>
+            </td></tr>
+            </table>
+        </td></tr></table>
+
+        <!-- Spacer -->
+        <table width="100%"><tr><td style="font-size: 4pt;">&nbsp;</td></tr></table>
+
+        <!-- Certificate ID -->
+        <table width="100%"><tr><td style="text-align: center; font-size: 7pt; color: #b8b8b8;">
+            Certificate ID: {certificate_id}
+        </td></tr></table>
+
+        <!-- Bottom ornament -->
+        <table width="100%"><tr><td style="text-align: center; font-size: 7pt; color: #f0e6c8; padding-top: 4pt;">
+            &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670;
+        </td></tr></table>
+
+    </td></tr>
+    </table>
+    <!-- End gold accent border -->
+
+    </td></tr>
+    </table>
+    <!-- End navy border -->
+
+    </td></tr>
+    </table>
+    <!-- End outer gold border -->
+
 </body>
 </html>
 """
