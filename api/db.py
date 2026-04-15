@@ -14,7 +14,7 @@ import psycopg2.extras
 
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS courses (

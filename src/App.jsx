@@ -103,6 +103,11 @@ function AdminDashboard({ getApiUrl }) {
   const [newCourseName, setNewCourseName] = useState('')
   const [newCourseDesc, setNewCourseDesc] = useState('')
 
+  const [bulkEntries, setBulkEntries] = useState([])
+  const [bulkResults, setBulkResults] = useState(null)
+  const [bulkGenerating, setBulkGenerating] = useState(false)
+  const [bulkProgress, setBulkProgress] = useState(0)
+
   const headers = { 'X-Admin-Key': adminKey, 'Content-Type': 'application/json' }
 
   const tryAuth = async (key) => {
@@ -194,6 +199,111 @@ function AdminDashboard({ getApiUrl }) {
       headers,
     })
     loadData()
+  }
+
+  const handleCsvUpload = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (evt) => {
+      const text = evt.target.result
+      const lines = text.split(/\r?\n/).filter((l) => l.trim())
+      if (lines.length < 2) return
+      const headerLine = lines[0].toLowerCase()
+      const sep = headerLine.includes('\t') ? '\t' : ','
+      const hdrs = headerLine.split(sep).map((h) => h.trim().replace(/^"|"$/g, ''))
+
+      const nameIdx = hdrs.findIndex((h) => /participant|name|student/i.test(h))
+      const courseIdx = hdrs.findIndex((h) => /course/i.test(h))
+      const dateIdx = hdrs.findIndex((h) => /date|completion/i.test(h))
+      const instrIdx = hdrs.findIndex((h) => /instructor|teacher/i.test(h))
+
+      if (nameIdx === -1) {
+        alert('CSV must have a column with "name" or "participant" in the header')
+        return
+      }
+
+      const entries = []
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(sep).map((c) => c.trim().replace(/^"|"$/g, ''))
+        const pName = cols[nameIdx]?.trim()
+        if (!pName) continue
+        entries.push({
+          participant_name: pName,
+          course_name: courseIdx >= 0 ? cols[courseIdx]?.trim() || '' : '',
+          completion_date: dateIdx >= 0 ? cols[dateIdx]?.trim() || '' : '',
+          instructor_name: instrIdx >= 0 ? cols[instrIdx]?.trim() || 'IntelliForge AI Team' : 'IntelliForge AI Team',
+        })
+      }
+      setBulkEntries(entries)
+      setBulkResults(null)
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+
+  const removeBulkEntry = (idx) => {
+    setBulkEntries((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  const updateBulkEntry = (idx, field, value) => {
+    setBulkEntries((prev) => prev.map((e, i) => (i === idx ? { ...e, [field]: value } : e)))
+  }
+
+  const generateBulk = async () => {
+    if (bulkEntries.length === 0) return
+    setBulkGenerating(true)
+    setBulkProgress(0)
+    setBulkResults(null)
+    try {
+      const BATCH = 50
+      const allResults = []
+      for (let start = 0; start < bulkEntries.length; start += BATCH) {
+        const batch = bulkEntries.slice(start, start + BATCH)
+        const res = await fetch(getApiUrl('/api/admin/certificates/bulk'), {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ entries: batch }),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: 'Request failed' }))
+          batch.forEach((_, i) =>
+            allResults.push({ index: start + i, status: 'error', error: err.detail || 'Request failed' })
+          )
+        } else {
+          const data = await res.json()
+          allResults.push(...data.results.map((r) => ({ ...r, index: start + r.index })))
+        }
+        setBulkProgress(Math.min(start + BATCH, bulkEntries.length))
+      }
+      const succeeded = allResults.filter((r) => r.status === 'success').length
+      const failed = allResults.filter((r) => r.status === 'error').length
+      setBulkResults({ total: bulkEntries.length, succeeded, failed, results: allResults })
+      loadData()
+    } catch (err) {
+      setBulkResults({ total: bulkEntries.length, succeeded: 0, failed: bulkEntries.length, results: [], error: err.message })
+    } finally {
+      setBulkGenerating(false)
+    }
+  }
+
+  const downloadBulkCsv = () => {
+    if (!bulkResults?.results?.length) return
+    const successful = bulkResults.results.filter((r) => r.status === 'success')
+    if (successful.length === 0) return
+    const lines = ['Certificate ID,Participant,Course,URL,Download URL']
+    successful.forEach((r) => {
+      lines.push(`"${r.certificate_id}","${r.participant_name}","${r.course_name}","${r.url}","${r.download_url}"`)
+    })
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `certificates_bulk_${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    URL.revokeObjectURL(url)
+    document.body.removeChild(a)
   }
 
   if (!authenticated) {
@@ -312,6 +422,125 @@ function AdminDashboard({ getApiUrl }) {
         )}
         {certs.total > 20 && (
           <p className="admin-meta">Showing 20 of {certs.total} certificates</p>
+        )}
+      </div>
+
+      <div className="admin-section">
+        <h3>Bulk Generate Certificates</h3>
+        <div className="bulk-upload-area">
+          <label className="bulk-upload-label">
+            <input type="file" accept=".csv,.tsv,.txt" onChange={handleCsvUpload} hidden />
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span>Upload CSV File</span>
+            <span className="bulk-upload-hint">Columns: participant_name (required), course_name, completion_date, instructor_name</span>
+          </label>
+        </div>
+
+        {bulkEntries.length > 0 && !bulkResults && (
+          <div className="bulk-preview">
+            <div className="bulk-preview-header">
+              <span>{bulkEntries.length} entries ready</span>
+              <div className="bulk-preview-actions">
+                <button onClick={() => setBulkEntries([])} className="admin-action-btn">Clear</button>
+                <button onClick={generateBulk} disabled={bulkGenerating} className="download-btn">
+                  {bulkGenerating ? `Generating... (${bulkProgress}/${bulkEntries.length})` : `Generate ${bulkEntries.length} Certificates`}
+                </button>
+              </div>
+            </div>
+            {bulkGenerating && (
+              <div className="bulk-progress-track">
+                <div className="bulk-progress-fill" style={{ width: `${(bulkProgress / bulkEntries.length) * 100}%` }} />
+              </div>
+            )}
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Participant</th>
+                    <th>Course</th>
+                    <th>Date</th>
+                    <th>Instructor</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bulkEntries.slice(0, 50).map((entry, idx) => (
+                    <tr key={idx}>
+                      <td className="td-mono">{idx + 1}</td>
+                      <td>
+                        <input className="bulk-inline-input" value={entry.participant_name}
+                          onChange={(e) => updateBulkEntry(idx, 'participant_name', e.target.value)} />
+                      </td>
+                      <td>
+                        <select className="bulk-inline-select" value={entry.course_name}
+                          onChange={(e) => updateBulkEntry(idx, 'course_name', e.target.value)}>
+                          <option value="">Select course</option>
+                          {adminCourses.filter((c) => c.active).map((c) => (
+                            <option key={c.id} value={c.name}>{c.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <input type="date" className="bulk-inline-input" value={entry.completion_date}
+                          onChange={(e) => updateBulkEntry(idx, 'completion_date', e.target.value)} />
+                      </td>
+                      <td>
+                        <input className="bulk-inline-input" value={entry.instructor_name}
+                          onChange={(e) => updateBulkEntry(idx, 'instructor_name', e.target.value)} />
+                      </td>
+                      <td>
+                        <button onClick={() => removeBulkEntry(idx)} className="admin-action-btn danger" title="Remove">✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {bulkEntries.length > 50 && (
+              <p className="admin-meta">Showing first 50 of {bulkEntries.length} entries</p>
+            )}
+          </div>
+        )}
+
+        {bulkResults && (
+          <div className="bulk-results">
+            <div className="bulk-results-summary">
+              <div className={`bulk-stat ${bulkResults.succeeded > 0 ? 'bulk-stat-success' : ''}`}>
+                <span className="stat-value">{bulkResults.succeeded}</span>
+                <span className="stat-label">Succeeded</span>
+              </div>
+              <div className={`bulk-stat ${bulkResults.failed > 0 ? 'bulk-stat-error' : ''}`}>
+                <span className="stat-value">{bulkResults.failed}</span>
+                <span className="stat-label">Failed</span>
+              </div>
+              <div className="bulk-stat">
+                <span className="stat-value">{bulkResults.total}</span>
+                <span className="stat-label">Total</span>
+              </div>
+            </div>
+            <div className="bulk-results-actions">
+              {bulkResults.succeeded > 0 && (
+                <button onClick={downloadBulkCsv} className="download-btn">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Download Results CSV
+                </button>
+              )}
+              <button onClick={() => { setBulkResults(null); setBulkEntries([]) }} className="admin-action-btn">
+                New Batch
+              </button>
+            </div>
+            {bulkResults.results.filter((r) => r.status === 'error').length > 0 && (
+              <div className="bulk-errors">
+                <h4>Errors</h4>
+                {bulkResults.results.filter((r) => r.status === 'error').map((r) => (
+                  <div key={r.index} className="bulk-error-row">
+                    <span className="td-mono">Row {r.index + 1}:</span> {r.error}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -775,42 +1004,66 @@ Enjoy converting your markdown!`)
             </div>
             <div className="cert-preview">
               <div className="cert-card">
-                <div className="cert-card-border">
-                  <p className="cert-logo-line">An IntelliForge AI Initiative</p>
-                  <p className="cert-org">IntelliForge Learning</p>
-                  <h3 className="cert-title">CERTIFICATE</h3>
-                  <p className="cert-subtitle">of Participation</p>
-                  <p className="cert-presented">This is proudly presented to</p>
+                <div className="cert-header">
+                  <span className="cert-header-org">An IntelliForge AI Initiative</span>
+                  <span className="cert-header-brand">IntelliForge Learning</span>
+                  <span className="cert-header-badge">Certificate of Participation</span>
+                </div>
+                <div className="cert-body">
+                  <div className="cert-verified">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    Verified &amp; Authentic
+                  </div>
+                  <p className="cert-award-label">This Certificate is Awarded To</p>
                   <p className="cert-name">
                     {certForm.participant_name || 'Participant Name'}
                   </p>
-                  <p className="cert-desc">
-                    For successfully participating in the training program
-                    <br />
-                    <strong>{certForm.course_name || 'Select a course'}</strong>
-                    <br />
-                    conducted by IntelliForge Learning
+                  <div className="cert-gold-divider" />
+                  <p className="cert-course">
+                    {certForm.course_name || 'Select a course'}
                   </p>
-                  <div className="cert-details">
-                    <div>
-                      <span className="cert-detail-value">
-                        {certForm.completion_date || '\u2014'}
-                      </span>
-                      <span className="cert-detail-label">Date</span>
+                  <div className="cert-meta-row">
+                    <div className="cert-meta-item">
+                      <span className="cert-meta-value">{certForm.completion_date || '\u2014'}</span>
+                      <span className="cert-meta-label">Date</span>
                     </div>
-                    <div>
-                      <span className="cert-detail-value">
-                        {certForm.instructor_name || 'IntelliForge AI Team'}
-                      </span>
-                      <span className="cert-detail-label">Instructor</span>
+                    <div className="cert-meta-item cert-meta-bordered">
+                      <span className="cert-meta-value">{certForm.instructor_name || 'IntelliForge AI Team'}</span>
+                      <span className="cert-meta-label">Instructor</span>
                     </div>
-                    <div>
-                      <span className="cert-detail-value">
-                        learning.intelliforge.tech
-                      </span>
-                      <span className="cert-detail-label">Platform</span>
+                    <div className="cert-meta-item">
+                      <span className="cert-meta-value cert-meta-id">IF-XXXXXXXXXXXX</span>
+                      <span className="cert-meta-label">Certificate ID</span>
                     </div>
                   </div>
+                  <div className="cert-signatures">
+                    <div className="cert-sig-block">
+                      <span className="cert-sig-hand">Girish Hiremath</span>
+                      <span className="cert-sig-line" />
+                      <span className="cert-sig-name">Girish Hiremath</span>
+                      <span className="cert-sig-role">Founder &amp; CEO, IntelliForge AI</span>
+                    </div>
+                    <div className="cert-sig-block">
+                      <span className="cert-sig-hand">
+                        {certForm.instructor_name || 'IntelliForge AI Team'}
+                      </span>
+                      <span className="cert-sig-line" />
+                      <span className="cert-sig-name">
+                        {certForm.instructor_name || 'IntelliForge AI Team'}
+                      </span>
+                      <span className="cert-sig-role">Course Instructor</span>
+                    </div>
+                  </div>
+                  <div className="cert-qr-placeholder">
+                    <div className="cert-qr-box">QR</div>
+                    <div className="cert-qr-text">
+                      <strong>Scan to Verify</strong>
+                      QR code links to the permanent verification page.
+                    </div>
+                  </div>
+                </div>
+                <div className="cert-footer-bar">
+                  Issued by IntelliForge Learning &middot; learning.intelliforge.tech &middot; support@intelliforge.tech
                 </div>
               </div>
             </div>

@@ -46,7 +46,7 @@ if DB_AVAILABLE:
 # Configuration
 # ---------------------------------------------------------------------------
 IS_PROD = os.environ.get("VERCEL_ENV") == "production" or os.environ.get("ENV") == "production"
-CERT_SECRET = os.environ.get("CERT_SECRET_KEY", "")
+CERT_SECRET = os.environ.get("CERT_SECRET_KEY", "").strip()
 if not CERT_SECRET:
     if IS_PROD:
         raise RuntimeError("CERT_SECRET_KEY environment variable is required in production")
@@ -58,7 +58,7 @@ _raw_keys = os.environ.get("CERT_API_KEYS", "")
 if _raw_keys:
     CERT_API_KEYS = {k.strip() for k in _raw_keys.split(",") if k.strip()}
 
-ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
+ADMIN_KEY = os.environ.get("ADMIN_KEY", "").strip()
 if not ADMIN_KEY and not IS_PROD:
     ADMIN_KEY = "admin-dev-key"
 
@@ -140,6 +140,53 @@ def _generate_qr_data_uri(url: str) -> str:
     img.save(buf, format="PNG")
     b64 = base64.b64encode(buf.getvalue()).decode()
     return f"data:image/png;base64,{b64}"
+
+
+FOUNDER_NAME = os.environ.get("FOUNDER_NAME", "Girish Hiremath").strip()
+FOUNDER_TITLE = os.environ.get("FOUNDER_TITLE", "Founder & CEO, IntelliForge AI").strip()
+_signature_cache: dict[str, str] = {}
+
+
+def _generate_signature_data_uri(name: str | None = None) -> str:
+    """Render the founder's signature as a base64 PNG data URI with a handwriting aesthetic."""
+    signer = name or FOUNDER_NAME
+    if signer in _signature_cache:
+        return _signature_cache[signer]
+
+    from PIL import Image, ImageDraw, ImageFont
+
+    width, height = 360, 120
+    img = Image.new("RGBA", (width, height), (255, 255, 255, 0))
+    draw = ImageDraw.Draw(img)
+
+    try:
+        font = ImageFont.truetype("arial.ttf", 36)
+    except OSError:
+        font = ImageFont.load_default(size=36)
+
+    bbox = draw.textbbox((0, 0), signer, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    x = (width - tw) // 2
+    y = (height - th) // 2 - 10
+
+    draw.text((x, y), signer, fill=(26, 32, 44, 230), font=font)
+
+    # Apply slant transform for a handwritten feel
+    shear = 0.15
+    img = img.transform(
+        (width, height), Image.AFFINE, (1, shear, -shear * height / 2, 0, 1, 0),
+        resample=Image.BICUBIC,
+    )
+    draw = ImageDraw.Draw(img)
+
+    line_y = y + th + 12
+    draw.line([(x - 10, line_y), (x + tw + 10, line_y)], fill=(26, 32, 44, 140), width=1)
+
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    data_uri = f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}"
+    _signature_cache[signer] = data_uri
+    return data_uri
 
 
 class MarkdownRequest(BaseModel):
@@ -546,7 +593,34 @@ CERTIFICATE_TEMPLATE = """
         </table>
 
         <!-- Spacer -->
-        <table width="100%"><tr><td style="font-size: 14pt;">&nbsp;</td></tr></table>
+        <table width="100%"><tr><td style="font-size: 8pt;">&nbsp;</td></tr></table>
+
+        <!-- Founder signature -->
+        <table width="60%" align="center">
+            <tr>
+                <td width="50%" style="text-align: center; padding: 8pt 12pt;">
+                    <img src="{signature_data_uri}" height="50" style="opacity: 0.9;" />
+                    <table width="100%"><tr><td style="border-top: 1px solid #c4b5fd; font-size: 8pt; color: #553c9a; font-weight: bold; padding-top: 4pt; text-align: center;">
+                        {founder_name}
+                    </td></tr></table>
+                    <table width="100%"><tr><td style="font-size: 6pt; color: #a0aec0; text-align: center; letter-spacing: 1pt;">
+                        {founder_title}
+                    </td></tr></table>
+                </td>
+                <td width="50%" style="text-align: center; padding: 8pt 12pt;">
+                    <table width="100%"><tr><td style="font-size: 7pt; color: #a0aec0; padding-bottom: 20pt;">&nbsp;</td></tr></table>
+                    <table width="100%"><tr><td style="border-top: 1px solid #c4b5fd; font-size: 8pt; color: #553c9a; font-weight: bold; padding-top: 4pt; text-align: center;">
+                        {instructor_name}
+                    </td></tr></table>
+                    <table width="100%"><tr><td style="font-size: 6pt; color: #a0aec0; text-align: center; letter-spacing: 1pt;">
+                        COURSE INSTRUCTOR
+                    </td></tr></table>
+                </td>
+            </tr>
+        </table>
+
+        <!-- Spacer -->
+        <table width="100%"><tr><td style="font-size: 8pt;">&nbsp;</td></tr></table>
 
         <!-- QR code + verify section -->
         <table width="100%"><tr><td style="text-align: center;">
@@ -596,6 +670,9 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
         instructor_name=data["i"],
         certificate_id=_cert_id(data),
         qr_data_uri=qr_data_uri,
+        signature_data_uri=_generate_signature_data_uri(),
+        founder_name=FOUNDER_NAME,
+        founder_title=FOUNDER_TITLE,
     )
     pdf_buffer = BytesIO()
     pisa_status = pisa.CreatePDF(src=full_html, dest=pdf_buffer, encoding="UTF-8")
@@ -689,7 +766,7 @@ VIEWER_HTML = """<!DOCTYPE html>
     <meta name="twitter:title" content="{participant_name} – IntelliForge Certificate" />
     <meta name="twitter:description" content="Verified certificate for completing {course_name}" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
     <style>
         *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
         body{{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:#0f0f23;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem}}
@@ -728,6 +805,13 @@ VIEWER_HTML = """<!DOCTYPE html>
         .btn-twitter{{border-color:#1da1f2;color:#1da1f2}}
         .btn-twitter:hover{{background:#f0f9ff;border-color:#0c85d0}}
         .btn-share svg{{width:15px;height:15px}}
+
+        .signatures{{display:flex;justify-content:center;gap:3rem;margin-bottom:1.8rem;flex-wrap:wrap}}
+        .sig-block{{text-align:center;min-width:140px}}
+        .sig-hand{{font-family:'Dancing Script',cursive;font-size:1.5rem;color:#1a202c;margin-bottom:.2rem;opacity:.85}}
+        .sig-line{{height:1px;background:#c4b5fd;margin:.25rem 0}}
+        .sig-name{{font-size:.75rem;color:#553c9a;font-weight:600;margin-top:.3rem}}
+        .sig-role{{font-size:.6rem;color:#a0aec0;letter-spacing:1px;text-transform:uppercase;margin-top:.1rem}}
 
         .qr-section{{display:flex;align-items:center;justify-content:center;gap:.8rem;margin-top:1.2rem;padding-top:1.2rem;border-top:1px solid #f0f0f0}}
         .qr-section img{{border-radius:6px;border:1px solid #e2e8f0}}
@@ -769,6 +853,20 @@ VIEWER_HTML = """<!DOCTYPE html>
                 <div class="meta-item"><div class="meta-val">{completion_date}</div><div class="meta-lbl">Date</div></div>
                 <div class="meta-item"><div class="meta-val">{instructor_name}</div><div class="meta-lbl">Instructor</div></div>
                 <div class="meta-item"><div class="meta-val">{cert_id}</div><div class="meta-lbl">Certificate ID</div></div>
+            </div>
+            <div class="signatures">
+                <div class="sig-block">
+                    <div class="sig-hand">{founder_name}</div>
+                    <div class="sig-line"></div>
+                    <div class="sig-name">{founder_name}</div>
+                    <div class="sig-role">{founder_title}</div>
+                </div>
+                <div class="sig-block">
+                    <div class="sig-hand">{instructor_name}</div>
+                    <div class="sig-line"></div>
+                    <div class="sig-name">{instructor_name}</div>
+                    <div class="sig-role">Course Instructor</div>
+                </div>
             </div>
             <div class="actions">
                 <a class="btn-download" href="{download_url}">
@@ -839,6 +937,8 @@ async def view_certificate(token: str, req: Request):
         linkedin_url=linkedin_url,
         twitter_url=twitter_url,
         qr_data_uri=_generate_qr_data_uri(page_url),
+        founder_name=FOUNDER_NAME,
+        founder_title=FOUNDER_TITLE,
     )
     return HTMLResponse(content=html)
 
@@ -919,6 +1019,80 @@ async def admin_revoke_certificate(cert_db_id: int, req: Request):
     if not result:
         raise HTTPException(status_code=404, detail="Certificate not found or already revoked")
     return result
+
+
+class BulkCertificateEntry(BaseModel):
+    participant_name: str
+    course_name: str
+    completion_date: str
+    instructor_name: str = "IntelliForge AI Team"
+
+
+class BulkCertificateRequest(BaseModel):
+    entries: list[BulkCertificateEntry]
+
+
+@app.post("/api/admin/certificates/bulk")
+async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
+    """Generate certificates in bulk. Returns per-entry results with success/error status."""
+    _require_admin(req)
+    _require_db()
+
+    if not request.entries:
+        raise HTTPException(status_code=400, detail="No entries provided")
+    if len(request.entries) > 500:
+        raise HTTPException(status_code=400, detail="Maximum 500 certificates per batch")
+
+    valid_courses = set(_get_course_names())
+    base_url = str(req.base_url).rstrip("/")
+    client_ip = req.client.host if req.client else "admin-bulk"
+    results = []
+
+    for i, entry in enumerate(request.entries):
+        name = entry.participant_name.strip()
+        if not name:
+            results.append({"index": i, "status": "error", "error": "Participant name is required"})
+            continue
+        if entry.course_name not in valid_courses:
+            results.append({"index": i, "status": "error", "error": f"Unknown course: {entry.course_name}"})
+            continue
+
+        try:
+            cert_data = {"n": name, "c": entry.course_name, "d": entry.completion_date, "i": entry.instructor_name}
+            token = _encode_cert(cert_data)
+            cert_id = _cert_id(cert_data)
+
+            try:
+                db.store_certificate(
+                    certificate_id=cert_id,
+                    token=token,
+                    participant_name=name,
+                    course_name=entry.course_name,
+                    completion_date=entry.completion_date,
+                    instructor_name=entry.instructor_name,
+                    client_ip=client_ip,
+                )
+            except Exception as e:
+                logger.warning(f"Bulk: DB store failed for {name} (cert still valid): {e}")
+
+            shareable_url = f"{base_url}/certificate/{token}"
+            results.append({
+                "index": i,
+                "status": "success",
+                "certificate_id": cert_id,
+                "participant_name": name,
+                "course_name": entry.course_name,
+                "url": shareable_url,
+                "download_url": f"{shareable_url}/download",
+            })
+        except Exception as e:
+            results.append({"index": i, "status": "error", "error": str(e)})
+
+    succeeded = sum(1 for r in results if r["status"] == "success")
+    failed = sum(1 for r in results if r["status"] == "error")
+    logger.info(f"Bulk generation: {succeeded} succeeded, {failed} failed out of {len(request.entries)} entries")
+
+    return {"total": len(request.entries), "succeeded": succeeded, "failed": failed, "results": results}
 
 
 @app.get("/api/admin/courses")
