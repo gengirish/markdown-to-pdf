@@ -309,20 +309,3 @@ class IntelliForge:
                 f.write(data)
             return None
         return data
-
-    def convert_markdown(
-        self,
-        markdown: str,
-        filename: str = "document.pdf",
-        output_path: str | None = None,
-    ) -> bytes | None:
-        data = self._request_bytes(
-            "POST",
-            "/api/convert",
-            json_body={"markdown": markdown, "filename": filename},
-        )
-        if output_path is not None:
-            with open(output_path, "wb") as f:
-                f.write(data)
-            return None
-        return data

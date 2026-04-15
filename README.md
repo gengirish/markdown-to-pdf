@@ -4,7 +4,7 @@
 
 Generate tamper-proof participation certificates with shareable URLs. All certificate data lives inside the URL itself — signed with HMAC-SHA256, cryptographically verifiable without a database.
 
-**Live:** [md2pdf.intelliforge.tech](https://md2pdf.intelliforge.tech) · **Docs:** [/docs](https://md2pdf.intelliforge.tech/docs) · **OpenAPI:** [/openapi.json](https://md2pdf.intelliforge.tech/openapi.json) · **Agent discovery:** [/llms.txt](https://md2pdf.intelliforge.tech/llms.txt)
+**Live (certificate platform):** [md2pdf.intelliforge.tech](https://md2pdf.intelliforge.tech) · **Docs:** [/docs](https://md2pdf.intelliforge.tech/docs) · **OpenAPI:** [/openapi.json](https://md2pdf.intelliforge.tech/openapi.json) · **Agent discovery:** [/llms.txt](https://md2pdf.intelliforge.tech/llms.txt)
 
 ---
 
@@ -60,7 +60,6 @@ Interactive docs available at [`/docs`](https://md2pdf.intelliforge.tech/docs) (
 | `GET` | `/certificate/{token}/download` | Download certificate as PDF |
 | `GET` | `/certificate/{token}/verify` | Verify single certificate |
 | `POST` | `/api/certificates/verify` | Batch verify certificates |
-| `POST` | `/api/convert` | Markdown → PDF conversion |
 
 ### Admin Endpoints (requires `X-Admin-Key`)
 

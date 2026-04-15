@@ -6,7 +6,7 @@ Shared environment variables:
 
 | Variable | Used by | Description |
 |----------|---------|-------------|
-| `INTELLIFORGE_URL` | All HTTP examples | API base URL (default `https://md2pdf.intelliforge.tech`) |
+| `INTELLIFORGE_URL` | All HTTP examples | API base URL for your IntelliForge Certificate deployment |
 | `INTELLIFORGE_API_KEY` | `quickstart.py`, `zapier_integration.py` | `X-API-Key` when your deployment enforces `CERT_API_KEYS` |
 | `INTELLIFORGE_ADMIN_KEY` | `bulk_onboarding.py` | `X-Admin-Key` (must match server `ADMIN_KEY`) |
 
@@ -104,4 +104,4 @@ No API key required for verification on the public API.
 - **Admin bulk** — one HTTP call for up to 500 rows (enterprise onboarding).  
 - **Open discovery** — `GET /openapi.json`, `GET /llms.txt` for tools and LLMs.
 
-For full API detail, see the project root `README.md` or `https://md2pdf.intelliforge.tech/docs`.
+For full API detail, see the project root `README.md` or your deployment’s OpenAPI/Swagger docs at `/docs`.

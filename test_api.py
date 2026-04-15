@@ -55,16 +55,6 @@ def test_courses():
     record("AI Code Reviewer Course is present", "AI Code Reviewer Course" in courses)
 
 
-# ── Markdown → PDF ────────────────────────────────────────────────────
-
-def test_convert():
-    payload = {"markdown": "# Hello\nWorld", "filename": "test.pdf"}
-    r = requests.post(f"{BASE_URL}/api/convert", json=payload)
-    record("POST /api/convert returns 200", r.status_code == 200)
-    record("Response is application/pdf", "application/pdf" in r.headers.get("Content-Type", ""))
-    record("PDF body is non-empty", len(r.content) > 100)
-
-
 # ── Certificate creation ─────────────────────────────────────────────
 
 def _create_cert(**overrides) -> requests.Response:
@@ -183,9 +173,6 @@ def run_all():
 
     print("\n[Courses]")
     test_courses()
-
-    print("\n[Markdown Conversion]")
-    test_convert()
 
     print("\n[Certificate Creation]")
     cert = test_certificate_creation()

@@ -32,7 +32,7 @@ print(client.list_courses())
 client = IntelliForge(api_key="your-api-key")
 cert = client.create_certificate(
     participant_name="Ada Lovelace",
-    course_name="Markdown to PDF",
+    course_name="API Design Workshop",
     completion_date="2026-04-15",
 )
 print(cert["download_url"])
@@ -44,17 +44,13 @@ info = client.verify(cert["token"])
 pdf_bytes = client.download_pdf(cert["token"])
 client.download_pdf(cert["token"], path="certificate.pdf")
 
-# Markdown → PDF
-pdf = client.convert_markdown("# Hello\n\nWorld.", filename="doc.pdf")
-client.convert_markdown("# Hi", output_path="out.pdf")
-
 # Batch verify
 print(client.batch_verify(["token-one", "token-two"]))
 
 # Admin (X-Admin-Key)
 admin_client = IntelliForge(admin_key="your-admin-key")
 stats = admin_client.admin.stats()
-certs = admin_client.admin.list_certificates(limit=10, course="Markdown to PDF")
+certs = admin_client.admin.list_certificates(limit=10, course="API Design Workshop")
 ```
 
 ### Context manager
@@ -95,7 +91,6 @@ All carry `status_code` and `response_body` when the failure came from an HTTP r
 - `verify(token)` → `dict`
 - `batch_verify(tokens)` → `dict`
 - `download_pdf(token, path=None)` → `bytes` if `path` is omitted, else writes file and returns `None`
-- `convert_markdown(markdown, filename="document.pdf", output_path=None)` → same pattern as download
 - `admin.stats()`, `admin.list_certificates(...)`, `admin.bulk_generate(entries)`, `admin.revoke(id)`, `admin.list_courses()`, `admin.add_course(name, description="")`, `admin.toggle_course(course_id, active)` → `dict`
 
 See the IntelliForge Certificate API documentation for request/response field details.

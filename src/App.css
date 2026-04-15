@@ -147,38 +147,7 @@
   flex-shrink: 0;
 }
 
-/* ── Shared Container ── */
-
-.container {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
-  padding: 1.5rem;
-  max-width: 1600px;
-  margin: 0 auto;
-  width: 100%;
-}
-
-/* ── Section Cards ── */
-
-.editor-section,
-.preview-section {
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-surface);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-default);
-  box-shadow: var(--shadow-lg), var(--shadow-glow);
-  overflow: hidden;
-  transition: border-color var(--transition-normal), box-shadow var(--transition-normal);
-}
-
-.editor-section:focus-within,
-.preview-section:hover {
-  border-color: var(--border-glow);
-  box-shadow: var(--shadow-lg), var(--shadow-glow-strong);
-}
+/* ── Section cards (shared) ── */
 
 .section-header {
   display: flex;
@@ -196,169 +165,6 @@
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.2px;
-}
-
-.char-count {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  background: var(--bg-surface);
-  padding: 0.2rem 0.6rem;
-  border-radius: 20px;
-  border: 1px solid var(--border-subtle);
-}
-
-/* ── Markdown Editor ── */
-
-.editor {
-  flex: 1;
-  padding: 1.25rem;
-  border: none;
-  outline: none;
-  font-family: var(--font-mono);
-  font-size: 13.5px;
-  line-height: 1.7;
-  resize: none;
-  color: var(--text-primary);
-  background: var(--bg-surface);
-  caret-color: var(--accent-primary);
-}
-
-.editor::placeholder {
-  color: var(--text-muted);
-}
-
-.editor:focus {
-  background: rgba(13, 19, 33, 0.8);
-}
-
-/* ── Live Preview ── */
-
-.preview {
-  flex: 1;
-  padding: 1.5rem;
-  overflow-y: auto;
-  background: #ffffff;
-  color: #1e293b;
-  line-height: 1.8;
-}
-
-.preview h1,
-.preview h2,
-.preview h3,
-.preview h4,
-.preview h5,
-.preview h6 {
-  margin-top: 1.5em;
-  margin-bottom: 0.5em;
-  font-family: var(--font-heading);
-  font-weight: 700;
-  line-height: 1.3;
-  color: #0f172a;
-}
-
-.preview h1 {
-  font-size: 1.875em;
-  border-bottom: 2px solid #e2e8f0;
-  padding-bottom: 0.3em;
-}
-
-.preview h2 {
-  font-size: 1.5em;
-  border-bottom: 1px solid #e2e8f0;
-  padding-bottom: 0.3em;
-}
-
-.preview h3 { font-size: 1.25em; }
-
-.preview p { margin: 1em 0; }
-
-.preview code {
-  background: #f1f5f9;
-  padding: 0.15em 0.4em;
-  border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 0.875em;
-  color: #6366f1;
-  border: 1px solid #e2e8f0;
-}
-
-.preview pre {
-  background: #0f172a;
-  color: #e2e8f0;
-  padding: 1.25em;
-  border-radius: var(--radius-sm);
-  overflow-x: auto;
-  margin: 1em 0;
-  border: 1px solid #1e293b;
-}
-
-.preview pre code {
-  background: transparent;
-  padding: 0;
-  border: none;
-  color: inherit;
-  font-size: 0.85em;
-}
-
-.preview blockquote {
-  border-left: 3px solid #6366f1;
-  padding: 0.75em 1em;
-  margin: 1em 0;
-  color: #475569;
-  background: #f8fafc;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-}
-
-.preview ul,
-.preview ol {
-  padding-left: 2em;
-  margin: 1em 0;
-}
-
-.preview li { margin: 0.4em 0; }
-
-.preview a {
-  color: #6366f1;
-  text-decoration: none;
-  border-bottom: 1px solid rgba(99, 102, 241, 0.3);
-  transition: border-color var(--transition-fast);
-}
-
-.preview a:hover {
-  border-bottom-color: #6366f1;
-}
-
-.preview hr {
-  border: none;
-  border-top: 1px solid #e2e8f0;
-  margin: 2em 0;
-}
-
-.preview table {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 1em 0;
-}
-
-.preview th,
-.preview td {
-  border: 1px solid #e2e8f0;
-  padding: 0.6em 0.85em;
-  text-align: left;
-  font-size: 0.95em;
-}
-
-.preview th {
-  background: #f8fafc;
-  font-weight: 600;
-}
-
-.preview img {
-  max-width: 100%;
-  height: auto;
-  border-radius: var(--radius-sm);
-  margin: 1em 0;
 }
 
 /* ── Buttons ── */
@@ -1638,18 +1444,9 @@
 /* ── Responsive ── */
 
 @media (max-width: 1024px) {
-  .container,
   .cert-container {
     grid-template-columns: 1fr;
     gap: 1rem;
-  }
-
-  .editor-section {
-    min-height: 400px;
-  }
-
-  .preview-section {
-    min-height: 500px;
   }
 
   .header h1 {
@@ -1683,7 +1480,6 @@
     font-size: 0.75rem;
   }
 
-  .container,
   .cert-container {
     padding: 0.75rem;
   }

@@ -12,7 +12,7 @@ if os.path.isfile(_README):
 setup(
     name="intelliforge",
     version="2.0.0",
-    description="Python SDK for the IntelliForge Certificate API",
+    description="Python client for issuing, verifying, and administering IntelliForge course certificates",
     long_description=_long_description,
     long_description_content_type="text/markdown",
     url="https://md2pdf.intelliforge.tech",

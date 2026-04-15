@@ -1,5 +1,4 @@
 import { useState, useEffect, useId } from 'react'
-import { marked } from 'marked'
 import './App.css'
 
 function IntelliForgeIcon({ size = 32 }) {
@@ -69,12 +68,6 @@ const Icon = {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
       <polyline points="22 4 12 14.01 9 11.01" />
-    </svg>
-  ),
-  Markdown: () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
     </svg>
   ),
   CertTab: () => (
@@ -592,7 +585,7 @@ function AdminDashboard({ getApiUrl }) {
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState('markdown')
+  const [activeTab, setActiveTab] = useState('certificate')
   const [courses, setCourses] = useState([])
   const [coursesLoading, setCoursesLoading] = useState(true)
 
@@ -607,49 +600,6 @@ function App() {
       .finally(() => setCoursesLoading(false))
   }, [])
 
-  const [markdown, setMarkdown] = useState(`# Welcome to Markdown to PDF Converter
-
-## Features
-- Real-time markdown preview
-- Server-side PDF generation with Python
-- FastAPI backend for robust processing
-- Beautiful, modern UI
-
-## How to use
-1. Type or paste your markdown in the left panel
-2. See the live preview in the right panel
-3. Click "Download PDF" to export
-
-### Sample Code Block
-\`\`\`javascript
-const hello = () => {
-  console.log("Hello, World!");
-};
-\`\`\`
-
-### Sample List
-- Item 1
-- Item 2
-- Item 3
-
-**Bold text** and *italic text* are supported!
-
-> This is a blockquote with professional styling
-
----
-
-### Technical Details
-This application uses:
-- **Frontend**: React + Vite
-- **Backend**: FastAPI + Python
-- **PDF Engine**: xhtml2pdf
-- **Deployment**: Vercel
-
-Enjoy converting your markdown!`)
-
-  const [isConverting, setIsConverting] = useState(false)
-  const [error, setError] = useState(null)
-
   const [certForm, setCertForm] = useState({
     participant_name: '',
     participant_email: '',
@@ -660,39 +610,6 @@ Enjoy converting your markdown!`)
   const [isGenerating, setIsGenerating] = useState(false)
   const [certError, setCertError] = useState(null)
   const [certResult, setCertResult] = useState(null)
-
-  const convertToPdf = async () => {
-    setIsConverting(true)
-    setError(null)
-
-    try {
-      const response = await fetch(getApiUrl('/api/convert'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ markdown, filename: 'markdown-export.pdf' }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
-        throw new Error(errorData.detail || `Server error: ${response.status}`)
-      }
-
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'markdown-export.pdf'
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-    } catch (err) {
-      console.error('Error converting to PDF:', err)
-      setError(err.message)
-    } finally {
-      setIsConverting(false)
-    }
-  }
 
   const generateCertificate = async (e) => {
     e.preventDefault()
@@ -786,20 +703,11 @@ Enjoy converting your markdown!`)
           </div>
           <span className="brand-wordmark">IntelliForge AI</span>
         </a>
-        <h1>Markdown to PDF</h1>
+        <h1>IntelliForge Certificates</h1>
         <p className="header-subtitle">
-          Real-time markdown editor with live preview & certificate generation
+          Issue verified training certificates, share links, and manage courses from one place
         </p>
         <nav className="tab-nav" role="tablist">
-          <button
-            className={`tab-btn ${activeTab === 'markdown' ? 'active' : ''}`}
-            onClick={() => setActiveTab('markdown')}
-            role="tab"
-            aria-selected={activeTab === 'markdown'}
-          >
-            <Icon.Markdown />
-            <span>Markdown to PDF</span>
-          </button>
           <button
             className={`tab-btn ${activeTab === 'certificate' ? 'active' : ''}`}
             onClick={() => setActiveTab('certificate')}
@@ -820,48 +728,6 @@ Enjoy converting your markdown!`)
           </button>
         </nav>
       </header>
-
-      {activeTab === 'markdown' && (
-        <div className="container">
-          <div className="editor-section">
-            <div className="section-header">
-              <h2>Markdown Editor</h2>
-              <span className="char-count">{markdown.length} chars</span>
-            </div>
-            <textarea
-              className="editor"
-              value={markdown}
-              onChange={(e) => setMarkdown(e.target.value)}
-              placeholder="Type your markdown here..."
-              spellCheck="false"
-              aria-label="Markdown editor"
-            />
-          </div>
-
-          <div className="preview-section">
-            <div className="section-header">
-              <h2>Live Preview</h2>
-              <button
-                className="download-btn"
-                onClick={convertToPdf}
-                disabled={isConverting}
-              >
-                {isConverting ? <Icon.Loader /> : <Icon.Download />}
-                <span>{isConverting ? 'Converting...' : 'Download PDF'}</span>
-              </button>
-            </div>
-            {error && (
-              <div className="error-message" role="alert">
-                <strong>Error:</strong> {error}
-              </div>
-            )}
-            <div
-              className="preview"
-              dangerouslySetInnerHTML={{ __html: marked(markdown) }}
-            />
-          </div>
-        </div>
-      )}
 
       {activeTab === 'certificate' && (
         <div className="cert-container">
