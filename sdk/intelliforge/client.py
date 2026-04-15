@@ -84,7 +84,7 @@ class IntelliForge:
         self,
         api_key: str | None = None,
         admin_key: str | None = None,
-        base_url: str = "https://md2pdf.intelliforge.tech",
+        base_url: str = "https://certs.intelliforge.tech",
         *,
         timeout: float = 60.0,
     ) -> None:

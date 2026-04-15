@@ -2,7 +2,7 @@
 """Minimal IntelliForge Certificates flow: list courses, issue, verify, download PDF.
 
 Requires: pip install httpx
-Env: INTELLIFORGE_URL (default https://md2pdf.intelliforge.tech), INTELLIFORGE_API_KEY (if server enforces keys).
+Env: INTELLIFORGE_URL (default https://certs.intelliforge.tech), INTELLIFORGE_API_KEY (if server enforces keys).
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import uuid
 
 import httpx
 
-BASE_URL = os.environ.get("INTELLIFORGE_URL", "https://md2pdf.intelliforge.tech").rstrip("/")
+BASE_URL = os.environ.get("INTELLIFORGE_URL", "https://certs.intelliforge.tech").rstrip("/")
 API_KEY = os.environ.get("INTELLIFORGE_API_KEY", "").strip()
 
 

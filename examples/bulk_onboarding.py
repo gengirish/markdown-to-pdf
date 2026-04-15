@@ -19,7 +19,7 @@ from datetime import date
 
 import httpx
 
-BASE_URL = os.environ.get("INTELLIFORGE_URL", "https://md2pdf.intelliforge.tech").rstrip("/")
+BASE_URL = os.environ.get("INTELLIFORGE_URL", "https://certs.intelliforge.tech").rstrip("/")
 ADMIN_KEY = os.environ.get("INTELLIFORGE_ADMIN_KEY", "").strip()
 
 

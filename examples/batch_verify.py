@@ -16,7 +16,7 @@ from collections import Counter
 
 import httpx
 
-BASE_URL = os.environ.get("INTELLIFORGE_URL", "https://md2pdf.intelliforge.tech").rstrip("/")
+BASE_URL = os.environ.get("INTELLIFORGE_URL", "https://certs.intelliforge.tech").rstrip("/")
 
 
 def read_tokens(path: str | None) -> list[str]:

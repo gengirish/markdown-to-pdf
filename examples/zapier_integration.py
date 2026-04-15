@@ -16,7 +16,7 @@ import os
 import httpx
 from flask import Flask, jsonify, request
 
-BASE_URL = os.environ.get("INTELLIFORGE_URL", "https://md2pdf.intelliforge.tech").rstrip("/")
+BASE_URL = os.environ.get("INTELLIFORGE_URL", "https://certs.intelliforge.tech").rstrip("/")
 API_KEY = os.environ.get("INTELLIFORGE_API_KEY", "").strip()
 
 app = Flask(__name__)

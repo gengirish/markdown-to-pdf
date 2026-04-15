@@ -4,7 +4,7 @@
 
 Generate tamper-proof participation certificates with shareable URLs. All certificate data lives inside the URL itself — signed with HMAC-SHA256, cryptographically verifiable without a database.
 
-**Live (certificate platform):** [md2pdf.intelliforge.tech](https://md2pdf.intelliforge.tech) · **Docs:** [/docs](https://md2pdf.intelliforge.tech/docs) · **OpenAPI:** [/openapi.json](https://md2pdf.intelliforge.tech/openapi.json) · **Agent discovery:** [/llms.txt](https://md2pdf.intelliforge.tech/llms.txt)
+**Live (certificate platform):** [certs.intelliforge.tech](https://certs.intelliforge.tech) · **Docs:** [/docs](https://certs.intelliforge.tech/docs) · **OpenAPI:** [/openapi.json](https://certs.intelliforge.tech/openapi.json) · **Agent discovery:** [/llms.txt](https://certs.intelliforge.tech/llms.txt)
 
 ---
 
@@ -47,7 +47,7 @@ Open **http://localhost:5173** · API docs at **http://localhost:8000/docs**
 
 ## API Reference
 
-Interactive docs available at [`/docs`](https://md2pdf.intelliforge.tech/docs) (Swagger UI) and [`/redoc`](https://md2pdf.intelliforge.tech/redoc).
+Interactive docs available at [`/docs`](https://certs.intelliforge.tech/docs) (Swagger UI) and [`/redoc`](https://certs.intelliforge.tech/redoc).
 
 ### Public Endpoints
 
@@ -88,7 +88,7 @@ Interactive docs available at [`/docs`](https://md2pdf.intelliforge.tech/docs) (
 ## Create a Certificate
 
 ```bash
-curl -X POST https://md2pdf.intelliforge.tech/api/certificate \
+curl -X POST https://certs.intelliforge.tech/api/certificate \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-key" \
   -d '{
@@ -108,8 +108,8 @@ Response:
 {
   "certificate_id": "IF-A1B2C3D4E5F6",
   "token": "eyJjIjoi...",
-  "url": "https://md2pdf.intelliforge.tech/certificate/eyJjIjoi...",
-  "download_url": "https://md2pdf.intelliforge.tech/certificate/eyJjIjoi.../download",
+  "url": "https://certs.intelliforge.tech/certificate/eyJjIjoi...",
+  "download_url": "https://certs.intelliforge.tech/certificate/eyJjIjoi.../download",
   "participant_name": "Jane Doe",
   "course_name": "AI Product Development Fundamentals",
   "email_sent": true,

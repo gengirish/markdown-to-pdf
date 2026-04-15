@@ -1121,7 +1121,7 @@ LLMS_TXT = """# IntelliForge Certificate API
 > API-first verifiable credentials. Generate tamper-proof certificates with shareable URLs.
 
 ## Base URL
-https://md2pdf.intelliforge.tech
+https://certs.intelliforge.tech
 
 ## Authentication
 - Certificate creation: `X-API-Key: <key>` header
@@ -1203,7 +1203,7 @@ async def ai_plugin():
             "Supports idempotency_key, callback_url webhooks, and email delivery."
         ),
         "auth": {"type": "service_http", "authorization_type": "bearer", "verification_tokens": {}},
-        "api": {"type": "openapi", "url": "https://md2pdf.intelliforge.tech/openapi.json"},
+        "api": {"type": "openapi", "url": "https://certs.intelliforge.tech/openapi.json"},
         "logo_url": "https://www.intelliforge.tech/favicon.ico",
         "contact_email": "support@intelliforge.tech",
         "legal_info_url": "https://www.intelliforge.tech/",

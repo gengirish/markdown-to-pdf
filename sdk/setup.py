@@ -15,7 +15,7 @@ setup(
     description="Python client for issuing, verifying, and administering IntelliForge course certificates",
     long_description=_long_description,
     long_description_content_type="text/markdown",
-    url="https://md2pdf.intelliforge.tech",
+    url="https://certs.intelliforge.tech",
     packages=find_packages(include=["intelliforge", "intelliforge.*"]),
     python_requires=">=3.9",
     install_requires=["httpx>=0.24.0,<1.0.0"],

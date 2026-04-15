@@ -1,6 +1,6 @@
 # intelliforge (Python SDK)
 
-Python client for the **IntelliForge Certificate API** (`https://md2pdf.intelliforge.tech`). Version **2.0.0** tracks API **v2.0.0**.
+Python client for the **IntelliForge Certificate API** (`https://certs.intelliforge.tech`). Version **2.0.0** tracks API **v2.0.0**.
 
 ## Install
 
@@ -84,7 +84,7 @@ All carry `status_code` and `response_body` when the failure came from an HTTP r
 
 ## API reference (SDK)
 
-- `IntelliForge(api_key=None, admin_key=None, base_url="https://md2pdf.intelliforge.tech")`
+- `IntelliForge(api_key=None, admin_key=None, base_url="https://certs.intelliforge.tech")`
 - `health()` → `dict`
 - `list_courses()` → `list[str]`
 - `create_certificate(...)` → `dict`
