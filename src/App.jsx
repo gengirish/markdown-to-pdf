@@ -1,28 +1,27 @@
-import { useState } from 'react'
+import { useState, useEffect, useId } from 'react'
 import { marked } from 'marked'
 import './App.css'
 
-const COURSES = [
-  "AI Product Development Fundamentals",
-  "Building AI-Powered Applications",
-  "Prompt Engineering & LLM Integration",
-  "Full-Stack AI Development",
-  "AI Product Design & UX",
-  "Digital Profile Creation",
-  "Deploying AI Solutions",
-  "AI Code Reviewer Course",
-]
+function IntelliForgeIcon({ size = 32 }) {
+  const id = useId()
+  const gradId = `if-grad-${id}`
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="40" height="40" rx="10" fill={`url(#${gradId})`} />
+      <path d="M12 12h4v16h-4V12z" fill="white" opacity="0.9" />
+      <path d="M20 12h4v16h-4V12z" fill="white" opacity="0.7" />
+      <path d="M28 12v4h-8v2h6v4h-6v2h8v4H20V12h8z" fill="white" opacity="0.9" />
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#6366F1" />
+          <stop offset="1" stopColor="#8B5CF6" />
+        </linearGradient>
+      </defs>
+    </svg>
+  )
+}
 
 const Icon = {
-  FileText: () => (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="16" y1="13" x2="8" y2="13" />
-      <line x1="16" y1="17" x2="8" y2="17" />
-      <polyline points="10 9 9 9 8 9" />
-    </svg>
-  ),
   Download: () => (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -84,10 +83,292 @@ const Icon = {
       <polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88" />
     </svg>
   ),
+  Admin: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+    </svg>
+  ),
+}
+
+function AdminDashboard({ getApiUrl }) {
+  const [adminKey, setAdminKey] = useState(() => localStorage.getItem('adminKey') || '')
+  const [authenticated, setAuthenticated] = useState(false)
+  const [keyInput, setKeyInput] = useState('')
+  const [authError, setAuthError] = useState('')
+
+  const [stats, setStats] = useState(null)
+  const [certs, setCerts] = useState({ certificates: [], total: 0 })
+  const [adminCourses, setAdminCourses] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [newCourseName, setNewCourseName] = useState('')
+  const [newCourseDesc, setNewCourseDesc] = useState('')
+
+  const headers = { 'X-Admin-Key': adminKey, 'Content-Type': 'application/json' }
+
+  const tryAuth = async (key) => {
+    try {
+      const res = await fetch(getApiUrl('/api/admin/stats'), { headers: { 'X-Admin-Key': key } })
+      if (res.ok) {
+        setAdminKey(key)
+        localStorage.setItem('adminKey', key)
+        setAuthenticated(true)
+        setAuthError('')
+        return true
+      }
+      setAuthError('Invalid admin key')
+      return false
+    } catch {
+      setAuthError('Connection failed')
+      return false
+    }
+  }
+
+  useEffect(() => {
+    if (adminKey) tryAuth(adminKey)
+  }, [])
+
+  const loadData = async () => {
+    setLoading(true)
+    try {
+      const [statsRes, certsRes, coursesRes] = await Promise.all([
+        fetch(getApiUrl('/api/admin/stats'), { headers }),
+        fetch(getApiUrl('/api/admin/certificates?limit=20'), { headers }),
+        fetch(getApiUrl('/api/admin/courses'), { headers }),
+      ])
+      if (statsRes.ok) setStats(await statsRes.json())
+      if (certsRes.ok) setCerts(await certsRes.json())
+      if (coursesRes.ok) {
+        const data = await coursesRes.json()
+        setAdminCourses(data.courses || [])
+      }
+    } catch (err) {
+      console.error('Admin data load failed:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (authenticated) loadData()
+  }, [authenticated])
+
+  const handleLogin = async (e) => {
+    e.preventDefault()
+    await tryAuth(keyInput)
+  }
+
+  const handleLogout = () => {
+    setAdminKey('')
+    setAuthenticated(false)
+    localStorage.removeItem('adminKey')
+  }
+
+  const addCourse = async (e) => {
+    e.preventDefault()
+    if (!newCourseName.trim()) return
+    const res = await fetch(getApiUrl('/api/admin/courses'), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: newCourseName.trim(), description: newCourseDesc.trim() }),
+    })
+    if (res.ok) {
+      setNewCourseName('')
+      setNewCourseDesc('')
+      loadData()
+    }
+  }
+
+  const toggleCourse = async (id, active) => {
+    await fetch(getApiUrl(`/api/admin/courses/${id}`), {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ active }),
+    })
+    loadData()
+  }
+
+  const revokeCert = async (id) => {
+    if (!confirm('Revoke this certificate?')) return
+    await fetch(getApiUrl(`/api/admin/certificates/${id}/revoke`), {
+      method: 'POST',
+      headers,
+    })
+    loadData()
+  }
+
+  if (!authenticated) {
+    return (
+      <div className="admin-login">
+        <div className="admin-login-card">
+          <h3>Admin Dashboard</h3>
+          <p>Enter admin key to access the dashboard</p>
+          <form onSubmit={handleLogin}>
+            <input
+              type="password"
+              value={keyInput}
+              onChange={(e) => setKeyInput(e.target.value)}
+              placeholder="Admin key"
+              autoFocus
+            />
+            <button type="submit" className="download-btn">Authenticate</button>
+          </form>
+          {authError && <p className="admin-error">{authError}</p>}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="admin-dashboard">
+      <div className="admin-topbar">
+        <h2>Admin Dashboard</h2>
+        <button onClick={handleLogout} className="admin-logout-btn">Logout</button>
+      </div>
+
+      {loading && <div className="admin-loading">Loading...</div>}
+
+      {stats && (
+        <div className="admin-stats">
+          <div className="stat-card">
+            <span className="stat-value">{stats.total_certificates}</span>
+            <span className="stat-label">Total Certificates</span>
+          </div>
+          <div className="stat-card">
+            <span className="stat-value">{stats.this_week}</span>
+            <span className="stat-label">This Week</span>
+          </div>
+          <div className="stat-card">
+            <span className="stat-value">{stats.revoked}</span>
+            <span className="stat-label">Revoked</span>
+          </div>
+          <div className="stat-card">
+            <span className="stat-value">{adminCourses.filter(c => c.active).length}</span>
+            <span className="stat-label">Active Courses</span>
+          </div>
+        </div>
+      )}
+
+      {stats?.by_course?.length > 0 && (
+        <div className="admin-section">
+          <h3>Certificates by Course</h3>
+          <div className="admin-bar-chart">
+            {stats.by_course.map((item) => (
+              <div key={item.course_name} className="bar-row">
+                <span className="bar-label">{item.course_name}</span>
+                <div className="bar-track">
+                  <div
+                    className="bar-fill"
+                    style={{ width: `${Math.max(4, (item.cnt / stats.total_certificates) * 100)}%` }}
+                  />
+                </div>
+                <span className="bar-value">{item.cnt}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="admin-section">
+        <h3>Recent Certificates</h3>
+        {certs.certificates.length === 0 ? (
+          <p className="admin-empty">No certificates issued yet</p>
+        ) : (
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Participant</th>
+                  <th>Course</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {certs.certificates.map((c) => (
+                  <tr key={c.id} className={c.revoked ? 'row-revoked' : ''}>
+                    <td className="td-mono">{c.certificate_id}</td>
+                    <td>{c.participant_name}</td>
+                    <td>{c.course_name}</td>
+                    <td className="td-mono">{c.completion_date}</td>
+                    <td>
+                      <span className={`status-badge ${c.revoked ? 'status-revoked' : 'status-active'}`}>
+                        {c.revoked ? 'Revoked' : 'Active'}
+                      </span>
+                    </td>
+                    <td>
+                      {!c.revoked && (
+                        <button onClick={() => revokeCert(c.id)} className="admin-action-btn danger">
+                          Revoke
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {certs.total > 20 && (
+          <p className="admin-meta">Showing 20 of {certs.total} certificates</p>
+        )}
+      </div>
+
+      <div className="admin-section">
+        <h3>Course Management</h3>
+        <form className="admin-add-course" onSubmit={addCourse}>
+          <input
+            type="text"
+            value={newCourseName}
+            onChange={(e) => setNewCourseName(e.target.value)}
+            placeholder="New course name"
+            required
+          />
+          <input
+            type="text"
+            value={newCourseDesc}
+            onChange={(e) => setNewCourseDesc(e.target.value)}
+            placeholder="Description (optional)"
+          />
+          <button type="submit" className="download-btn">Add Course</button>
+        </form>
+        <div className="admin-courses-list">
+          {adminCourses.map((c) => (
+            <div key={c.id} className={`admin-course-item ${!c.active ? 'course-inactive' : ''}`}>
+              <div className="course-info">
+                <span className="course-name">{c.name}</span>
+                {c.description && <span className="course-desc">{c.description}</span>}
+              </div>
+              <button
+                onClick={() => toggleCourse(c.id, !c.active)}
+                className={`admin-action-btn ${c.active ? 'danger' : 'success'}`}
+              >
+                {c.active ? 'Deactivate' : 'Activate'}
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function App() {
   const [activeTab, setActiveTab] = useState('markdown')
+  const [courses, setCourses] = useState([])
+  const [coursesLoading, setCoursesLoading] = useState(true)
+
+  const getApiUrl = (path) =>
+    import.meta.env.PROD ? path : `http://localhost:8000${path}`
+
+  useEffect(() => {
+    fetch(getApiUrl('/api/courses'))
+      .then((res) => res.json())
+      .then((data) => setCourses(data.courses || []))
+      .catch(() => setCourses([]))
+      .finally(() => setCoursesLoading(false))
+  }, [])
 
   const [markdown, setMarkdown] = useState(`# Welcome to Markdown to PDF Converter
 
@@ -141,9 +422,6 @@ Enjoy converting your markdown!`)
   const [isGenerating, setIsGenerating] = useState(false)
   const [certError, setCertError] = useState(null)
   const [certResult, setCertResult] = useState(null)
-
-  const getApiUrl = (path) =>
-    import.meta.env.PROD ? path : `http://localhost:8000${path}`
 
   const convertToPdf = async () => {
     setIsConverting(true)
@@ -258,11 +536,22 @@ Enjoy converting your markdown!`)
   return (
     <div className="app">
       <header className="header">
-        <div className="header-icon">
-          <Icon.FileText />
-        </div>
+        <a
+          href="https://www.intelliforge.tech/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="brand-link"
+          aria-label="IntelliForge AI"
+        >
+          <div className="header-icon">
+            <IntelliForgeIcon size={32} />
+          </div>
+          <span className="brand-wordmark">IntelliForge AI</span>
+        </a>
         <h1>Markdown to PDF</h1>
-        <p>Convert markdown to PDF & generate participation certificates</p>
+        <p className="header-subtitle">
+          Real-time markdown editor with live preview & certificate generation
+        </p>
         <nav className="tab-nav" role="tablist">
           <button
             className={`tab-btn ${activeTab === 'markdown' ? 'active' : ''}`}
@@ -281,6 +570,15 @@ Enjoy converting your markdown!`)
           >
             <Icon.CertTab />
             <span>Certificate Generator</span>
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
+            onClick={() => setActiveTab('admin')}
+            role="tab"
+            aria-selected={activeTab === 'admin'}
+          >
+            <Icon.Admin />
+            <span>Admin</span>
           </button>
         </nav>
       </header>
@@ -353,9 +651,10 @@ Enjoy converting your markdown!`)
                   value={certForm.course_name}
                   onChange={(e) => updateCertField('course_name', e.target.value)}
                   required
+                  disabled={coursesLoading}
                 >
-                  <option value="">Select a course</option>
-                  {COURSES.map((c) => (
+                  <option value="">{coursesLoading ? 'Loading courses...' : 'Select a course'}</option>
+                  {courses.map((c) => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
@@ -519,13 +818,35 @@ Enjoy converting your markdown!`)
         </div>
       )}
 
+      {activeTab === 'admin' && (
+        <div className="admin-container">
+          <AdminDashboard getApiUrl={getApiUrl} />
+        </div>
+      )}
+
       <footer className="footer">
-        <p>
-          Built with React, Vite, FastAPI & Python
-          <span className="footer-divider">|</span>
+        <div className="footer-brand">
+          <IntelliForgeIcon size={22} />
+          <span className="footer-brand-name">IntelliForge AI</span>
+        </div>
+        <p className="footer-tagline">
+          AI Agent Development & Workflow Automation
+        </p>
+        <div className="footer-links">
+          <a href="https://www.intelliforge.tech/" target="_blank" rel="noopener noreferrer">
+            intelliforge.tech
+          </a>
+          <span className="footer-divider" aria-hidden="true" />
           <a href="https://learning.intelliforge.tech/" target="_blank" rel="noopener noreferrer">
             IntelliForge Learning
           </a>
+          <span className="footer-divider" aria-hidden="true" />
+          <a href="https://www.intelliforge.tech/services" target="_blank" rel="noopener noreferrer">
+            Services
+          </a>
+        </div>
+        <p className="footer-copy">
+          Built with React, Vite, FastAPI & Python
         </p>
       </footer>
     </div>

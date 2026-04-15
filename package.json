@@ -1,10 +1,10 @@
 {
   "name": "markdown-to-pdf-converter",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
-  "description": "A beautiful web app to convert Markdown to PDF with real-time preview",
-  "author": "Your Name",
+  "description": "API-first verifiable certificate platform with stateless HMAC-signed tokens and Markdown-to-PDF conversion",
+  "author": "IntelliForge",
   "license": "MIT",
   "scripts": {
     "dev": "vite",

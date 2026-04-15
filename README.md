@@ -1,214 +1,170 @@
-# 📄 Markdown to PDF Converter
+# IntelliForge Certificates
 
-A beautiful, modern web application to convert Markdown to PDF with real-time preview. Built with React, Vite, and deployed on Vercel.
+**API-first verifiable credentials with zero database, zero vendor lock-in.**
 
-## ✨ Features
-
-- 📝 Real-time Markdown editor with syntax highlighting
-- 👁️ Live HTML preview
-- 📥 One-click PDF export
-- 🎨 Beautiful, modern UI with gradient design
-- 📱 Fully responsive design
-- ⚡ Fast and lightweight
-
-## 🚀 Tech Stack
-
-### Frontend
-- **React 19.2** - Modern UI framework
-- **Vite 7.3** - Lightning-fast build tool
-- **marked** - Markdown preview
-
-### Backend
-- **FastAPI 0.115** - Modern Python web framework
-- **Python 3.9+** - Backend language
-- **markdown** - Markdown parser
-- **xhtml2pdf** - PDF generation engine
-- **reportlab** - PDF library
-
-### Deployment
-- **Vercel** - Full-stack hosting (frontend + serverless functions)
-
-## 🛠️ Installation
-
-### Prerequisites
-- Node.js 18+ and npm
-- Python 3.9+ and pip
-
-### Install Dependencies
-
-```bash
-# Frontend dependencies
-npm install
-
-# Backend dependencies
-pip install -r requirements.txt
-```
-
-### Development
-
-You need TWO terminal windows:
-
-**Terminal 1 - Backend:**
-```bash
-python -m uvicorn api.index:app --reload --port 8000
-```
-
-**Terminal 2 - Frontend:**
-```bash
-npm run dev
-```
-
-Then open: **http://localhost:5173**
-
-### Production Build
-
-```bash
-# Build frontend
-npm run build
-
-# Preview
-npm run preview
-```
-
-## 📦 Deployment to Vercel
-
-### Option 1: Using Vercel CLI
-
-```bash
-# Install Vercel CLI globally
-npm install -g vercel
-
-# Login to Vercel
-vercel login
-
-# Deploy
-vercel
-
-# Deploy to production
-vercel --prod
-```
-
-### Option 2: Using Vercel Dashboard
-
-1. Push your code to GitHub
-2. Go to [vercel.com](https://vercel.com)
-3. Click "New Project"
-4. Import your GitHub repository
-5. Vercel will auto-detect the Vite framework
-6. Click "Deploy"
-
-### Option 3: Using Git Integration
-
-```bash
-# Connect to Vercel (first time only)
-vercel
-
-# Subsequent deployments - just push to git
-git add .
-git commit -m "Update"
-git push
-```
-
-## 🎯 Usage
-
-1. **Write Markdown**: Type or paste your markdown content in the left editor panel
-2. **Preview**: See the rendered HTML in the right preview panel in real-time
-3. **Export**: Click the "Download PDF" button to generate and download your PDF
-
-## 📝 Supported Markdown Features
-
-- Headers (H1-H6)
-- Bold and italic text
-- Lists (ordered and unordered)
-- Code blocks and inline code
-- Blockquotes
-- Links
-- Images
-- Tables
-- Horizontal rules
-- And more!
-
-## 🏗️ Architecture
-
-This is a **full-stack application** with clear separation:
-
-```
-┌─────────────┐      ┌─────────────┐      ┌─────────────┐
-│   React     │      │   FastAPI   │      │     PDF     │
-│   + Vite    │ ───► │  + Python   │ ───► │   Output    │
-│  (UI Only)  │ HTTP │ (Business)  │      │  (File)     │
-└─────────────┘      └─────────────┘      └─────────────┘
-```
-
-- **Frontend**: Handles UI, editing, and preview
-- **Backend**: Handles markdown parsing and PDF generation
-- **API**: RESTful communication between frontend and backend
-
-For detailed architecture, see `ARCHITECTURE.md`
-
-## 🎨 Customization
-
-### Frontend Styling
-
-Edit `src/App.css` to customize colors, fonts, and layout:
-
-```css
-.app {
-  background: linear-gradient(135deg, #your-color 0%, #another-color 100%);
-}
-```
-
-### PDF Styling
-
-Edit `api/index.py` → `HTML_TEMPLATE` to customize PDF output:
-
-```python
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body { font-family: 'Your Font', sans-serif; }
-        h1 { color: #your-color; }
-    </style>
-</head>
-<body>{content}</body>
-</html>
-"""
-```
-
-### PDF Settings
-
-Modify PDF generation in `api/index.py` for different page sizes, margins, etc.
-
-## 🤝 Contributing
-
-Contributions are welcome! Feel free to submit issues and pull requests.
-
-## 📄 License
-
-MIT
-
-## 📚 Documentation
-
-- **ARCHITECTURE.md** - System design and data flow
-- **DEVELOPMENT.md** - Development guide and best practices
-- **DEPLOYMENT.md** - Deployment instructions
-- **QUICKSTART.md** - Quick start guide
-
-## 🧪 API Documentation
-
-When running locally, FastAPI provides interactive API docs:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-
-## 🔗 Links
-
-- [Live Demo](https://your-app.vercel.app) (Update after deployment)
-- [FastAPI Docs](https://fastapi.tiangolo.com/)
-- [React Docs](https://react.dev/)
-- [Vite Docs](https://vitejs.dev/)
+Generate tamper-proof participation certificates with shareable URLs. All certificate data lives inside the URL itself — signed with HMAC-SHA256, no database required.
 
 ---
 
-Built with ❤️ using React + Vite + FastAPI + Python
+## How It Works
+
+```
+1. POST /api/certificate        → Returns a signed token URL
+2. GET  /certificate/{token}    → Public viewer page (HTML)
+3. GET  /certificate/{token}/download → PDF with embedded QR
+4. GET  /certificate/{token}/verify   → JSON verification
+```
+
+The token encodes participant name, course, date, and instructor as a base64 payload with a full HMAC-SHA256 signature appended. Any tampering invalidates the signature, making certificates cryptographically verifiable without a database.
+
+### Architecture
+
+```
+┌─────────────────┐          ┌─────────────────────────────────┐
+│  React Frontend │  ──────► │  FastAPI Backend (Vercel)        │
+│  (Vite)         │  POST    │                                  │
+│                 │  ◄────── │  HMAC-SHA256 token engine        │
+│  - Form input   │  JSON    │  xhtml2pdf (PDF renderer)        │
+│  - Live preview │          │  python-qrcode (self-hosted QR)  │
+│  - Social share │          │  Rate limiter + API key auth     │
+└─────────────────┘          └─────────────────────────────────┘
+                                        │
+                              ┌─────────┴──────────┐
+                              ▼                    ▼
+                     Public Viewer Page      PDF Download
+                     (social meta tags,     (matching design,
+                      QR code, share)       embedded QR code)
+```
+
+### What makes this different
+
+- **Stateless** — No database, no Redis, no S3. Certificates live in the URL.
+- **Tamper-proof** — HMAC-SHA256 signature; any modification is detected.
+- **Privacy-first** — QR codes rendered server-side, no third-party calls.
+- **Serverless-native** — Runs on Vercel Functions with zero cold-start state.
+- **Viral loop** — Every certificate shared on LinkedIn links back to your platform.
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- Node.js 18+ and npm
+- Python 3.9+ and pip
+
+### Install
+
+```bash
+npm install
+pip install -r requirements.txt
+```
+
+### Run locally (two terminals)
+
+```bash
+# Terminal 1 — Backend
+python -m uvicorn api.index:app --reload --port 8000
+
+# Terminal 2 — Frontend
+npm run dev
+```
+
+Open **http://localhost:5173**
+
+### Run tests
+
+```bash
+# Start the backend first, then:
+python test_api.py
+```
+
+---
+
+## API Reference
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/` | Health check with version |
+| `GET` | `/api/health` | Service health |
+| `GET` | `/api/info` | API metadata |
+| `GET` | `/api/courses` | List available courses |
+| `POST` | `/api/convert` | Markdown → PDF conversion |
+| `POST` | `/api/certificate` | Create a signed certificate |
+| `GET` | `/certificate/{token}` | Public certificate viewer |
+| `GET` | `/certificate/{token}/download` | Download certificate PDF |
+| `GET` | `/certificate/{token}/verify` | Verify certificate authenticity |
+
+### Create a certificate
+
+```bash
+curl -X POST https://your-app.vercel.app/api/certificate \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-key" \
+  -d '{
+    "participant_name": "Jane Doe",
+    "course_name": "AI Code Reviewer Course",
+    "completion_date": "2026-04-15",
+    "instructor_name": "IntelliForge AI Team"
+  }'
+```
+
+Response:
+
+```json
+{
+  "certificate_id": "IF-A1B2C3D4E5F6",
+  "token": "eyJjIjoi...",
+  "url": "https://your-app.vercel.app/certificate/eyJjIjoi...",
+  "download_url": "https://your-app.vercel.app/certificate/eyJjIjoi.../download",
+  "participant_name": "Jane Doe",
+  "course_name": "AI Code Reviewer Course"
+}
+```
+
+---
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `CERT_SECRET_KEY` | **Yes** (prod) | HMAC-SHA256 signing secret. Must be set in production. |
+| `CERT_API_KEYS` | No | Comma-separated API keys for `POST /api/certificate`. If unset, auth is disabled. |
+
+---
+
+## Deployment (Vercel)
+
+```bash
+# Install Vercel CLI
+npm install -g vercel
+
+# Deploy
+vercel --prod
+```
+
+Set environment variables in Vercel project settings:
+
+```
+CERT_SECRET_KEY=<a-strong-random-secret>
+CERT_API_KEYS=key1,key2
+```
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 19, Vite 7, marked |
+| Backend | FastAPI, Python 3.9+ |
+| PDF | xhtml2pdf, ReportLab |
+| QR Codes | python-qrcode, Pillow |
+| Crypto | HMAC-SHA256 (stdlib) |
+| Hosting | Vercel (serverless) |
+
+---
+
+## License
+
+MIT

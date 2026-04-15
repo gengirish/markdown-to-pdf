@@ -2,7 +2,7 @@
 FastAPI backend for Markdown to PDF Converter
 Handles markdown parsing, PDF generation, and certificate creation.
 
-Certificates use stateless HMAC-signed tokens encoded in the URL itself,
+Certificates use stateless HMAC-SHA256 signed tokens encoded in the URL itself,
 so no database is needed and certificates are permanent and tamper-proof.
 """
 
@@ -15,14 +15,71 @@ from xhtml2pdf import pisa
 from io import BytesIO
 import logging
 import hashlib
-import hmac
+import hmac as hmac_mod
 import json
 import os
 import base64
+import time
+from collections import defaultdict
 from urllib.parse import quote, urlencode
+
+import qrcode
+from qrcode.image.pil import PilImage
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+DB_AVAILABLE = bool(os.environ.get("DATABASE_URL", ""))
+db = None
+if DB_AVAILABLE:
+    from api import db as _db_mod
+    db = _db_mod
+    try:
+        db.init_schema()
+        logger.info("Database connected and schema initialized")
+    except Exception as e:
+        logger.warning(f"Database initialization failed, running without DB: {e}")
+        DB_AVAILABLE = False
+        db = None
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+IS_PROD = os.environ.get("VERCEL_ENV") == "production" or os.environ.get("ENV") == "production"
+CERT_SECRET = os.environ.get("CERT_SECRET_KEY", "")
+if not CERT_SECRET:
+    if IS_PROD:
+        raise RuntimeError("CERT_SECRET_KEY environment variable is required in production")
+    CERT_SECRET = "intelliforge-dev-secret-local-only"
+    logger.warning("CERT_SECRET_KEY not set — using insecure dev default. Set it before deploying.")
+
+CERT_API_KEYS: set[str] = set()
+_raw_keys = os.environ.get("CERT_API_KEYS", "")
+if _raw_keys:
+    CERT_API_KEYS = {k.strip() for k in _raw_keys.split(",") if k.strip()}
+
+ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
+if not ADMIN_KEY and not IS_PROD:
+    ADMIN_KEY = "admin-dev-key"
+
+# ---------------------------------------------------------------------------
+# Rate limiter (in-memory, per-IP, resets on cold start)
+# ---------------------------------------------------------------------------
+_rate_buckets: dict[str, list[float]] = defaultdict(list)
+RATE_LIMIT = 10
+RATE_WINDOW = 60
+
+
+def _check_rate_limit(client_ip: str) -> bool:
+    """Return True if the request is within rate limits."""
+    now = time.time()
+    bucket = _rate_buckets[client_ip]
+    _rate_buckets[client_ip] = [t for t in bucket if now - t < RATE_WINDOW]
+    if len(_rate_buckets[client_ip]) >= RATE_LIMIT:
+        return False
+    _rate_buckets[client_ip].append(now)
+    return True
+
 
 app = FastAPI(
     title="IntelliForge Certificate & PDF API",
@@ -33,32 +90,31 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # ---------------------------------------------------------------------------
-# Stateless certificate tokens (HMAC-signed, no database required)
+# Stateless certificate tokens (HMAC-SHA256 signed, no database required)
 # ---------------------------------------------------------------------------
-CERT_SECRET = os.environ.get("CERT_SECRET_KEY", "intelliforge-dev-secret-change-in-prod")
 
 
 def _encode_cert(data: dict) -> str:
-    """Encode certificate data into a URL-safe token with HMAC signature."""
+    """Encode certificate data into a URL-safe token with full HMAC-SHA256 signature."""
     compact = json.dumps(data, separators=(",", ":"), sort_keys=True)
     payload = base64.urlsafe_b64encode(compact.encode()).decode().rstrip("=")
-    sig = hmac.new(CERT_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()[:16]
+    sig = hmac_mod.new(CERT_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
     return f"{payload}.{sig}"
 
 
 def _decode_cert(token: str) -> dict | None:
-    """Decode and verify a certificate token. Returns None if invalid."""
+    """Decode and verify a certificate token. Returns None if invalid/tampered."""
     if "." not in token:
         return None
     payload, sig = token.rsplit(".", 1)
-    expected = hmac.new(CERT_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()[:16]
-    if not hmac.compare_digest(sig, expected):
+    expected = hmac_mod.new(CERT_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    if not hmac_mod.compare_digest(sig, expected):
         return None
     try:
         padded = payload + "=" * (-len(payload) % 4)
@@ -72,6 +128,18 @@ def _cert_id(data: dict) -> str:
     """Generate a short deterministic certificate ID for display."""
     raw = f"{data['n']}-{data['c']}-{data['d']}"
     return "IF-" + hashlib.sha256(raw.encode()).hexdigest()[:12].upper()
+
+
+def _generate_qr_data_uri(url: str) -> str:
+    """Generate a QR code as a base64-encoded PNG data URI."""
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=4, border=2)
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white", image_factory=PilImage)
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    b64 = base64.b64encode(buf.getvalue()).decode()
+    return f"data:image/png;base64,{b64}"
 
 
 class MarkdownRequest(BaseModel):
@@ -230,11 +298,13 @@ async def root():
     """API health check endpoint"""
     return {
         "status": "ok",
-        "message": "Markdown to PDF API is running",
-        "version": "1.0.0",
+        "message": "IntelliForge Certificate & PDF API is running",
+        "version": "2.0.0",
         "endpoints": {
             "convert": "/api/convert",
-            "health": "/api/health"
+            "certificate": "/api/certificate",
+            "courses": "/api/courses",
+            "health": "/api/health",
         }
     }
 
@@ -244,8 +314,8 @@ async def health_check():
     """Health check endpoint"""
     return {
         "status": "healthy",
-        "service": "markdown-to-pdf",
-        "version": "1.0.0"
+        "service": "intelliforge-certificate-api",
+        "version": "2.0.0"
     }
 
 
@@ -315,27 +385,27 @@ async def convert_markdown_to_pdf(request: MarkdownRequest):
 async def get_info():
     """Get API information"""
     return {
-        "name": "Markdown to PDF API",
-        "version": "1.0.0",
-        "description": "Convert Markdown to professionally formatted PDF documents",
+        "name": "IntelliForge Certificate & PDF API",
+        "version": "2.0.0",
+        "description": "Verifiable certificate generation with shareable URLs and Markdown-to-PDF conversion",
         "features": [
-            "Markdown parsing with extensions",
-            "Beautiful PDF styling",
-            "Tables and code blocks support",
-            "Custom fonts and colors",
-            "A4 page format",
-            "Participation certificate generation"
+            "HMAC-SHA256 signed certificate tokens",
+            "Stateless verification (no database)",
+            "Public shareable certificate pages",
+            "PDF certificate generation with QR codes",
+            "LinkedIn and X social sharing",
+            "Markdown-to-PDF conversion",
         ],
         "tech_stack": {
             "framework": "FastAPI",
             "language": "Python",
-            "markdown_parser": "markdown",
-            "pdf_generator": "xhtml2pdf"
+            "pdf_generator": "xhtml2pdf",
+            "crypto": "HMAC-SHA256",
         }
     }
 
 
-COURSES = [
+COURSES_FALLBACK = [
     "AI Product Development Fundamentals",
     "Building AI-Powered Applications",
     "Prompt Engineering & LLM Integration",
@@ -347,10 +417,19 @@ COURSES = [
 ]
 
 
+def _get_course_names() -> list[str]:
+    if DB_AVAILABLE and db:
+        try:
+            return db.get_active_course_names()
+        except Exception as e:
+            logger.warning(f"DB course fetch failed, using fallback: {e}")
+    return COURSES_FALLBACK
+
+
 @app.get("/api/courses")
 async def get_courses():
     """Return the list of available IntelliForge Learning courses"""
-    return {"courses": COURSES}
+    return {"courses": _get_course_names()}
 
 
 CERTIFICATE_TEMPLATE = """
@@ -474,7 +553,7 @@ CERTIFICATE_TEMPLATE = """
             <table align="center">
             <tr>
                 <td style="padding-right: 12pt; vertical-align: middle;">
-                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=70x70&amp;data={qr_url}" width="70" height="70" />
+                    <img src="{qr_data_uri}" width="70" height="70" />
                 </td>
                 <td style="vertical-align: middle; text-align: left;">
                     <table><tr><td style="font-size: 9pt; font-weight: bold; color: #2d3748; padding-bottom: 2pt;">Scan to Verify</td></tr></table>
@@ -509,14 +588,14 @@ CERTIFICATE_TEMPLATE = """
 
 def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
     """Render certificate compact data into PDF bytes."""
-    qr_url = quote(verify_url, safe="") if verify_url else ""
+    qr_data_uri = _generate_qr_data_uri(verify_url) if verify_url else ""
     full_html = CERTIFICATE_TEMPLATE.format(
         participant_name=data["n"],
         course_name=data["c"],
         completion_date=data["d"],
         instructor_name=data["i"],
         certificate_id=_cert_id(data),
-        qr_url=qr_url,
+        qr_data_uri=qr_data_uri,
     )
     pdf_buffer = BytesIO()
     pisa_status = pisa.CreatePDF(src=full_html, dest=pdf_buffer, encoding="UTF-8")
@@ -530,7 +609,20 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
 async def generate_certificate(request: CertificateRequest, req: Request):
     """Generate a certificate and return shareable URL + PDF download URL."""
     try:
-        if request.course_name not in COURSES:
+        if CERT_API_KEYS:
+            api_key = req.headers.get("X-API-Key", "")
+            origin = req.headers.get("origin", "")
+            base = str(req.base_url).rstrip("/")
+            is_same_origin = origin and base.startswith(origin)
+            if not is_same_origin and api_key not in CERT_API_KEYS:
+                raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+        client_ip = req.client.host if req.client else "unknown"
+        if not _check_rate_limit(client_ip):
+            raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again later.")
+
+        valid_courses = _get_course_names()
+        if request.course_name not in valid_courses:
             raise HTTPException(status_code=400, detail=f"Unknown course: {request.course_name}")
         name = request.participant_name.strip()
         if not name:
@@ -543,6 +635,21 @@ async def generate_certificate(request: CertificateRequest, req: Request):
             "i": request.instructor_name,
         }
         token = _encode_cert(cert_data)
+        cert_id = _cert_id(cert_data)
+
+        if DB_AVAILABLE and db:
+            try:
+                db.store_certificate(
+                    certificate_id=cert_id,
+                    token=token,
+                    participant_name=name,
+                    course_name=request.course_name,
+                    completion_date=request.completion_date,
+                    instructor_name=request.instructor_name,
+                    client_ip=client_ip,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to store certificate in DB (cert still valid): {e}")
 
         base_url = str(req.base_url).rstrip("/")
         shareable_url = f"{base_url}/certificate/{token}"
@@ -550,7 +657,7 @@ async def generate_certificate(request: CertificateRequest, req: Request):
         logger.info(f"Certificate issued for {name} – {request.course_name}")
 
         return JSONResponse({
-            "certificate_id": _cert_id(cert_data),
+            "certificate_id": cert_id,
             "token": token,
             "url": shareable_url,
             "download_url": f"{shareable_url}/download",
@@ -680,7 +787,7 @@ VIEWER_HTML = """<!DOCTYPE html>
                 </div>
             </div>
             <div class="qr-section">
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&amp;data={qr_data}" alt="QR Code" width="80" height="80" />
+                <img src="{qr_data_uri}" alt="QR Code" width="80" height="80" />
                 <div class="qr-text"><strong>Scan to Verify</strong>This QR code links to this certificate's<br/>permanent verification page.</div>
             </div>
         </div>
@@ -731,7 +838,7 @@ async def view_certificate(token: str, req: Request):
         download_url=download_url,
         linkedin_url=linkedin_url,
         twitter_url=twitter_url,
-        qr_data=quote(page_url, safe=""),
+        qr_data_uri=_generate_qr_data_uri(page_url),
     )
     return HTMLResponse(content=html)
 
@@ -769,6 +876,90 @@ async def verify_certificate(token: str):
         "completion_date": data["d"],
         "instructor_name": data["i"],
     }
+
+
+# ---------------------------------------------------------------------------
+# Admin API (requires X-Admin-Key header)
+# ---------------------------------------------------------------------------
+
+def _require_admin(req: Request):
+    if not ADMIN_KEY:
+        raise HTTPException(status_code=503, detail="Admin access not configured")
+    key = req.headers.get("X-Admin-Key", "")
+    if not hmac_mod.compare_digest(key, ADMIN_KEY):
+        raise HTTPException(status_code=401, detail="Invalid admin key")
+
+
+def _require_db():
+    if not DB_AVAILABLE or not db:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+
+@app.get("/api/admin/stats")
+async def admin_stats(req: Request):
+    _require_admin(req)
+    _require_db()
+    return db.get_stats()
+
+
+@app.get("/api/admin/certificates")
+async def admin_list_certificates(
+    req: Request, limit: int = 50, offset: int = 0, course: str | None = None
+):
+    _require_admin(req)
+    _require_db()
+    return db.list_certificates(limit=limit, offset=offset, course=course)
+
+
+@app.post("/api/admin/certificates/{cert_db_id}/revoke")
+async def admin_revoke_certificate(cert_db_id: int, req: Request):
+    _require_admin(req)
+    _require_db()
+    result = db.revoke_certificate(cert_db_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Certificate not found or already revoked")
+    return result
+
+
+@app.get("/api/admin/courses")
+async def admin_list_courses(req: Request):
+    _require_admin(req)
+    _require_db()
+    return {"courses": db.get_courses(active_only=False)}
+
+
+class CourseCreateRequest(BaseModel):
+    name: str
+    description: str = ""
+
+
+@app.post("/api/admin/courses")
+async def admin_add_course(request: CourseCreateRequest, req: Request):
+    _require_admin(req)
+    _require_db()
+    name = request.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Course name is required")
+    try:
+        return db.add_course(name, request.description)
+    except Exception as e:
+        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+            raise HTTPException(status_code=409, detail=f"Course '{name}' already exists")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class CourseToggleRequest(BaseModel):
+    active: bool
+
+
+@app.patch("/api/admin/courses/{course_id}")
+async def admin_toggle_course(course_id: int, request: CourseToggleRequest, req: Request):
+    _require_admin(req)
+    _require_db()
+    result = db.toggle_course(course_id, request.active)
+    if not result:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return result
 
 
 # For local development
