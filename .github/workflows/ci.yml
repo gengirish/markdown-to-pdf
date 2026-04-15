@@ -1,0 +1,54 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-type-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install ruff
+      - run: ruff check api/ sdk/
+
+  test-api:
+    runs-on: ubuntu-latest
+    env:
+      CERT_SECRET_KEY: ci-test-secret-key-do-not-use-in-production
+      CERT_API_KEYS: test-api-key
+      ADMIN_KEY: test-admin-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - run: python -m uvicorn api.index:app --host 0.0.0.0 --port 8000 &
+      - run: sleep 5
+      - run: python test_api.py
+
+  test-sdk:
+    runs-on: ubuntu-latest
+    env:
+      CERT_SECRET_KEY: ci-test-secret-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - run: cd sdk && pip install -e .
+      - run: python -m uvicorn api.index:app --host 0.0.0.0 --port 8000 &
+      - run: sleep 5
+      - run: python sdk/test_sdk.py
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: npm ci
+      - run: npx vite build

@@ -20,8 +20,9 @@ import json
 import os
 import base64
 import time
+import math
 from collections import defaultdict
-from urllib.parse import quote, urlencode
+from urllib.parse import urlencode
 
 import uuid as uuid_mod
 import threading
@@ -85,15 +86,34 @@ RATE_LIMIT = 10
 RATE_WINDOW = 60
 
 
-def _check_rate_limit(client_ip: str) -> bool:
-    """Return True if the request is within rate limits."""
+def _check_rate_limit(client_ip: str) -> tuple[bool, dict[str, str]]:
+    """Return (allowed, rate-limit headers) for the client IP."""
     now = time.time()
     bucket = _rate_buckets[client_ip]
     _rate_buckets[client_ip] = [t for t in bucket if now - t < RATE_WINDOW]
-    if len(_rate_buckets[client_ip]) >= RATE_LIMIT:
-        return False
+    bucket = _rate_buckets[client_ip]
+
+    def _reset_seconds(ts_list: list[float]) -> int:
+        if not ts_list:
+            return int(RATE_WINDOW)
+        oldest = min(ts_list)
+        return max(1, int(math.ceil(RATE_WINDOW - (now - oldest))))
+
+    if len(bucket) >= RATE_LIMIT:
+        return False, {
+            "X-RateLimit-Limit": str(RATE_LIMIT),
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": str(_reset_seconds(bucket)),
+        }
+
     _rate_buckets[client_ip].append(now)
-    return True
+    nb = _rate_buckets[client_ip]
+    remaining = RATE_LIMIT - len(nb)
+    return True, {
+        "X-RateLimit-Limit": str(RATE_LIMIT),
+        "X-RateLimit-Remaining": str(max(0, remaining)),
+        "X-RateLimit-Reset": str(_reset_seconds(nb)),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +196,47 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+def _error_type(status_code: int) -> str:
+    mapping = {
+        400: "validation_error",
+        401: "authentication_error",
+        403: "forbidden",
+        404: "not_found",
+        409: "conflict",
+        422: "validation_error",
+        429: "rate_limit_exceeded",
+        500: "internal_error",
+        503: "service_unavailable",
+    }
+    if status_code in mapping:
+        return mapping[status_code]
+    if 400 <= status_code < 500:
+        return "client_error"
+    if 500 <= status_code < 600:
+        return "internal_error"
+    return "error"
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    detail = exc.detail
+    message = detail if isinstance(detail, str) else str(detail)
+    kwargs: dict = {
+        "status_code": exc.status_code,
+        "content": {
+            "error": {
+                "code": exc.status_code,
+                "message": message,
+                "type": _error_type(exc.status_code),
+            }
+        },
+    }
+    if exc.headers:
+        kwargs["headers"] = dict(exc.headers)
+    return JSONResponse(**kwargs)
+
+
 # ---------------------------------------------------------------------------
 # Stateless certificate tokens (HMAC-SHA256 signed, no database required)
 # ---------------------------------------------------------------------------
@@ -209,6 +270,26 @@ def _cert_id(data: dict) -> str:
     """Generate a short deterministic certificate ID for display."""
     raw = f"{data['n']}-{data['c']}-{data['d']}"
     return "IF-" + hashlib.sha256(raw.encode()).hexdigest()[:12].upper()
+
+
+def _certificate_is_revoked(token: str) -> bool:
+    """True if the token exists in the DB and is revoked. False if not revoked or not in DB."""
+    if not DB_AVAILABLE or not db:
+        return False
+    try:
+        with db.get_db() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT revoked FROM certificates WHERE token_hash = %s",
+                (db.token_hash(token),),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return False
+            return bool(row["revoked"])
+    except Exception as e:
+        logger.warning(f"Revocation check failed: {e}")
+        return False
 
 
 def _generate_qr_data_uri(url: str) -> str:
@@ -446,7 +527,11 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "intelliforge-certificate-api",
-        "version": "2.0.0"
+        "version": "2.0.0",
+        "dependencies": {
+            "database": "connected" if DB_AVAILABLE else "not_configured",
+            "email": "configured" if _agentmail_client else "not_configured",
+        },
     }
 
 
@@ -877,8 +962,13 @@ async def generate_certificate(request: CertificateRequest, req: Request):
                 raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
         client_ip = req.client.host if req.client else "unknown"
-        if not _check_rate_limit(client_ip):
-            raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again later.")
+        allowed, rate_headers = _check_rate_limit(client_ip)
+        if not allowed:
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded. Try again later.",
+                headers=rate_headers,
+            )
 
         valid_courses = _get_course_names()
         if request.course_name not in valid_courses:
@@ -951,7 +1041,7 @@ async def generate_certificate(request: CertificateRequest, req: Request):
                 "data": response_data,
             })
 
-        return JSONResponse(response_data)
+        return JSONResponse(response_data, headers=rate_headers)
 
     except HTTPException:
         raise
@@ -1128,7 +1218,6 @@ async def view_certificate(token: str, req: Request):
     page_url = f"{base_url}/certificate/{token}"
     download_url = f"{page_url}/download"
 
-    cert_title = f"{data['n']} – Certificate for {data['c']}"
     cert_desc = f"I completed {data['c']} at IntelliForge Learning!"
 
     linkedin_params = urlencode({"url": page_url})
@@ -1179,6 +1268,10 @@ async def verify_certificate(token: str):
     data = _decode_cert(token)
     if data is None:
         return JSONResponse({"valid": False, "message": "Invalid or tampered certificate"}, status_code=400)
+    if _certificate_is_revoked(token):
+        return JSONResponse(
+            {"valid": False, "revoked": True, "message": "Certificate has been revoked"},
+        )
     return {
         "valid": True,
         "certificate_id": _cert_id(data),
@@ -1207,6 +1300,15 @@ async def batch_verify_certificates(request: BatchVerifyRequest):
         data = _decode_cert(token)
         if data is None:
             results.append({"token": token[:20] + "...", "valid": False})
+        elif _certificate_is_revoked(token):
+            results.append(
+                {
+                    "token": token[:20] + "...",
+                    "valid": False,
+                    "revoked": True,
+                    "message": "Certificate has been revoked",
+                }
+            )
         else:
             results.append({
                 "token": token[:20] + "...",

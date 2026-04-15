@@ -7,7 +7,7 @@ import os
 import logging
 import hashlib
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime
 
 import psycopg2
 import psycopg2.extras
