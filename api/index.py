@@ -361,20 +361,17 @@ CERTIFICATE_TEMPLATE = """
     <style>
         @page {{
             size: 842pt 595pt;
-            margin: 18pt 24pt;
+            margin: 0;
         }}
-
         body {{
             font-family: Helvetica, Arial, sans-serif;
-            color: #1a1a3e;
+            color: #2d3748;
             margin: 0;
             padding: 0;
         }}
-
         table {{
             border-collapse: collapse;
         }}
-
         td {{
             padding: 0;
         }}
@@ -382,166 +379,144 @@ CERTIFICATE_TEMPLATE = """
 </head>
 <body>
 
-    <!-- Outer gold border -->
-    <table width="100%" style="border: 3px solid #b8960c;">
-    <tr><td style="padding: 4pt;">
+<!-- Full-page outer wrapper with dark background -->
+<table width="100%" height="100%" style="background-color: #0f0f23;">
+<tr><td style="padding: 24pt 32pt;">
 
-    <!-- Navy inner border -->
-    <table width="100%" style="border: 2px solid #1a1a6e;">
-    <tr><td style="padding: 4pt;">
+<!-- Card with white background and rounded appearance -->
+<table width="100%" style="background-color: #ffffff;">
+<tr><td>
 
-    <!-- Gold accent border -->
-    <table width="100%" style="border: 1px solid #d4af37;">
-    <tr><td style="padding: 16pt 36pt; text-align: center; background-color: #fffdf5;">
-
-        <!-- Watermark pattern row -->
-        <table width="100%"><tr><td style="text-align: center; font-size: 7pt; color: #f0e6c8;">
-            &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670;
-        </td></tr></table>
-
-        <!-- Top ornament -->
-        <table width="100%"><tr><td style="text-align: center; font-size: 14pt; color: #d4af37; padding: 2pt 0;">
-            &#10022; &nbsp; &#10022; &nbsp; &#10022;
-        </td></tr></table>
-
-        <!-- Organization -->
-        <table width="100%"><tr><td style="text-align: center; font-size: 8pt; color: #b8960c;">
+    <!-- ═══════════════ HEADER ═══════════════ -->
+    <table width="100%" style="background-color: #15155e;">
+    <tr><td style="padding: 28pt 40pt 24pt; text-align: center;">
+        <table width="100%"><tr><td style="text-align: center; font-size: 7pt; letter-spacing: 4pt; color: #d4af37; font-weight: bold;">
             AN INTELLIFORGE AI INITIATIVE
         </td></tr></table>
-
-        <table width="100%"><tr><td style="text-align: center; font-size: 18pt; font-weight: bold; color: #1a1a6e; padding-top: 2pt;">
+        <table width="100%"><tr><td style="text-align: center; font-size: 22pt; font-weight: bold; color: #ffffff; padding: 6pt 0 8pt;">
             IntelliForge Learning
         </td></tr></table>
+        <table width="100%"><tr><td style="text-align: center;">
+            <table align="center" style="border: 1px solid #8b7d3c;">
+            <tr><td style="padding: 4pt 18pt; font-size: 7pt; letter-spacing: 3pt; color: #d4af37; font-weight: bold; text-align: center;">
+                CERTIFICATE OF PARTICIPATION
+            </td></tr>
+            </table>
+        </td></tr></table>
+    </td></tr>
+    </table>
 
-        <!-- Gold divider -->
-        <table width="100%"><tr><td style="text-align: center; padding: 6pt 0;">
-            <table width="200pt" align="center"><tr>
-                <td width="40%" style="border-top: 1px solid #d4af37; font-size: 1pt;">&nbsp;</td>
-                <td width="20%" style="text-align: center; font-size: 8pt; color: #d4af37;">&#9733;</td>
-                <td width="40%" style="border-top: 1px solid #d4af37; font-size: 1pt;">&nbsp;</td>
-            </tr></table>
+    <!-- ═══════════════ BODY ═══════════════ -->
+    <table width="100%">
+    <tr><td style="padding: 28pt 50pt 20pt; text-align: center;">
+
+        <!-- Verified badge -->
+        <table width="100%"><tr><td style="text-align: center; padding-bottom: 18pt;">
+            <table align="center" style="border: 1px solid #68d391;">
+            <tr><td style="padding: 4pt 14pt; font-size: 8pt; color: #276749; font-weight: bold; background-color: #f0fff4; text-align: center;">
+                &#10003; &nbsp; Verified &amp; Authentic
+            </td></tr>
+            </table>
         </td></tr></table>
 
-        <!-- Certificate title -->
-        <table width="100%"><tr><td style="text-align: center; font-size: 34pt; font-weight: bold; color: #1a1a6e;">
-            CERTIFICATE
+        <!-- Award label -->
+        <table width="100%"><tr><td style="text-align: center; font-size: 8pt; letter-spacing: 3pt; color: #a0aec0; padding-bottom: 6pt;">
+            THIS CERTIFICATE IS AWARDED TO
         </td></tr></table>
 
-        <table width="100%"><tr><td style="text-align: center; font-size: 13pt; color: #8b7d3c; padding-top: 2pt;">
-            of Participation
-        </td></tr></table>
-
-        <!-- Spacer -->
-        <table width="100%"><tr><td style="font-size: 12pt;">&nbsp;</td></tr></table>
-
-        <!-- Presented to -->
-        <table width="100%"><tr><td style="text-align: center; font-size: 9pt; color: #8b8b8b;">
-            THIS IS PROUDLY PRESENTED TO
-        </td></tr></table>
-
-        <!-- Spacer -->
-        <table width="100%"><tr><td style="font-size: 6pt;">&nbsp;</td></tr></table>
-
-        <!-- Participant name with gold underline -->
-        <table width="80%" align="center"><tr><td style="text-align: center; font-size: 28pt; font-weight: bold; color: #1a1a3e; border-bottom: 2px solid #d4af37; padding-bottom: 4pt;">
+        <!-- Participant name -->
+        <table width="100%"><tr><td style="text-align: center; font-size: 32pt; font-weight: bold; color: #1a202c; padding: 4pt 0 2pt;">
             {participant_name}
         </td></tr></table>
 
-        <!-- Spacer -->
-        <table width="100%"><tr><td style="font-size: 8pt;">&nbsp;</td></tr></table>
-
-        <!-- Description -->
-        <table width="100%"><tr><td style="text-align: center; font-size: 10pt; color: #4a4a6a;">
-            for successfully completing the training program
-        </td></tr></table>
-
-        <table width="100%"><tr><td style="text-align: center; font-size: 14pt; font-weight: bold; color: #1a1a6e; padding: 4pt 0;">
-            {course_name}
-        </td></tr></table>
-
-        <table width="100%"><tr><td style="text-align: center; font-size: 10pt; color: #4a4a6a;">
-            conducted by IntelliForge Learning
-        </td></tr></table>
+        <!-- Gold divider -->
+        <table width="60%" align="center"><tr>
+            <td style="border-top: 2px solid #d4af37; font-size: 1pt;">&nbsp;</td>
+        </tr></table>
 
         <!-- Spacer -->
         <table width="100%"><tr><td style="font-size: 10pt;">&nbsp;</td></tr></table>
 
-        <!-- Details row with gold accents -->
-        <table width="85%" align="center">
+        <!-- Course name -->
+        <table width="100%"><tr><td style="text-align: center; font-size: 15pt; font-weight: bold; color: #553c9a; padding-bottom: 20pt;">
+            {course_name}
+        </td></tr></table>
+
+        <!-- Metadata row -->
+        <table width="85%" align="center" style="border-top: 1px solid #edf2f7; border-bottom: 1px solid #edf2f7;">
             <tr>
-                <td width="30%" style="text-align: center; padding: 0 8pt;">
+                <td width="33%" style="text-align: center; padding: 12pt 8pt;">
                     <table width="100%">
-                        <tr><td style="text-align: center; font-size: 10pt; color: #1a1a3e; padding-bottom: 3pt;">{completion_date}</td></tr>
-                        <tr><td style="border-top: 1px solid #d4af37; text-align: center; font-size: 7pt; color: #8b8b8b; padding-top: 3pt;">DATE</td></tr>
+                        <tr><td style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{completion_date}</td></tr>
+                        <tr><td style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">DATE</td></tr>
                     </table>
                 </td>
-                <td width="40%" style="text-align: center; padding: 0 8pt;">
+                <td width="34%" style="text-align: center; padding: 12pt 8pt; border-left: 1px solid #edf2f7; border-right: 1px solid #edf2f7;">
                     <table width="100%">
-                        <tr><td style="text-align: center; font-size: 10pt; color: #1a1a3e; padding-bottom: 3pt;">{instructor_name}</td></tr>
-                        <tr><td style="border-top: 1px solid #d4af37; text-align: center; font-size: 7pt; color: #8b8b8b; padding-top: 3pt;">INSTRUCTOR</td></tr>
+                        <tr><td style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{instructor_name}</td></tr>
+                        <tr><td style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">INSTRUCTOR</td></tr>
                     </table>
                 </td>
-                <td width="30%" style="text-align: center; padding: 0 8pt;">
+                <td width="33%" style="text-align: center; padding: 12pt 8pt;">
                     <table width="100%">
-                        <tr><td style="text-align: center; font-size: 10pt; color: #1a1a3e; padding-bottom: 3pt;">learning.intelliforge.tech</td></tr>
-                        <tr><td style="border-top: 1px solid #d4af37; text-align: center; font-size: 7pt; color: #8b8b8b; padding-top: 3pt;">VERIFY AT</td></tr>
+                        <tr><td style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{certificate_id}</td></tr>
+                        <tr><td style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">CERTIFICATE ID</td></tr>
                     </table>
                 </td>
             </tr>
         </table>
 
         <!-- Spacer -->
-        <table width="100%"><tr><td style="font-size: 6pt;">&nbsp;</td></tr></table>
+        <table width="100%"><tr><td style="font-size: 14pt;">&nbsp;</td></tr></table>
 
-        <!-- Seal -->
+        <!-- QR code + verify section -->
         <table width="100%"><tr><td style="text-align: center;">
-            <table width="70pt" align="center" style="border: 2px solid #d4af37;">
-            <tr><td style="text-align: center; padding: 6pt 4pt; background-color: #1a1a6e;">
-                <table width="100%"><tr><td style="text-align: center; font-size: 7pt; color: #d4af37; font-weight: bold;">VERIFIED</td></tr></table>
-                <table width="100%"><tr><td style="text-align: center; font-size: 5pt; color: #d4af37;">&#9733;</td></tr></table>
-                <table width="100%"><tr><td style="text-align: center; font-size: 5pt; color: #d4af37;">IF</td></tr></table>
-            </td></tr>
+            <table align="center">
+            <tr>
+                <td style="padding-right: 12pt; vertical-align: middle;">
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=70x70&amp;data={qr_url}" width="70" height="70" />
+                </td>
+                <td style="vertical-align: middle; text-align: left;">
+                    <table><tr><td style="font-size: 9pt; font-weight: bold; color: #2d3748; padding-bottom: 2pt;">Scan to Verify</td></tr></table>
+                    <table><tr><td style="font-size: 7pt; color: #a0aec0; line-height: 1.5;">This QR code links to this certificate's<br/>permanent verification page.</td></tr></table>
+                </td>
+            </tr>
             </table>
         </td></tr></table>
 
-        <!-- Spacer -->
-        <table width="100%"><tr><td style="font-size: 4pt;">&nbsp;</td></tr></table>
-
-        <!-- Certificate ID -->
-        <table width="100%"><tr><td style="text-align: center; font-size: 7pt; color: #b8b8b8;">
-            Certificate ID: {certificate_id}
-        </td></tr></table>
-
-        <!-- Bottom ornament -->
-        <table width="100%"><tr><td style="text-align: center; font-size: 7pt; color: #f0e6c8; padding-top: 4pt;">
-            &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670; &nbsp; &#9670;
-        </td></tr></table>
-
     </td></tr>
     </table>
-    <!-- End gold accent border -->
 
+    <!-- ═══════════════ FOOTER ═══════════════ -->
+    <table width="100%" style="background-color: #f8fafc; border-top: 1px solid #edf2f7;">
+    <tr><td style="padding: 10pt 40pt; text-align: center; font-size: 7pt; color: #a0aec0;">
+        Issued by IntelliForge Learning &nbsp;&middot;&nbsp; learning.intelliforge.tech &nbsp;&middot;&nbsp; support@intelliforge.tech
     </td></tr>
     </table>
-    <!-- End navy border -->
 
-    </td></tr>
-    </table>
-    <!-- End outer gold border -->
+</td></tr>
+</table>
+<!-- End card -->
+
+</td></tr>
+</table>
+<!-- End outer wrapper -->
 
 </body>
 </html>
 """
 
 
-def _build_cert_pdf(data: dict) -> bytes:
+def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
     """Render certificate compact data into PDF bytes."""
+    qr_url = quote(verify_url, safe="") if verify_url else ""
     full_html = CERTIFICATE_TEMPLATE.format(
         participant_name=data["n"],
         course_name=data["c"],
         completion_date=data["d"],
         instructor_name=data["i"],
         certificate_id=_cert_id(data),
+        qr_url=qr_url,
     )
     pdf_buffer = BytesIO()
     pisa_status = pisa.CreatePDF(src=full_html, dest=pdf_buffer, encoding="UTF-8")
@@ -762,10 +737,12 @@ async def view_certificate(token: str, req: Request):
 
 
 @app.get("/certificate/{token}/download")
-async def download_certificate(token: str):
+async def download_certificate(token: str, req: Request):
     """Download the certificate as a PDF."""
     data = _resolve_cert(token)
-    pdf_bytes = _build_cert_pdf(data)
+    base_url = str(req.base_url).rstrip("/")
+    verify_url = f"{base_url}/certificate/{token}"
+    pdf_bytes = _build_cert_pdf(data, verify_url=verify_url)
     safe_name = data["n"].replace(" ", "_")
 
     return Response(
