@@ -9,3 +9,4 @@ qrcode==8.0
 Pillow==11.1.0
 psycopg2-binary==2.9.10
 agentmail==0.4.15
+httpx>=0.21.2

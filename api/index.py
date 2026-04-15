@@ -23,8 +23,12 @@ import time
 from collections import defaultdict
 from urllib.parse import quote, urlencode
 
+import uuid as uuid_mod
+import threading
+
 import qrcode
 from qrcode.image.pil import PilImage
+import httpx
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -92,10 +96,76 @@ def _check_rate_limit(client_ip: str) -> bool:
     return True
 
 
+# ---------------------------------------------------------------------------
+# Idempotency cache (in-memory, TTL 1 hour, resets on cold start)
+# ---------------------------------------------------------------------------
+_idempotency_cache: dict[str, dict] = {}
+_IDEMPOTENCY_TTL = 3600
+
+
+def _check_idempotency(key: str) -> dict | None:
+    """Return cached response if key exists and hasn't expired."""
+    entry = _idempotency_cache.get(key)
+    if entry and time.time() - entry["ts"] < _IDEMPOTENCY_TTL:
+        return entry["response"]
+    return None
+
+
+def _store_idempotency(key: str, response: dict):
+    _idempotency_cache[key] = {"response": response, "ts": time.time()}
+    if len(_idempotency_cache) > 10000:
+        cutoff = time.time() - _IDEMPOTENCY_TTL
+        expired = [k for k, v in _idempotency_cache.items() if v["ts"] < cutoff]
+        for k in expired:
+            _idempotency_cache.pop(k, None)
+
+
+# ---------------------------------------------------------------------------
+# Webhook / callback helper
+# ---------------------------------------------------------------------------
+def _fire_webhook(callback_url: str, payload: dict):
+    """POST payload to callback_url in a background thread. Best-effort."""
+    def _do():
+        try:
+            with httpx.Client(timeout=10) as client:
+                client.post(callback_url, json=payload)
+            logger.info(f"Webhook delivered to {callback_url}")
+        except Exception as e:
+            logger.warning(f"Webhook delivery failed to {callback_url}: {e}")
+    threading.Thread(target=_do, daemon=True).start()
+
+
+API_TAGS = [
+    {"name": "Certificates", "description": "Create, view, download, and verify tamper-proof certificates"},
+    {"name": "Verification", "description": "Verify certificate authenticity (single and batch)"},
+    {"name": "Courses", "description": "List available courses"},
+    {"name": "Admin", "description": "Admin endpoints for certificate and course management (requires X-Admin-Key)"},
+    {"name": "Conversion", "description": "Markdown to PDF conversion"},
+    {"name": "System", "description": "Health checks and API metadata"},
+]
+
 app = FastAPI(
-    title="IntelliForge Certificate & PDF API",
-    description="Certificate generation with shareable URLs and Markdown-to-PDF conversion",
+    title="IntelliForge Certificate API",
+    description=(
+        "**API-first verifiable credentials with zero vendor lock-in.**\n\n"
+        "Generate tamper-proof participation certificates with shareable URLs. "
+        "All certificate data is encoded in the URL itself — signed with HMAC-SHA256, "
+        "cryptographically verifiable without a database.\n\n"
+        "## Authentication\n"
+        "- **Certificate creation:** `X-API-Key` header (if `CERT_API_KEYS` is configured)\n"
+        "- **Admin endpoints:** `X-Admin-Key` header\n"
+        "- **Public endpoints:** No auth required (view, download, verify)\n\n"
+        "## Agent / Automation Integration\n"
+        "- OpenAPI spec: `GET /openapi.json`\n"
+        "- Agent discovery: `GET /llms.txt`\n"
+        "- Webhook callbacks: pass `callback_url` to receive async notifications\n"
+        "- Idempotency: pass `idempotency_key` to prevent duplicate certificates\n"
+        "- Batch verification: `POST /api/certificates/verify`\n"
+    ),
     version="2.0.0",
+    openapi_tags=API_TAGS,
+    docs_url="/docs",
+    redoc_url="/redoc",
 )
 
 app.add_middleware(
@@ -211,6 +281,8 @@ class CertificateRequest(BaseModel):
     completion_date: str
     instructor_name: str = "IntelliForge AI Team"
     participant_email: str = ""
+    callback_url: str = ""
+    idempotency_key: str = ""
 
 
 # HTML template with styling
@@ -352,9 +424,9 @@ HTML_TEMPLATE = """
 """
 
 
-@app.get("/")
+@app.get("/", tags=["System"])
 async def root():
-    """API health check endpoint"""
+    """API root with version and available endpoints."""
     return {
         "status": "ok",
         "message": "IntelliForge Certificate & PDF API is running",
@@ -368,9 +440,9 @@ async def root():
     }
 
 
-@app.get("/api/health")
+@app.get("/api/health", tags=["System"])
 async def health_check():
-    """Health check endpoint"""
+    """Health check. Returns 200 if the service is running."""
     return {
         "status": "healthy",
         "service": "intelliforge-certificate-api",
@@ -378,7 +450,7 @@ async def health_check():
     }
 
 
-@app.post("/api/convert")
+@app.post("/api/convert", tags=["Conversion"])
 async def convert_markdown_to_pdf(request: MarkdownRequest):
     """
     Convert markdown to PDF
@@ -440,9 +512,9 @@ async def convert_markdown_to_pdf(request: MarkdownRequest):
         )
 
 
-@app.get("/api/info")
+@app.get("/api/info", tags=["System"])
 async def get_info():
-    """Get API information"""
+    """API metadata including version, features, and tech stack."""
     return {
         "name": "IntelliForge Certificate & PDF API",
         "version": "2.0.0",
@@ -485,9 +557,9 @@ def _get_course_names() -> list[str]:
     return COURSES_FALLBACK
 
 
-@app.get("/api/courses")
+@app.get("/api/courses", tags=["Courses"])
 async def get_courses():
-    """Return the list of available IntelliForge Learning courses"""
+    """List all active courses available for certificate generation."""
     return {"courses": _get_course_names()}
 
 
@@ -777,10 +849,25 @@ def _send_certificate_email(
         logger.warning(f"Failed to send certificate email to {to_email}: {e}")
 
 
-@app.post("/api/certificate")
+@app.post("/api/certificate", tags=["Certificates"])
 async def generate_certificate(request: CertificateRequest, req: Request):
-    """Generate a certificate and return shareable URL + PDF download URL."""
+    """
+    Generate a signed certificate and return shareable URL + PDF download URL.
+
+    **Idempotency:** Pass `idempotency_key` to safely retry without creating duplicates.
+    The cached result is returned for 1 hour.
+
+    **Webhook:** Pass `callback_url` to receive an async POST with the certificate data
+    after creation. Useful for automation pipelines.
+
+    **Email:** Pass `participant_email` to automatically email the certificate to the participant.
+    """
     try:
+        if request.idempotency_key:
+            cached = _check_idempotency(request.idempotency_key)
+            if cached:
+                return JSONResponse(cached)
+
         if CERT_API_KEYS:
             api_key = req.headers.get("X-API-Key", "")
             origin = req.headers.get("origin", "")
@@ -844,7 +931,7 @@ async def generate_certificate(request: CertificateRequest, req: Request):
 
         logger.info(f"Certificate issued for {name} – {request.course_name}")
 
-        return JSONResponse({
+        response_data = {
             "certificate_id": cert_id,
             "token": token,
             "url": shareable_url,
@@ -852,7 +939,19 @@ async def generate_certificate(request: CertificateRequest, req: Request):
             "participant_name": name,
             "course_name": request.course_name,
             "email_sent": bool(participant_email and _agentmail_client),
-        })
+            "request_id": str(uuid_mod.uuid4()),
+        }
+
+        if request.idempotency_key:
+            _store_idempotency(request.idempotency_key, response_data)
+
+        if request.callback_url:
+            _fire_webhook(request.callback_url, {
+                "event": "certificate.created",
+                "data": response_data,
+            })
+
+        return JSONResponse(response_data)
 
     except HTTPException:
         raise
@@ -1020,7 +1119,7 @@ def _resolve_cert(token: str):
     return data
 
 
-@app.get("/certificate/{token}")
+@app.get("/certificate/{token}", tags=["Certificates"], include_in_schema=False)
 async def view_certificate(token: str, req: Request):
     """Public certificate viewer – serves a styled HTML page."""
     data = _resolve_cert(token)
@@ -1055,9 +1154,9 @@ async def view_certificate(token: str, req: Request):
     return HTMLResponse(content=html)
 
 
-@app.get("/certificate/{token}/download")
+@app.get("/certificate/{token}/download", tags=["Certificates"])
 async def download_certificate(token: str, req: Request):
-    """Download the certificate as a PDF."""
+    """Download a certificate as a PDF file."""
     data = _resolve_cert(token)
     base_url = str(req.base_url).rstrip("/")
     verify_url = f"{base_url}/certificate/{token}"
@@ -1074,9 +1173,9 @@ async def download_certificate(token: str, req: Request):
     )
 
 
-@app.get("/certificate/{token}/verify")
+@app.get("/certificate/{token}/verify", tags=["Verification"])
 async def verify_certificate(token: str):
-    """API endpoint to verify a certificate's authenticity."""
+    """Verify a single certificate's authenticity by its token. Returns the decoded certificate data if valid."""
     data = _decode_cert(token)
     if data is None:
         return JSONResponse({"valid": False, "message": "Invalid or tampered certificate"}, status_code=400)
@@ -1088,6 +1187,135 @@ async def verify_certificate(token: str):
         "completion_date": data["d"],
         "instructor_name": data["i"],
     }
+
+
+class BatchVerifyRequest(BaseModel):
+    tokens: list[str]
+
+
+@app.post("/api/certificates/verify", tags=["Verification"])
+async def batch_verify_certificates(request: BatchVerifyRequest):
+    """
+    Verify multiple certificates in a single request.
+    Accepts up to 100 tokens. Returns verification result for each.
+    """
+    if len(request.tokens) > 100:
+        raise HTTPException(status_code=400, detail="Maximum 100 tokens per batch")
+
+    results = []
+    for token in request.tokens:
+        data = _decode_cert(token)
+        if data is None:
+            results.append({"token": token[:20] + "...", "valid": False})
+        else:
+            results.append({
+                "token": token[:20] + "...",
+                "valid": True,
+                "certificate_id": _cert_id(data),
+                "participant_name": data["n"],
+                "course_name": data["c"],
+                "completion_date": data["d"],
+                "instructor_name": data["i"],
+            })
+    valid_count = sum(1 for r in results if r["valid"])
+    return {"total": len(request.tokens), "valid": valid_count, "invalid": len(request.tokens) - valid_count, "results": results}
+
+
+# ---------------------------------------------------------------------------
+# Agent / LLM discovery
+# ---------------------------------------------------------------------------
+LLMS_TXT = """# IntelliForge Certificate API
+
+> API-first verifiable credentials. Generate tamper-proof certificates with shareable URLs.
+
+## Base URL
+https://md2pdf.intelliforge.tech
+
+## Authentication
+- Certificate creation: `X-API-Key: <key>` header
+- Admin endpoints: `X-Admin-Key: <key>` header
+- Public endpoints (view, download, verify): No auth required
+
+## Endpoints
+
+### Create Certificate
+POST /api/certificate
+Content-Type: application/json
+X-API-Key: <key>
+
+{
+  "participant_name": "Jane Doe",
+  "course_name": "AI Product Development Fundamentals",
+  "completion_date": "2026-04-15",
+  "instructor_name": "IntelliForge AI Team",
+  "participant_email": "jane@example.com",
+  "callback_url": "https://your-server.com/webhook",
+  "idempotency_key": "unique-request-id"
+}
+
+Response: { certificate_id, token, url, download_url, email_sent, request_id }
+
+### List Courses
+GET /api/courses
+Response: { courses: ["Course 1", "Course 2", ...] }
+
+### Verify Certificate
+GET /certificate/{token}/verify
+Response: { valid: true, certificate_id, participant_name, course_name, ... }
+
+### Batch Verify
+POST /api/certificates/verify
+{ "tokens": ["token1", "token2"] }
+Response: { total, valid, invalid, results: [...] }
+
+### Download PDF
+GET /certificate/{token}/download
+Response: application/pdf
+
+### Bulk Generate (Admin)
+POST /api/admin/certificates/bulk
+X-Admin-Key: <key>
+{ "entries": [{ participant_name, course_name, completion_date, participant_email }, ...] }
+
+### OpenAPI Spec
+GET /openapi.json
+
+## Key Features
+- Stateless HMAC-SHA256 signed tokens — no database needed for verification
+- Idempotency keys to prevent duplicates
+- Webhook callbacks for async automation
+- Email delivery via AgentMail
+- Bulk generation (up to 500 per batch)
+- Batch verification (up to 100 per request)
+"""
+
+
+@app.get("/llms.txt", tags=["System"], include_in_schema=False)
+async def llms_txt():
+    """Agent/LLM discovery document describing available API capabilities."""
+    return Response(content=LLMS_TXT, media_type="text/plain")
+
+
+@app.get("/.well-known/ai-plugin.json", tags=["System"], include_in_schema=False)
+async def ai_plugin():
+    """OpenAI-compatible plugin manifest for agent discovery."""
+    return JSONResponse({
+        "schema_version": "v1",
+        "name_for_human": "IntelliForge Certificates",
+        "name_for_model": "intelliforge_certificates",
+        "description_for_human": "Generate and verify tamper-proof participation certificates with shareable URLs.",
+        "description_for_model": (
+            "API for generating HMAC-signed verifiable certificates. "
+            "Use POST /api/certificate to create, GET /certificate/{token}/verify to verify, "
+            "POST /api/certificates/verify for batch verification. "
+            "Supports idempotency_key, callback_url webhooks, and email delivery."
+        ),
+        "auth": {"type": "service_http", "authorization_type": "bearer", "verification_tokens": {}},
+        "api": {"type": "openapi", "url": "https://md2pdf.intelliforge.tech/openapi.json"},
+        "logo_url": "https://www.intelliforge.tech/favicon.ico",
+        "contact_email": "support@intelliforge.tech",
+        "legal_info_url": "https://www.intelliforge.tech/",
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -1107,14 +1335,15 @@ def _require_db():
         raise HTTPException(status_code=503, detail="Database not available")
 
 
-@app.get("/api/admin/stats")
+@app.get("/api/admin/stats", tags=["Admin"])
 async def admin_stats(req: Request):
+    """Get certificate analytics: total, weekly, revoked counts and per-course breakdown."""
     _require_admin(req)
     _require_db()
     return db.get_stats()
 
 
-@app.get("/api/admin/certificates")
+@app.get("/api/admin/certificates", tags=["Admin"])
 async def admin_list_certificates(
     req: Request, limit: int = 50, offset: int = 0, course: str | None = None
 ):
@@ -1123,7 +1352,7 @@ async def admin_list_certificates(
     return db.list_certificates(limit=limit, offset=offset, course=course)
 
 
-@app.post("/api/admin/certificates/{cert_db_id}/revoke")
+@app.post("/api/admin/certificates/{cert_db_id}/revoke", tags=["Admin"])
 async def admin_revoke_certificate(cert_db_id: int, req: Request):
     _require_admin(req)
     _require_db()
@@ -1145,9 +1374,9 @@ class BulkCertificateRequest(BaseModel):
     entries: list[BulkCertificateEntry]
 
 
-@app.post("/api/admin/certificates/bulk")
+@app.post("/api/admin/certificates/bulk", tags=["Admin"])
 async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
-    """Generate certificates in bulk. Returns per-entry results with success/error status."""
+    """Generate up to 500 certificates in a single request. Each entry is validated independently."""
     _require_admin(req)
     _require_db()
 
@@ -1225,7 +1454,7 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
     return {"total": len(request.entries), "succeeded": succeeded, "failed": failed, "results": results}
 
 
-@app.get("/api/admin/courses")
+@app.get("/api/admin/courses", tags=["Admin"])
 async def admin_list_courses(req: Request):
     _require_admin(req)
     _require_db()
@@ -1237,7 +1466,7 @@ class CourseCreateRequest(BaseModel):
     description: str = ""
 
 
-@app.post("/api/admin/courses")
+@app.post("/api/admin/courses", tags=["Admin"])
 async def admin_add_course(request: CourseCreateRequest, req: Request):
     _require_admin(req)
     _require_db()
@@ -1256,7 +1485,7 @@ class CourseToggleRequest(BaseModel):
     active: bool
 
 
-@app.patch("/api/admin/courses/{course_id}")
+@app.patch("/api/admin/courses/{course_id}", tags=["Admin"])
 async def admin_toggle_course(course_id: int, request: CourseToggleRequest, req: Request):
     _require_admin(req)
     _require_db()
