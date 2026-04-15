@@ -62,6 +62,17 @@ ADMIN_KEY = os.environ.get("ADMIN_KEY", "").strip()
 if not ADMIN_KEY and not IS_PROD:
     ADMIN_KEY = "admin-dev-key"
 
+AGENTMAIL_API_KEY = os.environ.get("AGENTMAIL_API_KEY", "").strip()
+AGENTMAIL_INBOX_ID = os.environ.get("AGENTMAIL_INBOX_ID", "support@intelliforge.tech").strip()
+_agentmail_client = None
+if AGENTMAIL_API_KEY:
+    try:
+        from agentmail import AgentMail as AgentMailClient
+        _agentmail_client = AgentMailClient(api_key=AGENTMAIL_API_KEY)
+        logger.info(f"AgentMail configured with inbox {AGENTMAIL_INBOX_ID}")
+    except Exception as e:
+        logger.warning(f"AgentMail initialization failed: {e}")
+
 # ---------------------------------------------------------------------------
 # Rate limiter (in-memory, per-IP, resets on cold start)
 # ---------------------------------------------------------------------------
@@ -199,6 +210,7 @@ class CertificateRequest(BaseModel):
     course_name: str
     completion_date: str
     instructor_name: str = "IntelliForge AI Team"
+    participant_email: str = ""
 
 
 # HTML template with styling
@@ -682,6 +694,89 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
     return pdf_buffer.getvalue()
 
 
+CERT_EMAIL_HTML = """
+<div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;max-width:600px;margin:0 auto;background:#0f0f23;padding:24px;border-radius:16px;">
+  <div style="background:linear-gradient(135deg,#12124a 0%,#1e1e6e 50%,#2a1a5e 100%);padding:28px 32px 24px;text-align:center;border-radius:12px 12px 0 0;">
+    <div style="font-size:11px;letter-spacing:4px;text-transform:uppercase;color:#d4af37;font-weight:600;">An IntelliForge AI Initiative</div>
+    <div style="font-size:24px;font-weight:700;color:#fff;margin:8px 0 12px;">IntelliForge Learning</div>
+    <div style="display:inline-block;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#d4af37;font-weight:600;border:1px solid rgba(139,125,60,0.6);padding:6px 18px;border-radius:20px;">Certificate of Participation</div>
+  </div>
+  <div style="background:#ffffff;padding:32px;text-align:center;">
+    <div style="display:inline-block;background:#f0fff4;border:1px solid #68d391;color:#276749;font-size:12px;font-weight:600;padding:5px 14px;border-radius:20px;margin-bottom:20px;">&#10003; Verified &amp; Authentic</div>
+    <p style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a0aec0;margin:0 0 6px;">This Certificate is Awarded To</p>
+    <h1 style="font-size:28px;font-weight:700;color:#1a202c;margin:0 0 4px;">{participant_name}</h1>
+    <div style="height:2px;background:linear-gradient(to right,transparent,#d4af37,transparent);margin:8px auto 16px;width:60%;"></div>
+    <p style="font-size:16px;font-weight:600;color:#553c9a;margin:0 0 24px;">{course_name}</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #edf2f7;border-bottom:1px solid #edf2f7;margin-bottom:24px;">
+      <tr>
+        <td style="text-align:center;padding:14px 8px;width:33%;">
+          <div style="font-size:14px;font-weight:600;color:#2d3748;">{completion_date}</div>
+          <div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#a0aec0;margin-top:4px;">Date</div>
+        </td>
+        <td style="text-align:center;padding:14px 8px;width:34%;border-left:1px solid #edf2f7;border-right:1px solid #edf2f7;">
+          <div style="font-size:14px;font-weight:600;color:#2d3748;">{instructor_name}</div>
+          <div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#a0aec0;margin-top:4px;">Instructor</div>
+        </td>
+        <td style="text-align:center;padding:14px 8px;width:33%;">
+          <div style="font-size:14px;font-weight:600;color:#2d3748;font-family:monospace;">{certificate_id}</div>
+          <div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#a0aec0;margin-top:4px;">Certificate ID</div>
+        </td>
+      </tr>
+    </table>
+    <a href="{view_url}" style="display:inline-block;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:14px 36px;border-radius:12px;font-size:16px;font-weight:600;text-decoration:none;margin-bottom:12px;">View Your Certificate</a>
+    <p style="font-size:12px;color:#a0aec0;margin:12px 0 0;">Or download the PDF directly: <a href="{download_url}" style="color:#667eea;text-decoration:none;font-weight:500;">Download PDF</a></p>
+  </div>
+  <div style="background:#f8fafc;padding:16px 32px;text-align:center;border-radius:0 0 12px 12px;border-top:1px solid #edf2f7;">
+    <p style="font-size:12px;color:#a0aec0;margin:0;">Issued by <a href="https://learning.intelliforge.tech/" style="color:#667eea;text-decoration:none;">IntelliForge Learning</a> &middot; <a href="mailto:support@intelliforge.tech" style="color:#667eea;text-decoration:none;">support@intelliforge.tech</a></p>
+  </div>
+</div>
+"""
+
+
+def _send_certificate_email(
+    to_email: str,
+    participant_name: str,
+    course_name: str,
+    completion_date: str,
+    instructor_name: str,
+    certificate_id: str,
+    view_url: str,
+    download_url: str,
+):
+    """Send certificate notification email via AgentMail. Non-blocking on failure."""
+    if not _agentmail_client or not to_email:
+        return
+    try:
+        html = CERT_EMAIL_HTML.format(
+            participant_name=participant_name,
+            course_name=course_name,
+            completion_date=completion_date,
+            instructor_name=instructor_name,
+            certificate_id=certificate_id,
+            view_url=view_url,
+            download_url=download_url,
+        )
+        _agentmail_client.inboxes.messages.send(
+            AGENTMAIL_INBOX_ID,
+            to=to_email,
+            subject=f"Your IntelliForge Certificate – {course_name}",
+            text=(
+                f"Congratulations {participant_name}!\n\n"
+                f"You have been awarded a Certificate of Participation for completing "
+                f"{course_name} at IntelliForge Learning.\n\n"
+                f"Certificate ID: {certificate_id}\n"
+                f"View your certificate: {view_url}\n"
+                f"Download PDF: {download_url}\n\n"
+                f"Share this achievement on LinkedIn or X!\n\n"
+                f"– IntelliForge Learning Team"
+            ),
+            html=html,
+        )
+        logger.info(f"Certificate email sent to {to_email}")
+    except Exception as e:
+        logger.warning(f"Failed to send certificate email to {to_email}: {e}")
+
+
 @app.post("/api/certificate")
 async def generate_certificate(request: CertificateRequest, req: Request):
     """Generate a certificate and return shareable URL + PDF download URL."""
@@ -714,6 +809,8 @@ async def generate_certificate(request: CertificateRequest, req: Request):
         token = _encode_cert(cert_data)
         cert_id = _cert_id(cert_data)
 
+        participant_email = request.participant_email.strip() if request.participant_email else ""
+
         if DB_AVAILABLE and db:
             try:
                 db.store_certificate(
@@ -724,12 +821,26 @@ async def generate_certificate(request: CertificateRequest, req: Request):
                     completion_date=request.completion_date,
                     instructor_name=request.instructor_name,
                     client_ip=client_ip,
+                    participant_email=participant_email,
                 )
             except Exception as e:
                 logger.warning(f"Failed to store certificate in DB (cert still valid): {e}")
 
         base_url = str(req.base_url).rstrip("/")
         shareable_url = f"{base_url}/certificate/{token}"
+        download_url = f"{shareable_url}/download"
+
+        if participant_email:
+            _send_certificate_email(
+                to_email=participant_email,
+                participant_name=name,
+                course_name=request.course_name,
+                completion_date=request.completion_date,
+                instructor_name=request.instructor_name,
+                certificate_id=cert_id,
+                view_url=shareable_url,
+                download_url=download_url,
+            )
 
         logger.info(f"Certificate issued for {name} – {request.course_name}")
 
@@ -737,9 +848,10 @@ async def generate_certificate(request: CertificateRequest, req: Request):
             "certificate_id": cert_id,
             "token": token,
             "url": shareable_url,
-            "download_url": f"{shareable_url}/download",
+            "download_url": download_url,
             "participant_name": name,
             "course_name": request.course_name,
+            "email_sent": bool(participant_email and _agentmail_client),
         })
 
     except HTTPException:
@@ -1026,6 +1138,7 @@ class BulkCertificateEntry(BaseModel):
     course_name: str
     completion_date: str
     instructor_name: str = "IntelliForge AI Team"
+    participant_email: str = ""
 
 
 class BulkCertificateRequest(BaseModel):
@@ -1061,6 +1174,7 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
             cert_data = {"n": name, "c": entry.course_name, "d": entry.completion_date, "i": entry.instructor_name}
             token = _encode_cert(cert_data)
             cert_id = _cert_id(cert_data)
+            p_email = entry.participant_email.strip() if entry.participant_email else ""
 
             try:
                 db.store_certificate(
@@ -1071,11 +1185,26 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
                     completion_date=entry.completion_date,
                     instructor_name=entry.instructor_name,
                     client_ip=client_ip,
+                    participant_email=p_email,
                 )
             except Exception as e:
                 logger.warning(f"Bulk: DB store failed for {name} (cert still valid): {e}")
 
             shareable_url = f"{base_url}/certificate/{token}"
+            download_url = f"{shareable_url}/download"
+
+            if p_email:
+                _send_certificate_email(
+                    to_email=p_email,
+                    participant_name=name,
+                    course_name=entry.course_name,
+                    completion_date=entry.completion_date,
+                    instructor_name=entry.instructor_name,
+                    certificate_id=cert_id,
+                    view_url=shareable_url,
+                    download_url=download_url,
+                )
+
             results.append({
                 "index": i,
                 "status": "success",
@@ -1083,7 +1212,8 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
                 "participant_name": name,
                 "course_name": entry.course_name,
                 "url": shareable_url,
-                "download_url": f"{shareable_url}/download",
+                "download_url": download_url,
+                "email_sent": bool(p_email and _agentmail_client),
             })
         except Exception as e:
             results.append({"index": i, "status": "error", "error": str(e)})

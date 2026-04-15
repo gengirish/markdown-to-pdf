@@ -214,6 +214,7 @@ function AdminDashboard({ getApiUrl }) {
       const hdrs = headerLine.split(sep).map((h) => h.trim().replace(/^"|"$/g, ''))
 
       const nameIdx = hdrs.findIndex((h) => /participant|name|student/i.test(h))
+      const emailIdx = hdrs.findIndex((h) => /email/i.test(h))
       const courseIdx = hdrs.findIndex((h) => /course/i.test(h))
       const dateIdx = hdrs.findIndex((h) => /date|completion/i.test(h))
       const instrIdx = hdrs.findIndex((h) => /instructor|teacher/i.test(h))
@@ -230,6 +231,7 @@ function AdminDashboard({ getApiUrl }) {
         if (!pName) continue
         entries.push({
           participant_name: pName,
+          participant_email: emailIdx >= 0 ? cols[emailIdx]?.trim() || '' : '',
           course_name: courseIdx >= 0 ? cols[courseIdx]?.trim() || '' : '',
           completion_date: dateIdx >= 0 ? cols[dateIdx]?.trim() || '' : '',
           instructor_name: instrIdx >= 0 ? cols[instrIdx]?.trim() || 'IntelliForge AI Team' : 'IntelliForge AI Team',
@@ -291,9 +293,9 @@ function AdminDashboard({ getApiUrl }) {
     if (!bulkResults?.results?.length) return
     const successful = bulkResults.results.filter((r) => r.status === 'success')
     if (successful.length === 0) return
-    const lines = ['Certificate ID,Participant,Course,URL,Download URL']
+    const lines = ['Certificate ID,Participant,Course,Email Sent,URL,Download URL']
     successful.forEach((r) => {
-      lines.push(`"${r.certificate_id}","${r.participant_name}","${r.course_name}","${r.url}","${r.download_url}"`)
+      lines.push(`"${r.certificate_id}","${r.participant_name}","${r.course_name}","${r.email_sent ? 'Yes' : 'No'}","${r.url}","${r.download_url}"`)
     })
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
@@ -432,7 +434,7 @@ function AdminDashboard({ getApiUrl }) {
             <input type="file" accept=".csv,.tsv,.txt" onChange={handleCsvUpload} hidden />
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             <span>Upload CSV File</span>
-            <span className="bulk-upload-hint">Columns: participant_name (required), course_name, completion_date, instructor_name</span>
+            <span className="bulk-upload-hint">Columns: participant_name (required), email, course_name, completion_date, instructor_name</span>
           </label>
         </div>
 
@@ -458,6 +460,7 @@ function AdminDashboard({ getApiUrl }) {
                   <tr>
                     <th>#</th>
                     <th>Participant</th>
+                    <th>Email</th>
                     <th>Course</th>
                     <th>Date</th>
                     <th>Instructor</th>
@@ -471,6 +474,11 @@ function AdminDashboard({ getApiUrl }) {
                       <td>
                         <input className="bulk-inline-input" value={entry.participant_name}
                           onChange={(e) => updateBulkEntry(idx, 'participant_name', e.target.value)} />
+                      </td>
+                      <td>
+                        <input type="email" className="bulk-inline-input" value={entry.participant_email || ''}
+                          placeholder="email"
+                          onChange={(e) => updateBulkEntry(idx, 'participant_email', e.target.value)} />
                       </td>
                       <td>
                         <select className="bulk-inline-select" value={entry.course_name}
@@ -644,6 +652,7 @@ Enjoy converting your markdown!`)
 
   const [certForm, setCertForm] = useState({
     participant_name: '',
+    participant_email: '',
     course_name: '',
     completion_date: new Date().toISOString().split('T')[0],
     instructor_name: 'IntelliForge AI Team',
@@ -874,6 +883,17 @@ Enjoy converting your markdown!`)
               </div>
 
               <div className="form-group">
+                <label htmlFor="participant_email">Participant Email <span className="form-optional">(optional – certificate will be emailed)</span></label>
+                <input
+                  id="participant_email"
+                  type="email"
+                  placeholder="e.g. jane@example.com"
+                  value={certForm.participant_email}
+                  onChange={(e) => updateCertField('participant_email', e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
                 <label htmlFor="course_name">Training Course</label>
                 <select
                   id="course_name"
@@ -935,6 +955,12 @@ Enjoy converting your markdown!`)
                   Certificate issued for <strong>{certResult.participant_name}</strong>
                   <span className="cert-id-badge">{certResult.certificate_id}</span>
                 </div>
+                {certResult.email_sent && (
+                  <div className="cert-email-sent">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                    Certificate emailed to {certForm.participant_email}
+                  </div>
+                )}
 
                 <div className="cert-link-box">
                   <label className="cert-link-label">Permanent Shareable Link</label>

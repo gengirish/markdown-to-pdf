@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS certificates (
     certificate_id VARCHAR(50) NOT NULL,
     token_hash VARCHAR(64) NOT NULL UNIQUE,
     participant_name VARCHAR(255) NOT NULL,
+    participant_email VARCHAR(255) DEFAULT '',
     course_name VARCHAR(255) NOT NULL,
     completion_date VARCHAR(50) NOT NULL,
     instructor_name VARCHAR(255) NOT NULL,
@@ -79,6 +80,15 @@ def init_schema():
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(SCHEMA_SQL)
+
+        # Migration: add participant_email column if missing
+        cur.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'certificates' AND column_name = 'participant_email'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE certificates ADD COLUMN participant_email VARCHAR(255) DEFAULT ''")
+            logger.info("Migrated: added participant_email column to certificates")
 
         cur.execute("SELECT COUNT(*) as cnt FROM courses")
         row = cur.fetchone()
@@ -144,18 +154,19 @@ def store_certificate(
     completion_date: str,
     instructor_name: str,
     client_ip: str = "",
+    participant_email: str = "",
 ) -> dict:
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
             """INSERT INTO certificates
-               (certificate_id, token_hash, participant_name, course_name,
-                completion_date, instructor_name, client_ip)
-               VALUES (%s, %s, %s, %s, %s, %s, %s)
-               RETURNING id, certificate_id, participant_name, course_name,
-                         completion_date, instructor_name, issued_at, revoked""",
-            (certificate_id, token_hash(token), participant_name, course_name,
-             completion_date, instructor_name, client_ip),
+               (certificate_id, token_hash, participant_name, participant_email,
+                course_name, completion_date, instructor_name, client_ip)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+               RETURNING id, certificate_id, participant_name, participant_email,
+                         course_name, completion_date, instructor_name, issued_at, revoked""",
+            (certificate_id, token_hash(token), participant_name, participant_email,
+             course_name, completion_date, instructor_name, client_ip),
         )
         return dict(cur.fetchone())
 
@@ -173,8 +184,8 @@ def list_certificates(limit: int = 50, offset: int = 0, course: str | None = Non
         total = cur.fetchone()["total"]
 
         cur.execute(
-            f"""SELECT id, certificate_id, participant_name, course_name,
-                       completion_date, instructor_name, issued_at, revoked
+            f"""SELECT id, certificate_id, participant_name, participant_email,
+                       course_name, completion_date, instructor_name, issued_at, revoked
                 FROM certificates {where}
                 ORDER BY issued_at DESC
                 LIMIT %s OFFSET %s""",

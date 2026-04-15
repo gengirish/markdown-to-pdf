@@ -887,6 +887,25 @@
   color: var(--text-primary);
 }
 
+.cert-email-sent {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: #667eea;
+  background: rgba(102, 126, 234, 0.08);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 8px;
+  padding: 0.5rem 0.8rem;
+  margin-bottom: 1rem;
+}
+
+.form-optional {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
 .cert-link-box {
   margin-bottom: 1.2rem;
 }
