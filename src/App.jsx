@@ -137,6 +137,25 @@ Enjoy converting your markdown! 🎉`)
     }
   }
 
+  const downloadPdfDirect = async () => {
+    if (!certResult?.download_url) return
+    try {
+      const response = await fetch(certResult.download_url)
+      if (!response.ok) throw new Error('Download failed')
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Certificate_${certResult.participant_name.replace(/\s+/g, '_')}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (err) {
+      window.open(certResult.download_url, '_blank')
+    }
+  }
+
   const [copied, setCopied] = useState(false)
 
   const copyShareableLink = async () => {
@@ -300,11 +319,12 @@ Enjoy converting your markdown! 🎉`)
               <div className="cert-result">
                 <div className="cert-result-header">
                   <span className="cert-result-check">✓</span>
-                  Certificate created for <strong>{certResult.participant_name}</strong>
+                  Certificate issued for <strong>{certResult.participant_name}</strong>
+                  <span className="cert-id-badge">{certResult.certificate_id}</span>
                 </div>
 
                 <div className="cert-link-box">
-                  <label className="cert-link-label">Shareable Link</label>
+                  <label className="cert-link-label">Permanent Shareable Link</label>
                   <div className="cert-link-row">
                     <input
                       className="cert-link-input"
@@ -320,14 +340,12 @@ Enjoy converting your markdown! 🎉`)
                 </div>
 
                 <div className="cert-result-actions">
-                  <a
+                  <button
                     className="download-btn cert-action-btn"
-                    href={certResult.download_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    onClick={downloadPdfDirect}
                   >
                     ⬇ Download PDF
-                  </a>
+                  </button>
                   <a
                     className="cert-view-btn cert-action-btn"
                     href={certResult.url}
@@ -335,6 +353,27 @@ Enjoy converting your markdown! 🎉`)
                     rel="noopener noreferrer"
                   >
                     🔗 View Public Page
+                  </a>
+                </div>
+
+                <div className="cert-share-row">
+                  <a
+                    className="cert-share-btn cert-share-linkedin"
+                    href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(certResult.url)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M20.5 2h-17A1.5 1.5 0 002 3.5v17A1.5 1.5 0 003.5 22h17a1.5 1.5 0 001.5-1.5v-17A1.5 1.5 0 0020.5 2zM8 19H5v-9h3zM6.5 8.25A1.75 1.75 0 118.3 6.5a1.78 1.78 0 01-1.8 1.75zM19 19h-3v-4.74c0-1.42-.6-1.93-1.38-1.93A1.74 1.74 0 0013 14.19V19h-3v-9h2.9v1.3a3.11 3.11 0 012.7-1.4c1.55 0 3.36.86 3.36 3.66z"/></svg>
+                    Share on LinkedIn
+                  </a>
+                  <a
+                    className="cert-share-btn cert-share-twitter"
+                    href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`I completed ${certResult.course_name} at IntelliForge Learning!`)}&url=${encodeURIComponent(certResult.url)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                    Share on X
                   </a>
                 </div>
               </div>

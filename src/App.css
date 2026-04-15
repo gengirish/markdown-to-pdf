@@ -634,6 +634,64 @@
   border-color: #9f7aea;
 }
 
+.cert-id-badge {
+  display: inline-block;
+  background: #edf2f7;
+  color: #4a5568;
+  font-size: 0.7rem;
+  font-weight: 600;
+  font-family: 'Consolas', 'Monaco', monospace;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
+.cert-share-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.cert-share-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s;
+  border: 1.5px solid #e2e8f0;
+  color: #4a5568;
+  background: #fff;
+}
+
+.cert-share-linkedin {
+  border-color: #0077b5;
+  color: #0077b5;
+}
+
+.cert-share-linkedin:hover {
+  background: #f0f7ff;
+  border-color: #005e93;
+}
+
+.cert-share-twitter {
+  border-color: #1a1a2e;
+  color: #1a1a2e;
+}
+
+.cert-share-twitter:hover {
+  background: #f5f5f5;
+  border-color: #000;
+}
+
 @media (max-width: 1024px) {
   .container,
   .cert-container {
@@ -690,6 +748,10 @@
   }
 
   .cert-result-actions {
+    flex-direction: column;
+  }
+
+  .cert-share-row {
     flex-direction: column;
   }
 }
