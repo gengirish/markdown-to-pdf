@@ -15,6 +15,10 @@
       "destination": "/api/index.py"
     },
     {
+      "source": "/certificate/:path*",
+      "destination": "/api/index.py"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

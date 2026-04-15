@@ -517,6 +517,123 @@
   padding-top: 0.2rem;
 }
 
+/* ── Certificate Result / Shareable Link ── */
+
+.cert-result {
+  margin: 1.5rem;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, #f0fff4 0%, #f0f7ff 100%);
+  border: 1px solid #68d391;
+  border-radius: 12px;
+  animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.cert-result-header {
+  font-size: 0.95rem;
+  color: #276749;
+  margin-bottom: 1.2rem;
+}
+
+.cert-result-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: #48bb78;
+  color: white;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-right: 0.5rem;
+  vertical-align: middle;
+}
+
+.cert-link-box {
+  margin-bottom: 1.2rem;
+}
+
+.cert-link-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #4a5568;
+  margin-bottom: 0.4rem;
+}
+
+.cert-link-row {
+  display: flex;
+  gap: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1.5px solid #e2e8f0;
+  background: white;
+}
+
+.cert-link-input {
+  flex: 1;
+  border: none;
+  padding: 0.65rem 0.9rem;
+  font-size: 0.85rem;
+  color: #553c9a;
+  font-family: 'Consolas', 'Monaco', monospace;
+  background: transparent;
+  outline: none;
+  min-width: 0;
+}
+
+.cert-link-copy {
+  border: none;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  padding: 0.65rem 1.2rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  white-space: nowrap;
+}
+
+.cert-link-copy:hover {
+  opacity: 0.9;
+}
+
+.cert-result-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.cert-action-btn {
+  flex: 1;
+  text-align: center;
+  font-size: 0.9rem;
+  padding: 0.7rem 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.cert-view-btn {
+  background: white;
+  color: #553c9a;
+  border: 1.5px solid #b794f4;
+  box-shadow: 0 2px 8px rgba(118, 75, 162, 0.1);
+}
+
+.cert-view-btn:hover {
+  background: #f7f3ff;
+  border-color: #9f7aea;
+}
+
 @media (max-width: 1024px) {
   .container,
   .cert-container {
@@ -570,5 +687,9 @@
   .cert-details {
     flex-direction: column;
     gap: 0.8rem;
+  }
+
+  .cert-result-actions {
+    flex-direction: column;
   }
 }

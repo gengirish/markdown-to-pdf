@@ -10,6 +10,7 @@ const COURSES = [
   "AI Product Design & UX",
   "Digital Profile Creation",
   "Deploying AI Solutions",
+  "AI Code Reviewer Course",
 ]
 
 function App() {
@@ -66,7 +67,7 @@ Enjoy converting your markdown! 🎉`)
   })
   const [isGenerating, setIsGenerating] = useState(false)
   const [certError, setCertError] = useState(null)
-  const [certSuccess, setCertSuccess] = useState(false)
+  const [certResult, setCertResult] = useState(null)
 
   const getApiUrl = (path) =>
     import.meta.env.PROD ? path : `http://localhost:8000${path}`
@@ -108,7 +109,7 @@ Enjoy converting your markdown! 🎉`)
     e.preventDefault()
     setIsGenerating(true)
     setCertError(null)
-    setCertSuccess(false)
+    setCertResult(null)
 
     try {
       if (!certForm.participant_name.trim()) throw new Error('Please enter participant name')
@@ -126,16 +127,8 @@ Enjoy converting your markdown! 🎉`)
         throw new Error(errorData.detail || `Server error: ${response.status}`)
       }
 
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `Certificate_${certForm.participant_name.replace(/\s+/g, '_')}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-      setCertSuccess(true)
+      const data = await response.json()
+      setCertResult(data)
     } catch (err) {
       console.error('Error generating certificate:', err)
       setCertError(err.message)
@@ -144,10 +137,30 @@ Enjoy converting your markdown! 🎉`)
     }
   }
 
+  const [copied, setCopied] = useState(false)
+
+  const copyShareableLink = async () => {
+    if (!certResult?.url) return
+    try {
+      await navigator.clipboard.writeText(certResult.url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      const input = document.createElement('input')
+      input.value = certResult.url
+      document.body.appendChild(input)
+      input.select()
+      document.execCommand('copy')
+      document.body.removeChild(input)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
   const updateCertField = (field, value) => {
     setCertForm((prev) => ({ ...prev, [field]: value }))
     setCertError(null)
-    setCertSuccess(false)
+    setCertResult(null)
   }
 
   return (
@@ -273,20 +286,59 @@ Enjoy converting your markdown! 🎉`)
                   <strong>Error:</strong> {certError}
                 </div>
               )}
-              {certSuccess && (
-                <div className="success-message">
-                  Certificate downloaded successfully!
-                </div>
-              )}
 
               <button
                 type="submit"
                 className="download-btn cert-submit-btn"
                 disabled={isGenerating}
               >
-                {isGenerating ? '⏳ Generating...' : '🎓 Generate Certificate PDF'}
+                {isGenerating ? '⏳ Generating...' : '🎓 Generate Certificate'}
               </button>
             </form>
+
+            {certResult && (
+              <div className="cert-result">
+                <div className="cert-result-header">
+                  <span className="cert-result-check">✓</span>
+                  Certificate created for <strong>{certResult.participant_name}</strong>
+                </div>
+
+                <div className="cert-link-box">
+                  <label className="cert-link-label">Shareable Link</label>
+                  <div className="cert-link-row">
+                    <input
+                      className="cert-link-input"
+                      type="text"
+                      value={certResult.url}
+                      readOnly
+                      onClick={(e) => e.target.select()}
+                    />
+                    <button className="cert-link-copy" onClick={copyShareableLink}>
+                      {copied ? '✓ Copied' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="cert-result-actions">
+                  <a
+                    className="download-btn cert-action-btn"
+                    href={certResult.download_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    ⬇ Download PDF
+                  </a>
+                  <a
+                    className="cert-view-btn cert-action-btn"
+                    href={certResult.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    🔗 View Public Page
+                  </a>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="cert-preview-section">

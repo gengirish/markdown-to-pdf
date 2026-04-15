@@ -58,5 +58,8 @@ venv.bak/
 test_output.pdf
 *.pdf
 
+# Certificate store
+certificates.json
+
 # Vercel
 .vercel
