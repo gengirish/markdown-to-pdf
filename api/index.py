@@ -316,7 +316,7 @@ def _generate_signature_data_uri(name: str | None = None) -> str:
     from PIL import Image, ImageDraw, ImageFont
 
     width, height = 360, 120
-    img = Image.new("RGBA", (width, height), (255, 255, 255, 0))
+    img = Image.new("RGB", (width, height), (255, 255, 255))
     draw = ImageDraw.Draw(img)
 
     try:
@@ -329,18 +329,17 @@ def _generate_signature_data_uri(name: str | None = None) -> str:
     x = (width - tw) // 2
     y = (height - th) // 2 - 10
 
-    draw.text((x, y), signer, fill=(26, 32, 44, 230), font=font)
+    draw.text((x, y), signer, fill=(26, 32, 44), font=font)
 
-    # Apply slant transform for a handwritten feel
     shear = 0.15
     img = img.transform(
         (width, height), Image.AFFINE, (1, shear, -shear * height / 2, 0, 1, 0),
-        resample=Image.BICUBIC,
+        resample=Image.BICUBIC, fillcolor=(255, 255, 255),
     )
     draw = ImageDraw.Draw(img)
 
     line_y = y + th + 12
-    draw.line([(x - 10, line_y), (x + tw + 10, line_y)], fill=(26, 32, 44, 140), width=1)
+    draw.line([(x - 10, line_y), (x + tw + 10, line_y)], fill=(80, 80, 100), width=1)
 
     buf = BytesIO()
     img.save(buf, format="PNG")
@@ -562,7 +561,7 @@ CERTIFICATE_TEMPLATE = """
         <table width="70%" align="center" cellspacing="0" cellpadding="0">
             <tr>
                 <td width="50%" align="center" style="text-align: center; padding: 8pt 12pt; vertical-align: bottom;">
-                    <img src="{signature_data_uri}" height="50" style="opacity: 0.9;" />
+                    <img src="{signature_data_uri}" height="50" />
                     <table width="100%" cellspacing="0" cellpadding="0">
                         <tr><td align="center" style="border-top: 1px solid #c4b5fd; font-size: 8pt; color: #553c9a; font-weight: bold; padding-top: 4pt; text-align: center;">
                             {founder_name}
@@ -573,7 +572,7 @@ CERTIFICATE_TEMPLATE = """
                     </table>
                 </td>
                 <td width="50%" align="center" style="text-align: center; padding: 8pt 12pt; vertical-align: bottom;">
-                    <img src="{instructor_signature_data_uri}" height="50" style="opacity: 0.9;" />
+                    <img src="{instructor_signature_data_uri}" height="50" />
                     <table width="100%" cellspacing="0" cellpadding="0">
                         <tr><td align="center" style="border-top: 1px solid #c4b5fd; font-size: 8pt; color: #553c9a; font-weight: bold; padding-top: 4pt; text-align: center;">
                             {instructor_name}
