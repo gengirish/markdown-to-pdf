@@ -561,7 +561,7 @@ CERTIFICATE_TEMPLATE = """
         <table width="70%" align="center" cellspacing="0" cellpadding="0">
             <tr>
                 <td width="50%" align="center" style="text-align: center; padding: 8pt 12pt; vertical-align: bottom;">
-                    <img src="{signature_data_uri}" height="50" />
+                    <img src="{signature_data_uri}" width="150" height="50" />
                     <table width="100%" cellspacing="0" cellpadding="0">
                         <tr><td align="center" style="border-top: 1px solid #c4b5fd; font-size: 8pt; color: #553c9a; font-weight: bold; padding-top: 4pt; text-align: center;">
                             {founder_name}
@@ -572,7 +572,7 @@ CERTIFICATE_TEMPLATE = """
                     </table>
                 </td>
                 <td width="50%" align="center" style="text-align: center; padding: 8pt 12pt; vertical-align: bottom;">
-                    <img src="{instructor_signature_data_uri}" height="50" />
+                    <img src="{instructor_signature_data_uri}" width="150" height="50" />
                     <table width="100%" cellspacing="0" cellpadding="0">
                         <tr><td align="center" style="border-top: 1px solid #c4b5fd; font-size: 8pt; color: #553c9a; font-weight: bold; padding-top: 4pt; text-align: center;">
                             {instructor_name}
@@ -646,7 +646,10 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
     pdf_buffer = BytesIO()
     pisa_status = pisa.CreatePDF(src=full_html, dest=pdf_buffer, encoding="UTF-8")
     if pisa_status.err:
+        logging.error("PDF generation failed: %s", pisa_status.log)
         raise Exception("Error generating certificate PDF")
+    if pisa_status.log:
+        logging.warning("PDF generation warnings: %s", pisa_status.log)
     pdf_buffer.seek(0)
     return pdf_buffer.getvalue()
 
