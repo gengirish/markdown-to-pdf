@@ -308,7 +308,7 @@ _signature_cache: dict[str, str] = {}
 
 
 def _generate_signature_data_uri(name: str | None = None) -> str:
-    """Render the founder's signature as a base64 PNG data URI with a handwriting aesthetic."""
+    """Render a signature as a base64 PNG data URI with a handwriting aesthetic."""
     signer = name or FOUNDER_NAME
     if signer in _signature_cache:
         return _signature_cache[signer]
@@ -474,78 +474,82 @@ CERTIFICATE_TEMPLATE = """
 
     <!-- ═══════════════ HEADER ═══════════════ -->
     <table width="100%" style="background-color: #15155e;">
-    <tr><td style="padding: 28pt 40pt 24pt; text-align: center;">
-        <table width="100%"><tr><td style="text-align: center; font-size: 7pt; letter-spacing: 4pt; color: #d4af37; font-weight: bold;">
-            AN INTELLIFORGE AI INITIATIVE
-        </td></tr></table>
-        <table width="100%"><tr><td style="text-align: center; font-size: 22pt; font-weight: bold; color: #ffffff; padding: 6pt 0 8pt;">
-            IntelliForge Learning
-        </td></tr></table>
-        <table width="100%"><tr><td style="text-align: center;">
-            <table align="center" style="border: 1px solid #8b7d3c;">
-            <tr><td style="padding: 4pt 18pt; font-size: 7pt; letter-spacing: 3pt; color: #d4af37; font-weight: bold; text-align: center;">
-                CERTIFICATE OF PARTICIPATION
+    <tr><td style="padding: 30pt 40pt 26pt;">
+        <table width="100%" cellspacing="0" cellpadding="0">
+            <tr><td align="center" style="font-size: 8pt; letter-spacing: 4pt; color: #d4af37; font-weight: bold; padding-bottom: 4pt; text-align: center;">
+                AN INTELLIFORGE AI INITIATIVE
             </td></tr>
-            </table>
-        </td></tr></table>
+            <tr><td align="center" style="font-size: 24pt; font-weight: bold; color: #ffffff; padding: 6pt 0 12pt; text-align: center;">
+                IntelliForge Learning
+            </td></tr>
+            <tr><td align="center" style="text-align: center; padding: 0;">
+                <table align="center" cellspacing="0" cellpadding="0" style="border: 2px solid #d4af37;">
+                <tr><td align="center" style="padding: 6pt 30pt; font-size: 9pt; letter-spacing: 3pt; color: #d4af37; font-weight: bold; text-align: center;">
+                    CERTIFICATE OF PARTICIPATION
+                </td></tr>
+                </table>
+            </td></tr>
+        </table>
     </td></tr>
     </table>
 
     <!-- ═══════════════ BODY ═══════════════ -->
     <table width="100%">
-    <tr><td style="padding: 28pt 50pt 20pt; text-align: center;">
+    <tr><td style="padding: 28pt 50pt 20pt;">
 
         <!-- Verified badge -->
-        <table width="100%"><tr><td style="text-align: center; padding-bottom: 18pt;">
-            <table align="center" style="border: 1px solid #68d391;">
-            <tr><td style="padding: 4pt 14pt; font-size: 8pt; color: #276749; font-weight: bold; background-color: #f0fff4; text-align: center;">
+        <table width="100%" cellspacing="0" cellpadding="0">
+        <tr><td align="center" style="text-align: center; padding-bottom: 18pt;">
+            <table align="center" cellspacing="0" cellpadding="0" style="border: 1px solid #68d391;">
+            <tr><td align="center" style="padding: 4pt 14pt; font-size: 8pt; color: #276749; font-weight: bold; background-color: #f0fff4; text-align: center;">
                 &#10003; &nbsp; Verified &amp; Authentic
             </td></tr>
             </table>
-        </td></tr></table>
+        </td></tr>
+        </table>
 
-        <!-- Award label -->
-        <table width="100%"><tr><td style="text-align: center; font-size: 8pt; letter-spacing: 3pt; color: #a0aec0; padding-bottom: 6pt;">
-            THIS CERTIFICATE IS AWARDED TO
-        </td></tr></table>
-
-        <!-- Participant name -->
-        <table width="100%"><tr><td style="text-align: center; font-size: 32pt; font-weight: bold; color: #1a202c; padding: 4pt 0 2pt;">
-            {participant_name}
-        </td></tr></table>
+        <!-- Award label + Name + Divider + Course -->
+        <table width="100%" cellspacing="0" cellpadding="0">
+            <tr><td align="center" style="text-align: center; font-size: 8pt; letter-spacing: 3pt; color: #a0aec0; padding-bottom: 6pt;">
+                THIS CERTIFICATE IS AWARDED TO
+            </td></tr>
+            <tr><td align="center" style="text-align: center; font-size: 32pt; font-weight: bold; color: #1a202c; padding: 4pt 0 2pt;">
+                {participant_name}
+            </td></tr>
+        </table>
 
         <!-- Gold divider -->
-        <table width="60%" align="center"><tr>
+        <table width="60%" align="center" cellspacing="0" cellpadding="0"><tr>
             <td style="border-top: 2px solid #d4af37; font-size: 1pt;">&nbsp;</td>
         </tr></table>
 
-        <!-- Spacer -->
-        <table width="100%"><tr><td style="font-size: 10pt;">&nbsp;</td></tr></table>
-
         <!-- Course name -->
-        <table width="100%"><tr><td style="text-align: center; font-size: 15pt; font-weight: bold; color: #553c9a; padding-bottom: 20pt;">
-            {course_name}
-        </td></tr></table>
+        <table width="100%" cellspacing="0" cellpadding="0">
+            <tr><td align="center" style="text-align: center; font-size: 1pt; padding-top: 10pt;">&nbsp;</td></tr>
+            <tr><td align="center" style="text-align: center; font-size: 15pt; font-weight: bold; color: #553c9a; padding-bottom: 20pt;">
+                {course_name}
+            </td></tr>
+        </table>
 
         <!-- Metadata row -->
-        <table width="85%" align="center" style="border-top: 1px solid #edf2f7; border-bottom: 1px solid #edf2f7;">
+        <table width="85%" align="center" cellspacing="0" cellpadding="0" style="border-top: 1px solid #edf2f7; border-bottom: 1px solid #edf2f7;">
             <tr>
-                <td width="33%" style="text-align: center; padding: 12pt 8pt;">
-                    <table width="100%">
-                        <tr><td style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{completion_date}</td></tr>
-                        <tr><td style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">DATE</td></tr>
+                <td width="33%" align="center" style="text-align: center; padding: 12pt 8pt;">
+                    <table width="100%" cellspacing="0" cellpadding="0">
+                        <tr><td align="center" style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{completion_date}</td></tr>
+                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">DATE</td></tr>
                     </table>
                 </td>
-                <td width="34%" style="text-align: center; padding: 12pt 8pt; border-left: 1px solid #edf2f7; border-right: 1px solid #edf2f7;">
-                    <table width="100%">
-                        <tr><td style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{instructor_name}</td></tr>
-                        <tr><td style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">INSTRUCTOR</td></tr>
+                <td width="34%" align="center" style="text-align: center; padding: 12pt 8pt; border-left: 1px solid #edf2f7; border-right: 1px solid #edf2f7;">
+                    <table width="100%" cellspacing="0" cellpadding="0">
+                        <tr><td align="center" style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{instructor_name}</td></tr>
+                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">INSTRUCTOR</td></tr>
                     </table>
                 </td>
-                <td width="33%" style="text-align: center; padding: 12pt 8pt;">
-                    <table width="100%">
-                        <tr><td style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{certificate_id}</td></tr>
-                        <tr><td style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">CERTIFICATE ID</td></tr>
+                <td width="33%" align="center" style="text-align: center; padding: 12pt 8pt;">
+                    <table width="100%" cellspacing="0" cellpadding="0">
+                        <tr><td align="center" style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{certificate_id}</td></tr>
+                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">CERTIFICATE ID</td></tr>
                     </table>
                 </td>
             </tr>
@@ -554,26 +558,30 @@ CERTIFICATE_TEMPLATE = """
         <!-- Spacer -->
         <table width="100%"><tr><td style="font-size: 8pt;">&nbsp;</td></tr></table>
 
-        <!-- Founder signature -->
-        <table width="60%" align="center">
+        <!-- Signatures -->
+        <table width="70%" align="center" cellspacing="0" cellpadding="0">
             <tr>
-                <td width="50%" style="text-align: center; padding: 8pt 12pt;">
+                <td width="50%" align="center" style="text-align: center; padding: 8pt 12pt; vertical-align: bottom;">
                     <img src="{signature_data_uri}" height="50" style="opacity: 0.9;" />
-                    <table width="100%"><tr><td style="border-top: 1px solid #c4b5fd; font-size: 8pt; color: #553c9a; font-weight: bold; padding-top: 4pt; text-align: center;">
-                        {founder_name}
-                    </td></tr></table>
-                    <table width="100%"><tr><td style="font-size: 6pt; color: #a0aec0; text-align: center; letter-spacing: 1pt;">
-                        {founder_title}
-                    </td></tr></table>
+                    <table width="100%" cellspacing="0" cellpadding="0">
+                        <tr><td align="center" style="border-top: 1px solid #c4b5fd; font-size: 8pt; color: #553c9a; font-weight: bold; padding-top: 4pt; text-align: center;">
+                            {founder_name}
+                        </td></tr>
+                        <tr><td align="center" style="font-size: 6pt; color: #a0aec0; text-align: center; letter-spacing: 1pt;">
+                            {founder_title}
+                        </td></tr>
+                    </table>
                 </td>
-                <td width="50%" style="text-align: center; padding: 8pt 12pt;">
-                    <table width="100%"><tr><td style="font-size: 7pt; color: #a0aec0; padding-bottom: 20pt;">&nbsp;</td></tr></table>
-                    <table width="100%"><tr><td style="border-top: 1px solid #c4b5fd; font-size: 8pt; color: #553c9a; font-weight: bold; padding-top: 4pt; text-align: center;">
-                        {instructor_name}
-                    </td></tr></table>
-                    <table width="100%"><tr><td style="font-size: 6pt; color: #a0aec0; text-align: center; letter-spacing: 1pt;">
-                        COURSE INSTRUCTOR
-                    </td></tr></table>
+                <td width="50%" align="center" style="text-align: center; padding: 8pt 12pt; vertical-align: bottom;">
+                    <img src="{instructor_signature_data_uri}" height="50" style="opacity: 0.9;" />
+                    <table width="100%" cellspacing="0" cellpadding="0">
+                        <tr><td align="center" style="border-top: 1px solid #c4b5fd; font-size: 8pt; color: #553c9a; font-weight: bold; padding-top: 4pt; text-align: center;">
+                            {instructor_name}
+                        </td></tr>
+                        <tr><td align="center" style="font-size: 6pt; color: #a0aec0; text-align: center; letter-spacing: 1pt;">
+                            COURSE INSTRUCTOR
+                        </td></tr>
+                    </table>
                 </td>
             </tr>
         </table>
@@ -582,26 +590,28 @@ CERTIFICATE_TEMPLATE = """
         <table width="100%"><tr><td style="font-size: 8pt;">&nbsp;</td></tr></table>
 
         <!-- QR code + verify section -->
-        <table width="100%"><tr><td style="text-align: center;">
-            <table align="center">
+        <table width="100%" cellspacing="0" cellpadding="0">
+        <tr><td align="center" style="text-align: center;">
+            <table align="center" cellspacing="0" cellpadding="0">
             <tr>
                 <td style="padding-right: 12pt; vertical-align: middle;">
                     <img src="{qr_data_uri}" width="70" height="70" />
                 </td>
                 <td style="vertical-align: middle; text-align: left;">
-                    <table><tr><td style="font-size: 9pt; font-weight: bold; color: #2d3748; padding-bottom: 2pt;">Scan to Verify</td></tr></table>
-                    <table><tr><td style="font-size: 7pt; color: #a0aec0; line-height: 1.5;">This QR code links to this certificate's<br/>permanent verification page.</td></tr></table>
+                    <table cellspacing="0" cellpadding="0"><tr><td style="font-size: 9pt; font-weight: bold; color: #2d3748; padding-bottom: 2pt;">Scan to Verify</td></tr></table>
+                    <table cellspacing="0" cellpadding="0"><tr><td style="font-size: 7pt; color: #a0aec0; line-height: 1.5;">This QR code links to this certificate's<br/>permanent verification page.</td></tr></table>
                 </td>
             </tr>
             </table>
-        </td></tr></table>
+        </td></tr>
+        </table>
 
     </td></tr>
     </table>
 
     <!-- ═══════════════ FOOTER ═══════════════ -->
-    <table width="100%" style="background-color: #f8fafc; border-top: 1px solid #edf2f7;">
-    <tr><td style="padding: 10pt 40pt; text-align: center; font-size: 7pt; color: #a0aec0;">
+    <table width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; border-top: 1px solid #edf2f7;">
+    <tr><td align="center" style="padding: 10pt 40pt; text-align: center; font-size: 7pt; color: #a0aec0;">
         Issued by IntelliForge Learning &nbsp;&middot;&nbsp; learning.intelliforge.tech &nbsp;&middot;&nbsp; support@intelliforge.tech
     </td></tr>
     </table>
@@ -630,6 +640,7 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
         certificate_id=_cert_id(data),
         qr_data_uri=qr_data_uri,
         signature_data_uri=_generate_signature_data_uri(),
+        instructor_signature_data_uri=_generate_signature_data_uri(data["i"]),
         founder_name=FOUNDER_NAME,
         founder_title=FOUNDER_TITLE,
     )
