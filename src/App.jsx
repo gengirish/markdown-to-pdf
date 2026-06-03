@@ -101,6 +101,66 @@ function formatEventDatetime(eventDate, eventTime) {
   return [eventDate, eventTime].filter(Boolean).join(' · ') || '—'
 }
 
+const PREVIEW_CERT_URL = 'https://certs.intelliforge.tech/certificate/preview'
+const PREVIEW_TICKET_URL = 'https://certs.intelliforge.tech/receipt/preview'
+
+function useBranding(getApiUrl) {
+  const [branding, setBranding] = useState({
+    founder_name: 'Girish Hiremath',
+    founder_title: 'Founder & CEO, IntelliForge AI',
+    founder_signature_data_uri: '',
+  })
+
+  useEffect(() => {
+    fetch(getApiUrl('/api/info'))
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.branding) setBranding((prev) => ({ ...prev, ...data.branding }))
+      })
+      .catch(() => {})
+  }, [getApiUrl])
+
+  return branding
+}
+
+function PreviewQrBlock({ getApiUrl, url, title, subtitle }) {
+  const [qrDataUri, setQrDataUri] = useState('')
+
+  useEffect(() => {
+    const params = new URLSearchParams({ url })
+    fetch(getApiUrl(`/api/preview/qr?${params}`))
+      .then((res) => res.json())
+      .then((data) => setQrDataUri(data.qr_data_uri || ''))
+      .catch(() => setQrDataUri(''))
+  }, [url, getApiUrl])
+
+  return (
+    <div className="cert-qr-placeholder">
+      {qrDataUri ? (
+        <img src={qrDataUri} alt={title} className="cert-qr-image" />
+      ) : (
+        <div className="cert-qr-box" aria-hidden="true">QR</div>
+      )}
+      <div className="cert-qr-text">
+        <strong>{title}</strong>
+        {subtitle}
+      </div>
+    </div>
+  )
+}
+
+function DeliveryStatus({ success, successText, failureText, detail }) {
+  if (success) {
+    return <div className="cert-delivery-success">{successText}</div>
+  }
+  return (
+    <div className="cert-delivery-failed" role="alert">
+      <strong>{failureText}</strong>
+      {detail ? <span>{detail}</span> : null}
+    </div>
+  )
+}
+
 function MapPreview({ venue_name, address, maps_url, getApiUrl }) {
   const [preview, setPreview] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -217,6 +277,7 @@ function ReceiptGenerator({ getApiUrl }) {
     payment_date: new Date().toISOString().split('T')[0],
     transaction_id: '',
     participant_phone: '',
+    participant_email: '',
     payment_method: '',
     description: '',
   })
@@ -224,11 +285,36 @@ function ReceiptGenerator({ getApiUrl }) {
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
   const [copied, setCopied] = useState(false)
+  const [mapsValidation, setMapsValidation] = useState(null)
+  const [mapsValidating, setMapsValidating] = useState(false)
 
   const updateField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }))
     setError(null)
     setResult(null)
+    if (field === 'maps_url') setMapsValidation(null)
+  }
+
+  const validateMapsUrl = async () => {
+    const url = form.maps_url.trim()
+    if (!url) {
+      setMapsValidation(null)
+      return
+    }
+    setMapsValidating(true)
+    try {
+      const params = new URLSearchParams({ maps_url: url })
+      const response = await fetch(getApiUrl(`/api/maps/validate?${params}`))
+      setMapsValidation(await response.json())
+    } catch {
+      setMapsValidation({
+        valid: false,
+        status: 'error',
+        message: 'Could not validate this maps link.',
+      })
+    } finally {
+      setMapsValidating(false)
+    }
   }
 
   const generateReceipt = async (e) => {
@@ -275,7 +361,7 @@ function ReceiptGenerator({ getApiUrl }) {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `Receipt_${result.payer_name.replace(/\s+/g, '_')}.pdf`
+      a.download = `Entry_Ticket_${result.payer_name.replace(/\s+/g, '_')}.pdf`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
@@ -314,7 +400,7 @@ function ReceiptGenerator({ getApiUrl }) {
     <div className="cert-container">
       <div className="cert-form-section">
         <div className="section-header">
-          <h2>Receipt Details</h2>
+          <h2>Entry Ticket Details</h2>
         </div>
         <form className="cert-form" onSubmit={generateReceipt}>
           <fieldset className="form-fieldset">
@@ -331,16 +417,29 @@ function ReceiptGenerator({ getApiUrl }) {
               />
             </div>
             <div className="form-group">
-              <label htmlFor="participant_phone">
+              <label htmlFor="receipt_participant_phone">
                 WhatsApp Number <span className="form-optional">(optional – sends entry ticket)</span>
               </label>
               <input
-                id="participant_phone"
+                id="receipt_participant_phone"
                 type="tel"
                 placeholder="e.g. +91 9876543210"
                 value={form.participant_phone}
                 onChange={(e) => updateField('participant_phone', e.target.value)}
                 autoComplete="tel"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="receipt_participant_email">
+                Email <span className="form-optional">(optional – sends entry ticket)</span>
+              </label>
+              <input
+                id="receipt_participant_email"
+                type="email"
+                placeholder="e.g. jane@example.com"
+                value={form.participant_email}
+                onChange={(e) => updateField('participant_email', e.target.value)}
+                autoComplete="email"
               />
             </div>
             <div className="form-row">
@@ -461,14 +560,38 @@ function ReceiptGenerator({ getApiUrl }) {
               />
             </div>
             <div className="form-group">
-              <label htmlFor="maps_url">Google Maps URL <span className="form-optional">(optional override)</span></label>
+              <label htmlFor="maps_url">
+                Google Maps URL <span className="form-optional">(optional override)</span>
+              </label>
               <input
                 id="maps_url"
                 type="url"
                 placeholder="https://maps.google.com/..."
                 value={form.maps_url}
                 onChange={(e) => updateField('maps_url', e.target.value)}
+                onBlur={validateMapsUrl}
+                aria-describedby={mapsValidation ? 'maps-url-hint' : undefined}
               />
+              {mapsValidating && (
+                <p className="field-hint field-hint-neutral" id="maps-url-hint">
+                  Checking maps link…
+                </p>
+              )}
+              {!mapsValidating && mapsValidation?.message && (
+                <p
+                  className={`field-hint ${
+                    mapsValidation.valid && mapsValidation.status !== 'warning'
+                      ? 'field-hint-ok'
+                      : mapsValidation.valid
+                        ? 'field-hint-warn'
+                        : 'field-hint-error'
+                  }`}
+                  id="maps-url-hint"
+                  role={mapsValidation.valid ? 'status' : 'alert'}
+                >
+                  {mapsValidation.message}
+                </p>
+              )}
             </div>
             <div className="form-group">
               <label htmlFor="description">Description <span className="form-optional">(optional)</span></label>
@@ -490,7 +613,7 @@ function ReceiptGenerator({ getApiUrl }) {
 
           <button type="submit" className="download-btn cert-submit-btn" disabled={isGenerating} data-testid="receipt-generate-btn">
             {isGenerating ? <Icon.Loader /> : <Icon.Receipt />}
-            <span>{isGenerating ? 'Generating...' : 'Generate Receipt'}</span>
+            <span>{isGenerating ? 'Generating...' : 'Generate Entry Ticket'}</span>
           </button>
         </form>
 
@@ -501,11 +624,31 @@ function ReceiptGenerator({ getApiUrl }) {
               Entry ticket issued for <strong>{result.payer_name}</strong>
               <span className="cert-id-badge">{result.receipt_id}</span>
             </div>
-            {result.whatsapp_sent && (
-              <div className="cert-email-sent">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-                Entry ticket sent on WhatsApp to {form.participant_phone}
-              </div>
+            {form.participant_phone && (
+              <DeliveryStatus
+                success={result.whatsapp_sent}
+                successText={
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+                    {' '}Entry ticket sent on WhatsApp to {form.participant_phone}
+                  </>
+                }
+                failureText="WhatsApp delivery failed."
+                detail={result.whatsapp_error || 'Share the ticket link below instead.'}
+              />
+            )}
+            {form.participant_email && (
+              <DeliveryStatus
+                success={result.email_sent}
+                successText={
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                    {' '}Entry ticket emailed to {form.participant_email}
+                  </>
+                }
+                failureText="Email delivery failed."
+                detail={result.email_error || 'Share the ticket link below instead.'}
+              />
             )}
 
             <div className="cert-link-box">
@@ -543,7 +686,7 @@ function ReceiptGenerator({ getApiUrl }) {
 
       <div className="cert-preview-section">
         <div className="section-header">
-          <h2>Receipt Preview</h2>
+          <h2>Entry Ticket Preview</h2>
         </div>
         <div className="cert-preview">
           <div className="cert-card receipt-card">
@@ -592,13 +735,16 @@ function ReceiptGenerator({ getApiUrl }) {
                 getApiUrl={getApiUrl}
               />
 
-              <div className="cert-qr-placeholder">
-                <div className="cert-qr-box">QR</div>
-                <div className="cert-qr-text">
-                  <strong>Scan at Venue Gate</strong>
-                  QR code for quick entry verification.
-                </div>
-              </div>
+              <PreviewQrBlock
+                getApiUrl={getApiUrl}
+                url={result?.url || PREVIEW_TICKET_URL}
+                title="Scan at Venue Gate"
+                subtitle={
+                  result?.url
+                    ? 'QR code links to this entry ticket.'
+                    : 'Sample QR — your ticket link appears after generation.'
+                }
+              />
             </div>
             <div className="cert-footer-bar">
               Issued by IntelliForge Events &middot; learning.intelliforge.tech &middot; support@intelliforge.tech
@@ -1118,6 +1264,8 @@ function App() {
   const getApiUrl = (path) =>
     import.meta.env.PROD ? path : `http://localhost:8000${path}`
 
+  const branding = useBranding(getApiUrl)
+
   useEffect(() => {
     fetch(getApiUrl('/api/courses'))
       .then((res) => res.json())
@@ -1255,7 +1403,7 @@ function App() {
             data-testid="receipt-tab"
           >
             <Icon.Receipt />
-            <span>Payment Receipt</span>
+            <span>Entry Ticket</span>
           </button>
           <button
             className={`tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
@@ -1361,11 +1509,18 @@ function App() {
                   Certificate issued for <strong>{certResult.participant_name}</strong>
                   <span className="cert-id-badge">{certResult.certificate_id}</span>
                 </div>
-                {certResult.email_sent && (
-                  <div className="cert-email-sent">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                    Certificate emailed to {certForm.participant_email}
-                  </div>
+                {certForm.participant_email && (
+                  <DeliveryStatus
+                    success={certResult.email_sent}
+                    successText={
+                      <>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                        {' '}Certificate emailed to {certForm.participant_email}
+                      </>
+                    }
+                    failureText="Email delivery failed."
+                    detail={certResult.email_error || 'Share the certificate link below instead.'}
+                  />
                 )}
 
                 <div className="cert-link-box">
@@ -1470,10 +1625,18 @@ function App() {
                   </div>
                   <div className="cert-signatures">
                     <div className="cert-sig-block">
-                      <span className="cert-sig-hand">Girish Hiremath</span>
+                      {branding.founder_signature_data_uri ? (
+                        <img
+                          src={branding.founder_signature_data_uri}
+                          alt={`Signature of ${branding.founder_name}`}
+                          className="cert-sig-image"
+                        />
+                      ) : (
+                        <span className="cert-sig-hand">{branding.founder_name}</span>
+                      )}
                       <span className="cert-sig-line" />
-                      <span className="cert-sig-name">Girish Hiremath</span>
-                      <span className="cert-sig-role">Founder &amp; CEO, IntelliForge AI</span>
+                      <span className="cert-sig-name">{branding.founder_name}</span>
+                      <span className="cert-sig-role">{branding.founder_title}</span>
                     </div>
                     <div className="cert-sig-block">
                       <span className="cert-sig-hand">
@@ -1486,13 +1649,16 @@ function App() {
                       <span className="cert-sig-role">Course Instructor</span>
                     </div>
                   </div>
-                  <div className="cert-qr-placeholder">
-                    <div className="cert-qr-box">QR</div>
-                    <div className="cert-qr-text">
-                      <strong>Scan to Verify</strong>
-                      QR code links to the permanent verification page.
-                    </div>
-                  </div>
+                  <PreviewQrBlock
+                    getApiUrl={getApiUrl}
+                    url={certResult?.url || PREVIEW_CERT_URL}
+                    title="Scan to Verify"
+                    subtitle={
+                      certResult?.url
+                        ? 'QR code links to the permanent verification page.'
+                        : 'Sample QR — your certificate link appears after generation.'
+                    }
+                  />
                 </div>
                 <div className="cert-footer-bar">
                   Issued by IntelliForge Learning &middot; learning.intelliforge.tech &middot; support@intelliforge.tech

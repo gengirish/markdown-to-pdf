@@ -394,6 +394,7 @@ class ReceiptRequest(BaseModel):
     payment_method: str = ""
     description: str = ""
     participant_phone: str = ""
+    participant_email: str = ""
     callback_url: str = ""
     idempotency_key: str = ""
 
@@ -559,7 +560,13 @@ def _resolve_map_preview(maps_url: str = "", venue: str = "", address: str = "")
             "open_url": open_url,
         }
 
-    coords = _geocode_location(text_query)
+    coords = None
+    for candidate in (text_query, address, venue):
+        if not candidate:
+            continue
+        coords = _geocode_location(candidate)
+        if coords:
+            break
     if coords:
         lat, lon = coords
         return {
@@ -606,6 +613,74 @@ async def maps_embed_preview(
     if query and not venue and not address:
         venue = query
     return _resolve_map_preview(maps_url=maps_url, venue=venue, address=address)
+
+
+def _validate_maps_url(maps_url: str) -> dict[str, str | bool]:
+    """Check whether a Google Maps URL is reachable and likely to produce a map preview."""
+    maps_url = (maps_url or "").strip()
+    if not maps_url:
+        return {"valid": True, "status": "empty", "message": "", "resolved_url": ""}
+
+    if not maps_url.startswith("http://") and not maps_url.startswith("https://"):
+        return {
+            "valid": False,
+            "status": "invalid",
+            "message": "Enter a full https:// URL from Google Maps.",
+            "resolved_url": "",
+        }
+
+    if any(host in maps_url for host in ("goo.gl", "maps.app.goo.gl")):
+        try:
+            with httpx.Client(timeout=10, follow_redirects=True) as client:
+                response = client.get(
+                    maps_url,
+                    headers={
+                        "User-Agent": (
+                            "Mozilla/5.0 (compatible; IntelliForge-Certificates/2.0; "
+                            "+https://certs.intelliforge.tech)"
+                        ),
+                    },
+                )
+                if response.status_code >= 400:
+                    return {
+                        "valid": False,
+                        "status": "unreachable",
+                        "message": (
+                            "Short link expired or invalid. Open the place in Google Maps "
+                            "and paste the full browser URL, or add a street address."
+                        ),
+                        "resolved_url": maps_url,
+                    }
+        except Exception:
+            return {
+                "valid": False,
+                "status": "unreachable",
+                "message": "Could not reach this maps link. Check the URL or add a street address.",
+                "resolved_url": maps_url,
+            }
+
+    preview = _resolve_map_preview(maps_url=maps_url)
+    resolved = preview.get("open_url") or maps_url
+    if preview.get("embed_url") or preview.get("static_image_url"):
+        return {
+            "valid": True,
+            "status": "ok",
+            "message": "Map link verified — preview available.",
+            "resolved_url": resolved,
+        }
+
+    return {
+        "valid": True,
+        "status": "warning",
+        "message": "Link saved. Add a street address if you need an embedded map preview.",
+        "resolved_url": resolved,
+    }
+
+
+@app.get("/api/maps/validate", tags=["Receipts"])
+async def maps_validate(maps_url: str = ""):
+    """Validate a Google Maps URL before issuing an entry ticket."""
+    return _validate_maps_url(maps_url)
 
 
 def _format_event_datetime(data: dict) -> str:
@@ -826,16 +901,22 @@ async def health_check():
 
 @app.get("/api/info", tags=["System"])
 async def get_info():
-    """API metadata including version, features, and tech stack."""
+    """API metadata including version, features, branding, and tech stack."""
     return {
         "name": "IntelliForge Certificate API",
         "version": "2.0.0",
-        "description": "Verifiable certificate generation with shareable URLs",
+        "description": "Verifiable certificates and event entry tickets with shareable URLs",
+        "branding": {
+            "founder_name": FOUNDER_NAME,
+            "founder_title": FOUNDER_TITLE,
+            "founder_signature_data_uri": _generate_signature_data_uri(FOUNDER_NAME),
+        },
         "features": [
             "HMAC-SHA256 signed certificate tokens",
             "Stateless verification (no database)",
             "Public shareable certificate pages",
             "PDF certificate generation with QR codes",
+            "Event entry tickets with maps and WhatsApp delivery",
             "LinkedIn and X social sharing",
         ],
         "tech_stack": {
@@ -845,6 +926,13 @@ async def get_info():
             "crypto": "HMAC-SHA256",
         }
     }
+
+
+@app.get("/api/preview/qr", tags=["System"])
+async def preview_qr(url: str = ""):
+    """Generate a QR code data URI for UI previews (does not create credentials)."""
+    sample = url.strip() or "https://certs.intelliforge.tech"
+    return {"qr_data_uri": _generate_qr_data_uri(sample), "url": sample}
 
 
 COURSES_FALLBACK = [
@@ -1139,10 +1227,10 @@ def _send_certificate_email(
     certificate_id: str,
     view_url: str,
     download_url: str,
-):
-    """Send certificate notification email via AgentMail. Non-blocking on failure."""
+) -> bool:
+    """Send certificate notification email via AgentMail. Returns True on success."""
     if not _agentmail_client or not to_email:
-        return
+        return False
     try:
         html = CERT_EMAIL_HTML.format(
             participant_name=participant_name,
@@ -1170,8 +1258,117 @@ def _send_certificate_email(
             html=html,
         )
         logger.info(f"Certificate email sent to {to_email}")
+        return True
     except Exception as e:
         logger.warning(f"Failed to send certificate email to {to_email}: {e}")
+        return False
+
+
+RECEIPT_EMAIL_HTML = """
+<div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;max-width:600px;margin:0 auto;background:#0f0f23;padding:24px;border-radius:16px;">
+  <div style="background:linear-gradient(135deg,#12124a 0%,#1e1e6e 50%,#2a1a5e 100%);padding:28px 32px 24px;text-align:center;border-radius:12px 12px 0 0;">
+    <div style="font-size:11px;letter-spacing:4px;text-transform:uppercase;color:#d4af37;font-weight:600;">An IntelliForge AI Initiative</div>
+    <div style="font-size:24px;font-weight:700;color:#fff;margin:8px 0 12px;">IntelliForge Events</div>
+    <div style="display:inline-block;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#d4af37;font-weight:600;border:1px solid rgba(139,125,60,0.6);padding:6px 18px;border-radius:20px;">Event Entry Ticket</div>
+  </div>
+  <div style="background:#ffffff;padding:32px;text-align:center;">
+    <div style="display:inline-block;background:#f0fff4;border:1px solid #68d391;color:#276749;font-size:12px;font-weight:600;padding:5px 14px;border-radius:20px;margin-bottom:20px;">&#10003; Entry Confirmed</div>
+    <p style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a0aec0;margin:0 0 6px;">Ticket Holder</p>
+    <h1 style="font-size:28px;font-weight:700;color:#1a202c;margin:0 0 4px;">{payer_name}</h1>
+    <p style="font-size:18px;font-weight:700;color:#553c9a;margin:0 0 8px;">{amount_display}</p>
+    <p style="font-size:13px;color:#718096;margin:0 0 20px;">{payment_meta}</p>
+    <div style="background:#f8fafc;border:1px solid #edf2f7;border-radius:12px;padding:16px;margin-bottom:20px;text-align:left;">
+      <div style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#a0aec0;margin-bottom:8px;">Event Details</div>
+      <div style="font-size:16px;font-weight:600;color:#2d3748;margin-bottom:4px;">{event_name}</div>
+      <div style="font-size:14px;color:#4a5568;margin-bottom:4px;">{event_datetime}</div>
+      {venue_html}
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #edf2f7;border-bottom:1px solid #edf2f7;margin-bottom:24px;">
+      <tr>
+        <td style="text-align:center;padding:14px 8px;width:50%;">
+          <div style="font-size:14px;font-weight:600;color:#2d3748;font-family:monospace;">{transaction_id}</div>
+          <div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#a0aec0;margin-top:4px;">Booking Ref</div>
+        </td>
+        <td style="text-align:center;padding:14px 8px;width:50%;border-left:1px solid #edf2f7;">
+          <div style="font-size:14px;font-weight:600;color:#2d3748;font-family:monospace;">{receipt_id}</div>
+          <div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#a0aec0;margin-top:4px;">Ticket No</div>
+        </td>
+      </tr>
+    </table>
+    <a href="{view_url}" style="display:inline-block;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:14px 36px;border-radius:12px;font-size:16px;font-weight:600;text-decoration:none;margin-bottom:12px;">View Entry Ticket</a>
+    <p style="font-size:12px;color:#a0aec0;margin:12px 0 0;">Or download the PDF directly: <a href="{download_url}" style="color:#667eea;text-decoration:none;font-weight:500;">Download Entry Ticket PDF</a></p>
+    <p style="font-size:12px;color:#718096;margin:16px 0 0;">Show the QR code on your ticket at the venue gate for quick entry verification.</p>
+  </div>
+  <div style="background:#f8fafc;padding:16px 32px;text-align:center;border-radius:0 0 12px 12px;border-top:1px solid #edf2f7;">
+    <p style="font-size:12px;color:#a0aec0;margin:0;">Issued by IntelliForge Events &middot; <a href="mailto:support@intelliforge.tech" style="color:#667eea;text-decoration:none;">support@intelliforge.tech</a></p>
+  </div>
+</div>
+"""
+
+
+def _receipt_payment_meta(data: dict) -> str:
+    parts = []
+    if data.get("pd"):
+        parts.append(f"Paid on {data['pd']}")
+    if data.get("pm"):
+        parts.append(f"via {data['pm']}")
+    return " · ".join(parts) if parts else "Payment confirmed"
+
+
+def _send_receipt_email(
+    to_email: str,
+    data: dict,
+    receipt_id: str,
+    view_url: str,
+    download_url: str,
+) -> bool:
+    """Send event entry ticket notification email via AgentMail. Returns True on success."""
+    if not _agentmail_client or not to_email:
+        return False
+    try:
+        venue_bits = []
+        if data.get("v"):
+            venue_bits.append(f'<div style="font-size:14px;color:#4a5568;">{html_mod.escape(data["v"])}</div>')
+        if data.get("a"):
+            venue_bits.append(
+                f'<div style="font-size:13px;color:#718096;margin-top:4px;">{html_mod.escape(data["a"])}</div>'
+            )
+        venue_html = "".join(venue_bits)
+        html = RECEIPT_EMAIL_HTML.format(
+            payer_name=html_mod.escape(data.get("n", "")),
+            amount_display=html_mod.escape(_receipt_amount_display(data)),
+            payment_meta=html_mod.escape(_receipt_payment_meta(data)),
+            event_name=html_mod.escape(data.get("e", "")),
+            event_datetime=html_mod.escape(_format_event_datetime(data)),
+            venue_html=venue_html,
+            transaction_id=html_mod.escape(data.get("tx", "")),
+            receipt_id=html_mod.escape(receipt_id),
+            view_url=view_url,
+            download_url=download_url,
+        )
+        _agentmail_client.inboxes.messages.send(
+            AGENTMAIL_INBOX_ID,
+            to=to_email,
+            subject=f"Your Event Entry Ticket – {data.get('e', 'IntelliForge Event')}",
+            text=(
+                f"Hi {data.get('n', '')},\n\n"
+                f"Your entry ticket for {data.get('e', '')} is confirmed.\n\n"
+                f"Event: {_format_event_datetime(data)}\n"
+                f"Amount: {_receipt_amount_display(data)}\n"
+                f"Ticket No: {receipt_id}\n"
+                f"Booking Ref: {data.get('tx', '')}\n\n"
+                f"View your ticket: {view_url}\n"
+                f"Download PDF: {download_url}\n\n"
+                f"Show the QR code at the venue gate for entry.\n\n"
+                f"– IntelliForge Events"
+            ),
+            html=html,
+        )
+        logger.info(f"Entry ticket email sent to {to_email}")
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to send entry ticket email to {to_email}: {e}")
+        return False
 
 
 @app.post("/api/certificate", tags=["Certificates"])
@@ -1247,8 +1444,12 @@ async def generate_certificate(request: CertificateRequest, req: Request):
         shareable_url = f"{base_url}/certificate/{token}"
         download_url = f"{shareable_url}/download"
 
+        email_sent = False
+        email_error = ""
         if participant_email:
-            _send_certificate_email(
+            if not _agentmail_client:
+                email_error = "Email service is not configured on this server."
+            elif _send_certificate_email(
                 to_email=participant_email,
                 participant_name=name,
                 course_name=request.course_name,
@@ -1257,7 +1458,10 @@ async def generate_certificate(request: CertificateRequest, req: Request):
                 certificate_id=cert_id,
                 view_url=shareable_url,
                 download_url=download_url,
-            )
+            ):
+                email_sent = True
+            else:
+                email_error = "Could not deliver email. Share the certificate link instead."
 
         logger.info(f"Certificate issued for {name} – {request.course_name}")
 
@@ -1268,7 +1472,8 @@ async def generate_certificate(request: CertificateRequest, req: Request):
             "download_url": download_url,
             "participant_name": name,
             "course_name": request.course_name,
-            "email_sent": bool(participant_email and _agentmail_client),
+            "email_sent": email_sent,
+            "email_error": email_error,
             "request_id": str(uuid_mod.uuid4()),
         }
 
@@ -1836,6 +2041,7 @@ async def generate_receipt(request: ReceiptRequest, req: Request):
 
     Include `address` and/or `maps_url` for venue location. Pass `participant_phone`
     to WhatsApp an event entry ticket (requires WhatsApp Cloud API env vars).
+    Pass `participant_email` to email the entry ticket (requires AgentMail env vars).
     The public receipt page embeds Google Maps when location data is provided.
     """
     try:
@@ -1891,8 +2097,34 @@ async def generate_receipt(request: ReceiptRequest, req: Request):
         download_url = f"{shareable_url}/download"
 
         participant_phone = request.participant_phone.strip()
+        whatsapp_sent = False
+        whatsapp_error = ""
         if participant_phone:
-            _dispatch_receipt_whatsapp(participant_phone, receipt_data, receipt_id, shareable_url)
+            if not _whatsapp_configured():
+                whatsapp_error = "WhatsApp is not configured on this server."
+            elif _send_receipt_whatsapp(
+                participant_phone, receipt_data, receipt_id, shareable_url
+            ):
+                whatsapp_sent = True
+            else:
+                whatsapp_error = "Could not deliver WhatsApp message. Share the ticket link instead."
+
+        participant_email = request.participant_email.strip()
+        email_sent = False
+        email_error = ""
+        if participant_email:
+            if not _agentmail_client:
+                email_error = "Email service is not configured on this server."
+            elif _send_receipt_email(
+                to_email=participant_email,
+                data=receipt_data,
+                receipt_id=receipt_id,
+                view_url=shareable_url,
+                download_url=download_url,
+            ):
+                email_sent = True
+            else:
+                email_error = "Could not deliver email. Share the ticket link instead."
 
         logger.info(f"Receipt issued for {payer} – {request.event_name}")
 
@@ -1904,7 +2136,10 @@ async def generate_receipt(request: ReceiptRequest, req: Request):
             "payer_name": payer,
             "event_name": receipt_data["e"],
             "amount": _receipt_amount_display(receipt_data),
-            "whatsapp_sent": bool(participant_phone and _whatsapp_configured()),
+            "whatsapp_sent": whatsapp_sent,
+            "whatsapp_error": whatsapp_error,
+            "email_sent": email_sent,
+            "email_error": email_error,
             "request_id": str(uuid_mod.uuid4()),
         }
 
@@ -2005,7 +2240,7 @@ async def download_receipt(token: str, req: Request):
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="Receipt_{safe_name}.pdf"',
+            "Content-Disposition": f'attachment; filename="Entry_Ticket_{safe_name}.pdf"',
             "Content-Length": str(len(pdf_bytes)),
         },
     )
@@ -2295,8 +2530,9 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
             shareable_url = f"{base_url}/certificate/{token}"
             download_url = f"{shareable_url}/download"
 
+            email_sent = False
             if p_email:
-                _send_certificate_email(
+                email_sent = _send_certificate_email(
                     to_email=p_email,
                     participant_name=name,
                     course_name=entry.course_name,
@@ -2315,7 +2551,7 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
                 "course_name": entry.course_name,
                 "url": shareable_url,
                 "download_url": download_url,
-                "email_sent": bool(p_email and _agentmail_client),
+                "email_sent": email_sent,
             })
         except Exception as e:
             results.append({"index": i, "status": "error", "error": str(e)})

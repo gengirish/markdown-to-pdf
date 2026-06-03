@@ -660,6 +660,22 @@
   background: #f8fafc;
 }
 
+.cert-qr-image {
+  width: 48px;
+  height: 48px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.cert-sig-image {
+  display: block;
+  max-width: 140px;
+  max-height: 42px;
+  margin: 0 auto 0.15rem;
+}
+
 .cert-qr-text {
   text-align: left;
   font-size: 0.55rem;
@@ -683,7 +699,7 @@
   color: #a0aec0;
 }
 
-/* ── Payment Receipt Preview ── */
+/* ── Entry Ticket Preview ── */
 
 .receipt-body {
   text-align: center;
@@ -867,7 +883,8 @@
   color: var(--text-primary);
 }
 
-.cert-email-sent {
+.cert-email-sent,
+.cert-delivery-success {
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -878,6 +895,45 @@
   border-radius: 8px;
   padding: 0.5rem 0.8rem;
   margin-bottom: 1rem;
+}
+
+.cert-delivery-failed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+  color: #c53030;
+  background: rgba(229, 62, 62, 0.08);
+  border: 1px solid rgba(229, 62, 62, 0.2);
+  border-radius: 8px;
+  padding: 0.5rem 0.8rem;
+  margin-bottom: 1rem;
+}
+
+.cert-delivery-failed strong {
+  color: #9b2c2c;
+}
+
+.field-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.field-hint-neutral {
+  color: var(--text-muted);
+}
+
+.field-hint-ok {
+  color: #276749;
+}
+
+.field-hint-warn {
+  color: #975a16;
+}
+
+.field-hint-error {
+  color: #c53030;
 }
 
 .form-optional {

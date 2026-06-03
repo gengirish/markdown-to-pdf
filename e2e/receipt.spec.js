@@ -5,24 +5,24 @@ const apiPort = process.env.E2E_API_PORT || '8000'
 const apiBase = (process.env.E2E_API_ORIGIN || process.env.E2E_BASE_URL || `http://127.0.0.1:${apiPort}`).replace(/\/$/, '')
 const shareUrlPattern = /https?:\/\/[^/]+\/receipt\//
 
-test.describe('Payment Receipt', () => {
+test.describe('Entry Ticket', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
     await page.getByTestId('receipt-tab').click()
-    await expect(page.getByRole('heading', { name: 'Receipt Details' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Entry Ticket Details' })).toBeVisible()
   })
 
-  test('shows receipt form, preview, and live map when address is entered', async ({ page }) => {
+  test('shows entry ticket form, preview, and live map when address is entered', async ({ page }) => {
     const data = buildReceiptData()
 
     await fillReceiptForm(page, data)
 
-    await expect(page.getByRole('heading', { name: 'Receipt Preview' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Entry Ticket Preview' })).toBeVisible()
     await expect(page.getByText(data.payer_name).first()).toBeVisible()
     await expect(page.getByText(data.event_name).first()).toBeVisible()
     await expect(page.getByText('INR 2499').first()).toBeVisible()
     await expect(page.getByTestId('receipt-map-preview')).toBeVisible()
-    await expect(page.locator('iframe[title="Event location map preview"]')).toBeVisible()
+    await expect(page.locator('iframe[title="Event location map preview"], img.receipt-map-static')).toBeVisible({ timeout: 15_000 })
   })
 
   test('generates receipt via UI and shows shareable link', async ({ page }) => {
@@ -102,7 +102,7 @@ test.describe('Payment Receipt', () => {
       page.getByRole('button', { name: 'Download PDF' }).click(),
     ])
 
-    expect(download.suggestedFilename()).toMatch(/^Receipt_Playwright_Tester\.pdf$/)
+    expect(download.suggestedFilename()).toMatch(/^Entry_Ticket_Playwright_Tester\.pdf$/)
   })
 
   test('downloads receipt PDF from public page', async ({ page }) => {
@@ -120,6 +120,6 @@ test.describe('Payment Receipt', () => {
       page.getByRole('link', { name: 'Download Entry Ticket PDF' }).click(),
     ])
 
-    expect(download.suggestedFilename()).toMatch(/^Receipt_Playwright_Tester\.pdf$/)
+    expect(download.suggestedFilename()).toMatch(/^Entry_Ticket_Playwright_Tester\.pdf$/)
   })
 })
