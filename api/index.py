@@ -17,6 +17,7 @@ import hashlib
 import hmac as hmac_mod
 import json
 import os
+import re
 import base64
 import time
 import math
@@ -77,6 +78,21 @@ if AGENTMAIL_API_KEY:
         logger.info(f"AgentMail configured with inbox {AGENTMAIL_INBOX_ID}")
     except Exception as e:
         logger.warning(f"AgentMail initialization failed: {e}")
+
+WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN", "").strip()
+WHATSAPP_PHONE_ID = os.environ.get("WHATSAPP_PHONE_ID", "").strip()
+WHATSAPP_RECEIPT_TEMPLATE = os.environ.get("WHATSAPP_RECEIPT_TEMPLATE", "").strip()
+WHATSAPP_TEMPLATE_LANG = os.environ.get("WHATSAPP_TEMPLATE_LANG", "en").strip()
+WHATSAPP_API_VERSION = os.environ.get("WHATSAPP_API_VERSION", "v21.0").strip()
+WHATSAPP_DEFAULT_COUNTRY_CODE = os.environ.get("WHATSAPP_DEFAULT_COUNTRY_CODE", "91").strip()
+WHATSAPP_TEMPLATE_URL_BUTTON = os.environ.get("WHATSAPP_TEMPLATE_URL_BUTTON", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+WHATSAPP_ALLOW_TEXT = os.environ.get("WHATSAPP_ALLOW_TEXT", "").strip().lower() in ("1", "true", "yes")
+if WHATSAPP_TOKEN and WHATSAPP_PHONE_ID:
+    logger.info("WhatsApp Cloud API configured for entry ticket delivery")
 
 # ---------------------------------------------------------------------------
 # Rate limiter (in-memory, per-IP, resets on cold start)
@@ -374,6 +390,7 @@ class ReceiptRequest(BaseModel):
     currency: str = ""
     payment_method: str = ""
     description: str = ""
+    participant_phone: str = ""
     callback_url: str = ""
     idempotency_key: str = ""
 
@@ -431,6 +448,184 @@ def _format_event_datetime(data: dict) -> str:
     return " · ".join(p for p in parts if p)
 
 
+def _whatsapp_configured() -> bool:
+    return bool(WHATSAPP_TOKEN and WHATSAPP_PHONE_ID)
+
+
+def _normalize_whatsapp_phone(phone: str) -> str:
+    digits = re.sub(r"\D", "", phone.strip())
+    if not digits:
+        return ""
+    if len(digits) == 10 and WHATSAPP_DEFAULT_COUNTRY_CODE:
+        digits = WHATSAPP_DEFAULT_COUNTRY_CODE + digits
+    return digits
+
+
+def _whatsapp_ticket_location(data: dict) -> str:
+    parts = [p for p in (data.get("v"), data.get("a")) if p]
+    return " · ".join(parts) if parts else "See ticket link for venue details"
+
+
+def _whatsapp_text_param(value: str, limit: int = 100) -> str:
+    cleaned = " ".join((value or "").split())
+    return cleaned[:limit] if cleaned else "-"
+
+
+def _build_whatsapp_entry_ticket_text(
+    data: dict,
+    receipt_id: str,
+    shareable_url: str,
+) -> str:
+    maps_url = _maps_open_url(data)
+    lines = [
+        "🎟️ *Event Entry Ticket*",
+        "",
+        f"Hi {data['n']},",
+        "",
+        f"Your entry for *{data['e']}* is confirmed.",
+        "",
+        f"📅 {_format_event_datetime(data)}",
+        f"📍 {_whatsapp_ticket_location(data)}",
+        f"💳 Paid: {_receipt_amount_display(data)}",
+        f"🎫 Ticket No: {receipt_id}",
+    ]
+    if maps_url:
+        lines.append(f"🗺️ Directions: {maps_url}")
+    lines.extend([
+        "",
+        "View and show this ticket at the venue gate:",
+        shareable_url,
+        "",
+        "_IntelliForge Events_",
+    ])
+    return "\n".join(lines)
+
+
+def _whatsapp_post_message(payload: dict) -> bool:
+    url = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{WHATSAPP_PHONE_ID}/messages"
+    try:
+        with httpx.Client(timeout=15) as client:
+            response = client.post(
+                url,
+                headers={
+                    "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+        if response.is_success:
+            return True
+        logger.warning("WhatsApp send failed (%s): %s", response.status_code, response.text)
+        return False
+    except Exception as e:
+        logger.warning(f"WhatsApp send error: {e}")
+        return False
+
+
+def _send_whatsapp_template_ticket(
+    to_phone: str,
+    data: dict,
+    receipt_id: str,
+    shareable_url: str,
+) -> bool:
+    token = shareable_url.rstrip("/").split("/receipt/")[-1]
+    components = [
+        {
+            "type": "body",
+            "parameters": [
+                {"type": "text", "text": _whatsapp_text_param(data["n"])},
+                {"type": "text", "text": _whatsapp_text_param(data["e"])},
+                {"type": "text", "text": _whatsapp_text_param(_format_event_datetime(data))},
+                {"type": "text", "text": _whatsapp_text_param(_whatsapp_ticket_location(data), 200)},
+                {"type": "text", "text": _whatsapp_text_param(_receipt_amount_display(data), 50)},
+                {"type": "text", "text": _whatsapp_text_param(receipt_id, 50)},
+                {"type": "text", "text": _whatsapp_text_param(shareable_url, 500)},
+            ],
+        }
+    ]
+    if WHATSAPP_TEMPLATE_URL_BUTTON:
+        components.append(
+            {
+                "type": "button",
+                "sub_type": "url",
+                "index": "0",
+                "parameters": [{"type": "text", "text": _whatsapp_text_param(token, 1000)}],
+            }
+        )
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_phone,
+        "type": "template",
+        "template": {
+            "name": WHATSAPP_RECEIPT_TEMPLATE,
+            "language": {"code": WHATSAPP_TEMPLATE_LANG},
+            "components": components,
+        },
+    }
+    return _whatsapp_post_message(payload)
+
+
+def _send_whatsapp_text_ticket(
+    to_phone: str,
+    data: dict,
+    receipt_id: str,
+    shareable_url: str,
+) -> bool:
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_phone,
+        "type": "text",
+        "text": {
+            "preview_url": True,
+            "body": _build_whatsapp_entry_ticket_text(data, receipt_id, shareable_url),
+        },
+    }
+    return _whatsapp_post_message(payload)
+
+
+def _send_receipt_whatsapp(
+    phone: str,
+    data: dict,
+    receipt_id: str,
+    shareable_url: str,
+) -> bool:
+    """
+    Send an event entry ticket to the participant on WhatsApp.
+
+    Production outbound requires an approved Meta template (WHATSAPP_RECEIPT_TEMPLATE).
+    Set WHATSAPP_ALLOW_TEXT=true for sandbox/dev text messages.
+    """
+    if not _whatsapp_configured():
+        return False
+
+    to_phone = _normalize_whatsapp_phone(phone)
+    if not to_phone:
+        logger.warning("WhatsApp skipped: invalid participant phone")
+        return False
+
+    if WHATSAPP_RECEIPT_TEMPLATE:
+        if _send_whatsapp_template_ticket(to_phone, data, receipt_id, shareable_url):
+            logger.info(f"WhatsApp entry ticket sent to {to_phone[-4:].rjust(len(to_phone), '*')}")
+            return True
+        if not WHATSAPP_ALLOW_TEXT and IS_PROD:
+            return False
+
+    if WHATSAPP_ALLOW_TEXT or not IS_PROD:
+        if _send_whatsapp_text_ticket(to_phone, data, receipt_id, shareable_url):
+            logger.info(f"WhatsApp entry ticket (text) sent to {to_phone[-4:].rjust(len(to_phone), '*')}")
+            return True
+
+    return False
+
+
+def _dispatch_receipt_whatsapp(phone: str, data: dict, receipt_id: str, shareable_url: str):
+    """Send WhatsApp entry ticket in a background thread. Best-effort."""
+    def _do():
+        _send_receipt_whatsapp(phone, data, receipt_id, shareable_url)
+
+    threading.Thread(target=_do, daemon=True).start()
+
+
 @app.get("/", tags=["System"])
 async def root():
     """API root with version and available endpoints."""
@@ -457,6 +652,7 @@ async def health_check():
         "dependencies": {
             "database": "connected" if DB_AVAILABLE else "not_configured",
             "email": "configured" if _agentmail_client else "not_configured",
+            "whatsapp": "configured" if _whatsapp_configured() else "not_configured",
         },
     }
 
@@ -1180,7 +1376,7 @@ RECEIPT_PDF_TEMPLATE = """
             <tr><td align="center" style="text-align: center;">
                 <table align="center" cellspacing="0" cellpadding="0" style="border: 2px solid #d4af37;">
                 <tr><td align="center" style="padding: 6pt 24pt; font-size: 9pt; letter-spacing: 3pt; color: #d4af37; font-weight: bold; text-align: center;">
-                    PAYMENT ACKNOWLEDGEMENT
+                    EVENT ENTRY TICKET
                 </td></tr>
                 </table>
             </td></tr>
@@ -1194,7 +1390,7 @@ RECEIPT_PDF_TEMPLATE = """
         <tr><td align="center" style="text-align: center; padding-bottom: 14pt;">
             <table align="center" cellspacing="0" cellpadding="0" style="border: 1px solid #68d391;">
             <tr><td align="center" style="padding: 4pt 14pt; font-size: 8pt; color: #276749; font-weight: bold; background-color: #f0fff4; text-align: center;">
-                &#10003; &nbsp; Payment Received
+                &#10003; &nbsp; Entry Confirmed
             </td></tr>
             </table>
         </td></tr>
@@ -1285,9 +1481,9 @@ RECEIPT_VIEWER_HTML = """<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{payer_name} – Payment Receipt</title>
-    <meta property="og:title" content="{payer_name} – Payment Acknowledgement" />
-    <meta property="og:description" content="Payment received for {event_name} on {event_datetime}." />
+    <title>{payer_name} – Event Entry Ticket</title>
+    <meta property="og:title" content="{payer_name} – Event Entry Ticket" />
+    <meta property="og:description" content="Entry confirmed for {event_name} on {event_datetime}." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="{page_url}" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1344,11 +1540,11 @@ RECEIPT_VIEWER_HTML = """<!DOCTYPE html>
         <div class="card-header">
             <div class="hdr-org">An IntelliForge AI Initiative</div>
             <div class="hdr-brand">IntelliForge Events</div>
-            <div class="hdr-badge">Payment Acknowledgement</div>
+            <div class="hdr-badge">Event Entry Ticket</div>
         </div>
         <div class="card-body">
-            <div class="verified">&#10003; Payment Received</div>
-            <div class="label">Received from</div>
+            <div class="verified">&#10003; Entry Confirmed</div>
+            <div class="label">Ticket Holder</div>
             <div class="name">{payer_name}</div>
             <div class="amount">{amount_display}</div>
             <div class="payment-meta">{payment_meta}</div>
@@ -1364,8 +1560,8 @@ RECEIPT_VIEWER_HTML = """<!DOCTYPE html>
             {description_html}
 
             <div class="meta">
-                <div class="meta-item"><div class="meta-val">{transaction_id}</div><div class="meta-lbl">Transaction ID</div></div>
-                <div class="meta-item"><div class="meta-val">{receipt_id}</div><div class="meta-lbl">Receipt ID</div></div>
+                <div class="meta-item"><div class="meta-val">{transaction_id}</div><div class="meta-lbl">Booking Ref</div></div>
+                <div class="meta-item"><div class="meta-val">{receipt_id}</div><div class="meta-lbl">Ticket No</div></div>
             </div>
 
             {maps_html}
@@ -1373,13 +1569,13 @@ RECEIPT_VIEWER_HTML = """<!DOCTYPE html>
             <div class="actions">
                 <a class="btn-download" href="{download_url}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    Download Receipt PDF
+                    Download Entry Ticket PDF
                 </a>
             </div>
 
             <div class="qr-section">
                 <img src="{qr_data_uri}" alt="QR Code" width="80" height="80" />
-                <div class="qr-text"><strong>Scan to View</strong>Shareable link to this payment acknowledgement receipt.</div>
+                <div class="qr-text"><strong>Scan at Venue Gate</strong>Show this QR code for quick entry verification.</div>
             </div>
         </div>
         <div class="card-footer">
@@ -1470,8 +1666,9 @@ async def generate_receipt(request: ReceiptRequest, req: Request):
     """
     Generate a signed payment acknowledgement receipt with event details.
 
-    Include `address` and/or `maps_url` for venue location. The public receipt page
-    embeds Google Maps when location data is provided.
+    Include `address` and/or `maps_url` for venue location. Pass `participant_phone`
+    to WhatsApp an event entry ticket (requires WhatsApp Cloud API env vars).
+    The public receipt page embeds Google Maps when location data is provided.
     """
     try:
         if request.idempotency_key:
@@ -1525,6 +1722,10 @@ async def generate_receipt(request: ReceiptRequest, req: Request):
         shareable_url = f"{base_url}/receipt/{token}"
         download_url = f"{shareable_url}/download"
 
+        participant_phone = request.participant_phone.strip()
+        if participant_phone:
+            _dispatch_receipt_whatsapp(participant_phone, receipt_data, receipt_id, shareable_url)
+
         logger.info(f"Receipt issued for {payer} – {request.event_name}")
 
         response_data = {
@@ -1535,6 +1736,7 @@ async def generate_receipt(request: ReceiptRequest, req: Request):
             "payer_name": payer,
             "event_name": receipt_data["e"],
             "amount": _receipt_amount_display(receipt_data),
+            "whatsapp_sent": bool(participant_phone and _whatsapp_configured()),
             "request_id": str(uuid_mod.uuid4()),
         }
 

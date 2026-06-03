@@ -128,6 +128,7 @@ function ReceiptGenerator({ getApiUrl }) {
     currency: 'INR',
     payment_date: new Date().toISOString().split('T')[0],
     transaction_id: '',
+    participant_phone: '',
     payment_method: '',
     description: '',
   })
@@ -240,6 +241,19 @@ function ReceiptGenerator({ getApiUrl }) {
                 value={form.payer_name}
                 onChange={(e) => updateField('payer_name', e.target.value)}
                 required
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="participant_phone">
+                WhatsApp Number <span className="form-optional">(optional – sends entry ticket)</span>
+              </label>
+              <input
+                id="participant_phone"
+                type="tel"
+                placeholder="e.g. +91 9876543210"
+                value={form.participant_phone}
+                onChange={(e) => updateField('participant_phone', e.target.value)}
+                autoComplete="tel"
               />
             </div>
             <div className="form-row">
@@ -397,9 +411,15 @@ function ReceiptGenerator({ getApiUrl }) {
           <div className="cert-result" data-testid="receipt-result">
             <div className="cert-result-header">
               <span className="cert-result-check"><Icon.CheckCircle /></span>
-              Receipt issued for <strong>{result.payer_name}</strong>
+              Entry ticket issued for <strong>{result.payer_name}</strong>
               <span className="cert-id-badge">{result.receipt_id}</span>
             </div>
+            {result.whatsapp_sent && (
+              <div className="cert-email-sent">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+                Entry ticket sent on WhatsApp to {form.participant_phone}
+              </div>
+            )}
 
             <div className="cert-link-box">
               <label className="cert-link-label">Permanent Shareable Link</label>
@@ -443,14 +463,14 @@ function ReceiptGenerator({ getApiUrl }) {
             <div className="cert-header">
               <span className="cert-header-org">An IntelliForge AI Initiative</span>
               <span className="cert-header-brand">IntelliForge Events</span>
-              <span className="cert-header-badge">Payment Acknowledgement</span>
+              <span className="cert-header-badge">Event Entry Ticket</span>
             </div>
             <div className="cert-body receipt-body">
               <div className="cert-verified receipt-verified">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg>
-                Payment Received
+                Entry Confirmed
               </div>
-              <p className="cert-award-label">Received From</p>
+              <p className="cert-award-label">Ticket Holder</p>
               <p className="cert-name">{form.payer_name || 'Payer Name'}</p>
               <p className="receipt-amount">{amountDisplay}</p>
               <p className="receipt-payment-meta">{paymentMeta || 'Payment details'}</p>
@@ -470,11 +490,11 @@ function ReceiptGenerator({ getApiUrl }) {
               <div className="cert-meta-row receipt-meta-row">
                 <div className="cert-meta-item">
                   <span className="cert-meta-value cert-meta-id">{form.transaction_id || 'TXN-XXXX'}</span>
-                  <span className="cert-meta-label">Transaction ID</span>
+                  <span className="cert-meta-label">Booking Ref</span>
                 </div>
                 <div className="cert-meta-item cert-meta-bordered">
                   <span className="cert-meta-value cert-meta-id">RCP-XXXXXXXXXXXX</span>
-                  <span className="cert-meta-label">Receipt ID</span>
+                  <span className="cert-meta-label">Ticket No</span>
                 </div>
               </div>
 
@@ -498,8 +518,8 @@ function ReceiptGenerator({ getApiUrl }) {
               <div className="cert-qr-placeholder">
                 <div className="cert-qr-box">QR</div>
                 <div className="cert-qr-text">
-                  <strong>Scan to View</strong>
-                  QR code links to the shareable receipt page.
+                  <strong>Scan at Venue Gate</strong>
+                  QR code for quick entry verification.
                 </div>
               </div>
             </div>
@@ -1135,7 +1155,7 @@ function App() {
         <h1>IntelliForge Certificates</h1>
         <p className="header-subtitle">
           {activeTab === 'receipt'
-            ? 'Issue payment acknowledgement receipts with event details and map locations'
+            ? 'Issue event entry tickets with WhatsApp delivery, maps, and shareable links'
             : activeTab === 'admin'
               ? 'Manage courses, bulk certificates, and platform analytics'
               : 'Issue verified training certificates, share links, and manage courses from one place'}

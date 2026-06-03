@@ -165,6 +165,13 @@ curl -X POST .../api/admin/certificates/bulk \
 | `DATABASE_URL` | No | PostgreSQL connection string (Neon) for analytics & admin |
 | `AGENTMAIL_API_KEY` | No | AgentMail API key for email delivery |
 | `AGENTMAIL_INBOX_ID` | No | AgentMail inbox (default: `support@intelliforge.tech`) |
+| `WHATSAPP_TOKEN` | No | Meta WhatsApp Cloud API access token |
+| `WHATSAPP_PHONE_ID` | No | WhatsApp Business phone number ID |
+| `WHATSAPP_RECEIPT_TEMPLATE` | No | Approved template name for entry tickets (e.g. `event_entry_ticket`) |
+| `WHATSAPP_TEMPLATE_LANG` | No | Template language code (default: `en`) |
+| `WHATSAPP_TEMPLATE_URL_BUTTON` | No | Set `true` if template has a dynamic URL button |
+| `WHATSAPP_ALLOW_TEXT` | No | Set `true` to send plain-text tickets in dev/sandbox |
+| `WHATSAPP_DEFAULT_COUNTRY_CODE` | No | Prefix for 10-digit numbers (default: `91`) |
 | `FOUNDER_NAME` | No | Signature name on certificates (default: `Girish Hiremath`) |
 | `FOUNDER_TITLE` | No | Signature title (default: `Founder & CEO, IntelliForge AI`) |
 
@@ -180,6 +187,7 @@ curl -X POST .../api/admin/certificates/bulk \
 | PDF | xhtml2pdf, ReportLab |
 | QR Codes | python-qrcode, Pillow |
 | Email | AgentMail |
+| WhatsApp | Meta WhatsApp Cloud API (entry tickets) |
 | Crypto | HMAC-SHA256 (stdlib) |
 | Hosting | Vercel (serverless) |
 

@@ -2,12 +2,8 @@ import { test, expect } from '@playwright/test'
 import { buildReceiptData, extractReceiptToken, fillReceiptForm } from './helpers/receipt.js'
 
 const apiPort = process.env.E2E_API_PORT || '8000'
-const apiOriginPattern = new RegExp(`https?://(127\\.0\\.0\\.1|localhost):${apiPort}`)
-
-/** @param {string} path */
-function apiUrl(path) {
-  return `http://127.0.0.1:${apiPort}${path}`
-}
+const apiBase = (process.env.E2E_API_ORIGIN || process.env.E2E_BASE_URL || `http://127.0.0.1:${apiPort}`).replace(/\/$/, '')
+const shareUrlPattern = /https?:\/\/[^/]+\/receipt\//
 
 test.describe('Payment Receipt', () => {
   test.beforeEach(async ({ page }) => {
@@ -37,13 +33,13 @@ test.describe('Payment Receipt', () => {
 
     const result = page.getByTestId('receipt-result')
     await expect(result).toBeVisible({ timeout: 15_000 })
-    await expect(result).toContainText('Receipt issued for')
+    await expect(result).toContainText('Entry ticket issued for')
     await expect(result).toContainText(data.payer_name)
     await expect(result.locator('.cert-id-badge')).toContainText(/^RCP-/)
 
     const shareInput = page.getByTestId('receipt-share-url')
     const shareUrl = await shareInput.inputValue()
-    expect(shareUrl).toMatch(apiOriginPattern)
+    expect(shareUrl).toMatch(shareUrlPattern)
     expect(shareUrl).toMatch(/\/receipt\/.+\..+/)
 
     await expect(page.getByRole('button', { name: 'Download PDF' })).toBeVisible()
@@ -60,15 +56,15 @@ test.describe('Payment Receipt', () => {
     const shareUrl = await page.getByTestId('receipt-share-url').inputValue()
     await page.goto(shareUrl)
 
-    await expect(page).toHaveTitle(/Payment Receipt/)
-    await expect(page.getByText('Payment Received')).toBeVisible()
+    await expect(page).toHaveTitle(/Event Entry Ticket/)
+    await expect(page.getByText('Entry Confirmed')).toBeVisible()
     await expect(page.getByText(data.payer_name).first()).toBeVisible()
     await expect(page.getByText(data.event_name).first()).toBeVisible()
     await expect(page.getByText('INR 2499').first()).toBeVisible()
     await expect(page.getByText(data.venue_name).first()).toBeVisible()
     await expect(page.getByText(data.address).first()).toBeVisible()
     await expect(page.locator('iframe.receipt-map-frame, iframe[src*="maps"]')).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Download Receipt PDF' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Download Entry Ticket PDF' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Open in Google Maps' })).toBeVisible()
   })
 
@@ -82,7 +78,7 @@ test.describe('Payment Receipt', () => {
     const shareUrl = await page.getByTestId('receipt-share-url').inputValue()
     const token = extractReceiptToken(shareUrl)
 
-    const response = await request.get(`${apiUrl(`/receipt/${token}/verify`)}`)
+    const response = await request.get(`${apiBase}/receipt/${token}/verify`)
     expect(response.ok()).toBeTruthy()
 
     const body = await response.json()
@@ -121,7 +117,7 @@ test.describe('Payment Receipt', () => {
 
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      page.getByRole('link', { name: 'Download Receipt PDF' }).click(),
+      page.getByRole('link', { name: 'Download Entry Ticket PDF' }).click(),
     ])
 
     expect(download.suggestedFilename()).toMatch(/^Receipt_Playwright_Tester\.pdf$/)
