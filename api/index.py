@@ -94,6 +94,9 @@ WHATSAPP_ALLOW_TEXT = os.environ.get("WHATSAPP_ALLOW_TEXT", "").strip().lower() 
 if WHATSAPP_TOKEN and WHATSAPP_PHONE_ID:
     logger.info("WhatsApp Cloud API configured for entry ticket delivery")
 
+GOOGLE_MAPS_EMBED_API_KEY = os.environ.get("GOOGLE_MAPS_EMBED_API_KEY", "").strip()
+NOMINATIM_USER_AGENT = "IntelliForge-Certificates/2.0 (support@intelliforge.tech)"
+
 # ---------------------------------------------------------------------------
 # Rate limiter (in-memory, per-IP, resets on cold start)
 # ---------------------------------------------------------------------------
@@ -419,7 +422,167 @@ def _maps_query(data: dict) -> str:
     return ", ".join(parts)
 
 
+def _resolve_maps_redirect(url: str) -> str:
+    """Follow Google Maps short/share links to their final destination URL."""
+    try:
+        with httpx.Client(timeout=10, follow_redirects=True) as client:
+            response = client.get(
+                url,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (compatible; IntelliForge-Certificates/2.0; "
+                        "+https://certs.intelliforge.tech)"
+                    ),
+                },
+            )
+            if response.status_code >= 400:
+                return url
+            return str(response.url)
+    except Exception as e:
+        logger.warning(f"Maps redirect resolve failed for {url}: {e}")
+        return url
+
+
+def _parse_google_maps_coords(url: str) -> tuple[float, float] | None:
+    for pattern in (
+        r"!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)",
+        r"@(-?\d+\.\d+),(-?\d+\.\d+)",
+        r"[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)",
+    ):
+        match = re.search(pattern, url)
+        if match:
+            return float(match.group(1)), float(match.group(2))
+    return None
+
+
+def _geocode_location(query: str) -> tuple[float, float] | None:
+    cleaned = " ".join(query.split())
+    if not cleaned:
+        return None
+    try:
+        with httpx.Client(timeout=10) as client:
+            response = client.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={"q": cleaned, "format": "json", "limit": 1},
+                headers={"User-Agent": NOMINATIM_USER_AGENT},
+            )
+            if response.is_success:
+                results = response.json()
+                if results:
+                    return float(results[0]["lat"]), float(results[0]["lon"])
+    except Exception as e:
+        logger.warning(f"Geocoding failed for '{query}': {e}")
+    return None
+
+
+def _osm_embed_url(lat: float, lon: float) -> str:
+    pad = 0.012
+    bbox = f"{lon - pad},{lat - pad},{lon + pad},{lat + pad}"
+    return (
+        f"https://www.openstreetmap.org/export/embed.html"
+        f"?bbox={bbox}&layer=mapnik&marker={lat}%2C{lon}"
+    )
+
+
+def _osm_static_map_url(lat: float, lon: float) -> str:
+    return (
+        "https://staticmap.openstreetmap.de/staticmap.php"
+        f"?center={lat},{lon}&zoom=15&size=640x280&markers={lat},{lon}"
+    )
+
+
+def _embed_url_from_coords(lat: float, lon: float) -> str:
+    if GOOGLE_MAPS_EMBED_API_KEY:
+        return (
+            f"https://www.google.com/maps/embed/v1/view"
+            f"?key={GOOGLE_MAPS_EMBED_API_KEY}&center={lat},{lon}&zoom=15"
+        )
+    return _osm_embed_url(lat, lon)
+
+
+def _resolve_map_preview(maps_url: str = "", venue: str = "", address: str = "") -> dict[str, str]:
+    """
+    Build embeddable map URLs from a Google Maps link and/or venue text.
+
+    Short links (maps.app.goo.gl) cannot be used directly in iframes; we resolve
+    them and fall back to OpenStreetMap embeds when no Google embed key is set.
+    """
+    maps_url = (maps_url or "").strip()
+    venue = (venue or "").strip()
+    address = (address or "").strip()
+    text_query = ", ".join(p for p in (venue, address) if p)
+
+    open_url = ""
+    if maps_url.startswith("http://") or maps_url.startswith("https://"):
+        open_url = maps_url
+
+    if maps_url:
+        resolved = maps_url
+        if any(host in maps_url for host in ("goo.gl", "maps.app.goo.gl", "google.com/maps", "maps.google.com")):
+            resolved = _resolve_maps_redirect(maps_url)
+            if resolved.startswith("http"):
+                open_url = resolved
+
+        if "google.com/maps/embed" in resolved:
+            return {
+                "embed_url": resolved,
+                "static_image_url": "",
+                "open_url": open_url or resolved,
+            }
+
+        coords = _parse_google_maps_coords(resolved)
+        if coords:
+            lat, lon = coords
+            return {
+                "embed_url": _embed_url_from_coords(lat, lon),
+                "static_image_url": _osm_static_map_url(lat, lon),
+                "open_url": open_url or f"https://www.google.com/maps/search/?api=1&query={lat},{lon}",
+            }
+
+        # Share link provided but not embeddable — keep the original link, skip bad geocoding.
+        return {"embed_url": "", "static_image_url": "", "open_url": open_url or maps_url}
+
+    if not text_query:
+        return {"embed_url": "", "static_image_url": "", "open_url": open_url}
+
+    if not open_url:
+        open_url = f"https://www.google.com/maps/search/?api=1&query={quote_plus(text_query or maps_url)}"
+
+    if GOOGLE_MAPS_EMBED_API_KEY:
+        target = text_query or maps_url
+        return {
+            "embed_url": (
+                f"https://www.google.com/maps/embed/v1/place"
+                f"?key={GOOGLE_MAPS_EMBED_API_KEY}&q={quote_plus(target)}"
+            ),
+            "static_image_url": "",
+            "open_url": open_url,
+        }
+
+    coords = _geocode_location(text_query)
+    if coords:
+        lat, lon = coords
+        return {
+            "embed_url": _osm_embed_url(lat, lon),
+            "static_image_url": _osm_static_map_url(lat, lon),
+            "open_url": open_url,
+        }
+
+    return {"embed_url": "", "static_image_url": "", "open_url": open_url}
+
+
+def _map_preview_from_receipt(data: dict) -> dict[str, str]:
+    return _resolve_map_preview(
+        maps_url=data.get("m", ""),
+        venue=data.get("v", ""),
+        address=data.get("a", ""),
+    )
+
+
 def _maps_open_url(data: dict) -> str:
+    preview = _map_preview_from_receipt(data)
+    if preview["open_url"]:
+        return preview["open_url"]
     query = _maps_query(data)
     if not query:
         return ""
@@ -429,16 +592,20 @@ def _maps_open_url(data: dict) -> str:
 
 
 def _maps_embed_url(data: dict) -> str:
-    query = _maps_query(data)
-    if not query:
-        return ""
-    if "google.com/maps/embed" in query:
-        return query
-    if query.startswith("http://") or query.startswith("https://"):
-        if "/maps/" in query:
-            return query.replace("/maps/", "/maps/embed/") if "/embed/" not in query else query
-        return query
-    return f"https://maps.google.com/maps?q={quote_plus(query)}&hl=en&z=15&output=embed"
+    return _map_preview_from_receipt(data).get("embed_url", "")
+
+
+@app.get("/api/maps/embed", tags=["Receipts"])
+async def maps_embed_preview(
+    maps_url: str = "",
+    venue: str = "",
+    address: str = "",
+    query: str = "",
+):
+    """Resolve venue/address or Google Maps links into an iframe-safe embed URL."""
+    if query and not venue and not address:
+        venue = query
+    return _resolve_map_preview(maps_url=maps_url, venue=venue, address=address)
 
 
 def _format_event_datetime(data: dict) -> str:
@@ -1518,6 +1685,7 @@ RECEIPT_VIEWER_HTML = """<!DOCTYPE html>
         .map-wrap{{margin-bottom:1.2rem;text-align:left}}
         .map-wrap h3{{font-size:.65rem;letter-spacing:2px;text-transform:uppercase;color:#a0aec0;margin-bottom:.55rem;text-align:center}}
         .map-frame{{width:100%;height:220px;border:0;border-radius:12px;background:#edf2f7}}
+        .map-static{{width:100%;height:220px;object-fit:cover;border:0;border-radius:12px;background:#edf2f7;display:block}}
         .map-link{{display:inline-block;margin-top:.55rem;font-size:.78rem;color:#667eea;text-decoration:none;font-weight:600}}
         .map-link:hover{{text-decoration:underline}}
         .actions{{display:flex;flex-direction:column;gap:.7rem;align-items:center}}
@@ -1779,14 +1947,27 @@ async def view_receipt(token: str, req: Request):
         description_html = f'<div class="description">{_escape(data["desc"])}</div>'
 
     maps_html = ""
-    embed_url = _maps_embed_url(data)
-    maps_open = _maps_open_url(data)
-    if embed_url:
+    map_preview = _map_preview_from_receipt(data)
+    embed_url = map_preview.get("embed_url", "")
+    static_image_url = map_preview.get("static_image_url", "")
+    maps_open = map_preview.get("open_url") or _maps_open_url(data)
+    if embed_url or static_image_url or maps_open:
+        iframe_html = ""
+        if embed_url:
+            iframe_html = (
+                f'<iframe class="map-frame" loading="lazy" referrerpolicy="no-referrer-when-downgrade" '
+                f'src="{_escape(embed_url)}" allowfullscreen title="Event location map"></iframe>'
+            )
+        elif static_image_url:
+            iframe_html = (
+                f'<a href="{_escape(maps_open)}" target="_blank" rel="noopener noreferrer">'
+                f'<img class="map-static" src="{_escape(static_image_url)}" alt="Event location map" />'
+                f'</a>'
+            )
         maps_html = (
             f'<div class="map-wrap">'
             f'<h3>Location</h3>'
-            f'<iframe class="map-frame" loading="lazy" referrerpolicy="no-referrer-when-downgrade" '
-            f'src="{_escape(embed_url)}" allowfullscreen></iframe>'
+            f'{iframe_html}'
             f'<div style="text-align:center;">'
             f'<a class="map-link" href="{_escape(maps_open)}" target="_blank" rel="noopener noreferrer">Open in Google Maps</a>'
             f'</div></div>'

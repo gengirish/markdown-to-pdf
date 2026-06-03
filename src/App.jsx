@@ -101,18 +101,106 @@ function formatEventDatetime(eventDate, eventTime) {
   return [eventDate, eventTime].filter(Boolean).join(' · ') || '—'
 }
 
-function mapsEmbedUrl({ venue_name, address, maps_url }) {
-  const custom = (maps_url || '').trim()
-  if (custom) {
-    if (custom.includes('google.com/maps/embed')) return custom
-    if (custom.startsWith('http')) {
-      return custom.includes('/embed/') ? custom : custom.replace('/maps/', '/maps/embed/')
+function MapPreview({ venue_name, address, maps_url, getApiUrl }) {
+  const [preview, setPreview] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  const hasLocation = Boolean(
+    (maps_url || '').trim() || (venue_name || '').trim() || (address || '').trim(),
+  )
+
+  useEffect(() => {
+    if (!hasLocation) {
+      setPreview(null)
+      setLoading(false)
+      return undefined
     }
-    return custom
+
+    const controller = new AbortController()
+    const params = new URLSearchParams()
+    if ((maps_url || '').trim()) params.set('maps_url', maps_url.trim())
+    if ((venue_name || '').trim()) params.set('venue', venue_name.trim())
+    if ((address || '').trim()) params.set('address', address.trim())
+
+    setLoading(true)
+    fetch(getApiUrl(`/api/maps/embed?${params}`), { signal: controller.signal })
+      .then((res) => res.json())
+      .then((data) => setPreview(data))
+      .catch(() => setPreview({ embed_url: '', static_image_url: '', open_url: '' }))
+      .finally(() => setLoading(false))
+
+    return () => controller.abort()
+  }, [venue_name, address, maps_url, getApiUrl, hasLocation])
+
+  if (!hasLocation) {
+    return (
+      <div className="receipt-map-placeholder">
+        Add address or maps URL to preview location
+      </div>
+    )
   }
-  const query = [venue_name, address].filter((v) => v && v.trim()).join(', ')
-  if (!query) return ''
-  return `https://maps.google.com/maps?q=${encodeURIComponent(query)}&hl=en&z=15&output=embed`
+
+  if (loading && !preview) {
+    return (
+      <div className="receipt-map-preview" data-testid="receipt-map-preview">
+        <span className="receipt-event-label">Location</span>
+        <div className="receipt-map-loading">Loading map…</div>
+      </div>
+    )
+  }
+
+  if (!preview?.embed_url && !preview?.static_image_url) {
+    return (
+      <div className="receipt-map-preview" data-testid="receipt-map-preview">
+        <span className="receipt-event-label">Location</span>
+        <div className="receipt-map-placeholder">
+          {preview?.open_url ? (
+            <a href={preview.open_url} target="_blank" rel="noopener noreferrer">
+              Open location in Google Maps
+            </a>
+          ) : (
+            'Could not load map preview'
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="receipt-map-preview" data-testid="receipt-map-preview">
+      <span className="receipt-event-label">Location</span>
+      {preview.embed_url ? (
+        <iframe
+          title="Event location map preview"
+          className="receipt-map-frame"
+          loading="lazy"
+          referrerPolicy="no-referrer-when-downgrade"
+          src={preview.embed_url}
+          allowFullScreen
+        />
+      ) : (
+        <a href={preview.open_url} target="_blank" rel="noopener noreferrer">
+          <img
+            className="receipt-map-static"
+            src={preview.static_image_url}
+            alt="Event location map preview"
+          />
+        </a>
+      )}
+      {preview.open_url && (
+        <div className="receipt-map-link-wrap">
+          <a
+            className="receipt-map-open-link"
+            href={preview.open_url}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open in Google Maps
+          </a>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function ReceiptGenerator({ getApiUrl }) {
@@ -215,7 +303,6 @@ function ReceiptGenerator({ getApiUrl }) {
     }
   }
 
-  const previewEmbed = mapsEmbedUrl(form)
   const amountDisplay = formatReceiptAmount(form.amount, form.currency)
   const eventWhen = formatEventDatetime(form.event_date, form.event_time)
   const paymentMeta = [
@@ -498,22 +585,12 @@ function ReceiptGenerator({ getApiUrl }) {
                 </div>
               </div>
 
-              {previewEmbed ? (
-                <div className="receipt-map-preview" data-testid="receipt-map-preview">
-                  <span className="receipt-event-label">Location</span>
-                  <iframe
-                    title="Event location map preview"
-                    className="receipt-map-frame"
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                    src={previewEmbed}
-                  />
-                </div>
-              ) : (
-                <div className="receipt-map-placeholder">
-                  Add address or maps URL to preview location
-                </div>
-              )}
+              <MapPreview
+                venue_name={form.venue_name}
+                address={form.address}
+                maps_url={form.maps_url}
+                getApiUrl={getApiUrl}
+              />
 
               <div className="cert-qr-placeholder">
                 <div className="cert-qr-box">QR</div>

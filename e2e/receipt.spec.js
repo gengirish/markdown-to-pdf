@@ -63,7 +63,7 @@ test.describe('Payment Receipt', () => {
     await expect(page.getByText('INR 2499').first()).toBeVisible()
     await expect(page.getByText(data.venue_name).first()).toBeVisible()
     await expect(page.getByText(data.address).first()).toBeVisible()
-    await expect(page.locator('iframe.receipt-map-frame, iframe[src*="maps"]')).toBeVisible()
+    await expect(page.locator('iframe.receipt-map-frame, iframe.map-frame, iframe[src*="openstreetmap"], img.receipt-map-static, img.map-static')).toBeVisible()
     await expect(page.getByRole('link', { name: 'Download Entry Ticket PDF' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Open in Google Maps' })).toBeVisible()
   })
