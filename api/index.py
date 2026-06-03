@@ -21,7 +21,8 @@ import base64
 import time
 import math
 from collections import defaultdict
-from urllib.parse import urlencode
+from urllib.parse import quote_plus, urlencode
+import html as html_mod
 
 import uuid as uuid_mod
 import threading
@@ -156,6 +157,7 @@ def _fire_webhook(callback_url: str, payload: dict):
 
 API_TAGS = [
     {"name": "Certificates", "description": "Create, view, download, and verify tamper-proof certificates"},
+    {"name": "Receipts", "description": "Create, view, and download payment acknowledgement receipts with event details"},
     {"name": "Verification", "description": "Verify certificate authenticity (single and batch)"},
     {"name": "Courses", "description": "List available courses"},
     {"name": "Admin", "description": "Admin endpoints for certificate and course management (requires X-Admin-Key)"},
@@ -358,6 +360,77 @@ class CertificateRequest(BaseModel):
     idempotency_key: str = ""
 
 
+class ReceiptRequest(BaseModel):
+    payer_name: str
+    event_name: str
+    event_date: str
+    amount: str
+    payment_date: str
+    transaction_id: str
+    event_time: str = ""
+    venue_name: str = ""
+    address: str = ""
+    maps_url: str = ""
+    currency: str = ""
+    payment_method: str = ""
+    description: str = ""
+    callback_url: str = ""
+    idempotency_key: str = ""
+
+
+def _escape(value: str) -> str:
+    return html_mod.escape(value or "", quote=True)
+
+
+def _receipt_id(data: dict) -> str:
+    raw = f"{data['tx']}-{data['n']}-{data['e']}-{data['pd']}"
+    return "RCP-" + hashlib.sha256(raw.encode()).hexdigest()[:12].upper()
+
+
+def _receipt_amount_display(data: dict) -> str:
+    amount = data.get("amt", "")
+    currency = data.get("cur", "").strip()
+    if currency and not amount.startswith(currency):
+        return f"{currency} {amount}"
+    return amount
+
+
+def _maps_query(data: dict) -> str:
+    if data.get("m"):
+        return data["m"]
+    parts = [p for p in (data.get("v"), data.get("a")) if p]
+    return ", ".join(parts)
+
+
+def _maps_open_url(data: dict) -> str:
+    query = _maps_query(data)
+    if not query:
+        return ""
+    if query.startswith("http://") or query.startswith("https://"):
+        return query
+    return f"https://www.google.com/maps/search/?api=1&query={quote_plus(query)}"
+
+
+def _maps_embed_url(data: dict) -> str:
+    query = _maps_query(data)
+    if not query:
+        return ""
+    if "google.com/maps/embed" in query:
+        return query
+    if query.startswith("http://") or query.startswith("https://"):
+        if "/maps/" in query:
+            return query.replace("/maps/", "/maps/embed/") if "/embed/" not in query else query
+        return query
+    return f"https://maps.google.com/maps?q={quote_plus(query)}&hl=en&z=15&output=embed"
+
+
+def _format_event_datetime(data: dict) -> str:
+    parts = [data.get("ed", "")]
+    if data.get("et"):
+        parts.append(data["et"])
+    return " · ".join(p for p in parts if p)
+
+
 @app.get("/", tags=["System"])
 async def root():
     """API root with version and available endpoints."""
@@ -367,6 +440,7 @@ async def root():
         "version": "2.0.0",
         "endpoints": {
             "certificate": "/api/certificate",
+            "receipt": "/api/receipt",
             "courses": "/api/courses",
             "health": "/api/health",
         }
@@ -1063,6 +1137,517 @@ async def download_certificate(token: str, req: Request):
             "Content-Length": str(len(pdf_bytes)),
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Payment acknowledgement receipts
+# ---------------------------------------------------------------------------
+
+RECEIPT_PDF_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page {{
+            size: A4;
+            margin: 24pt;
+        }}
+        body {{
+            font-family: Helvetica, Arial, sans-serif;
+            color: #2d3748;
+            margin: 0;
+            padding: 0;
+        }}
+        table {{ border-collapse: collapse; }}
+        td {{ padding: 0; }}
+    </style>
+</head>
+<body>
+<table width="100%" style="background-color: #0f0f23;">
+<tr><td style="padding: 18pt 24pt;">
+<table width="100%" style="background-color: #ffffff;">
+<tr><td>
+    <table width="100%" style="background-color: #15155e;">
+    <tr><td style="padding: 24pt 32pt 20pt;">
+        <table width="100%" cellspacing="0" cellpadding="0">
+            <tr><td align="center" style="font-size: 8pt; letter-spacing: 4pt; color: #d4af37; font-weight: bold; padding-bottom: 4pt; text-align: center;">
+                AN INTELLIFORGE AI INITIATIVE
+            </td></tr>
+            <tr><td align="center" style="font-size: 22pt; font-weight: bold; color: #ffffff; padding: 6pt 0 10pt; text-align: center;">
+                IntelliForge Events
+            </td></tr>
+            <tr><td align="center" style="text-align: center;">
+                <table align="center" cellspacing="0" cellpadding="0" style="border: 2px solid #d4af37;">
+                <tr><td align="center" style="padding: 6pt 24pt; font-size: 9pt; letter-spacing: 3pt; color: #d4af37; font-weight: bold; text-align: center;">
+                    PAYMENT ACKNOWLEDGEMENT
+                </td></tr>
+                </table>
+            </td></tr>
+        </table>
+    </td></tr>
+    </table>
+
+    <table width="100%">
+    <tr><td style="padding: 24pt 32pt 18pt;">
+        <table width="100%" cellspacing="0" cellpadding="0">
+        <tr><td align="center" style="text-align: center; padding-bottom: 14pt;">
+            <table align="center" cellspacing="0" cellpadding="0" style="border: 1px solid #68d391;">
+            <tr><td align="center" style="padding: 4pt 14pt; font-size: 8pt; color: #276749; font-weight: bold; background-color: #f0fff4; text-align: center;">
+                &#10003; &nbsp; Payment Received
+            </td></tr>
+            </table>
+        </td></tr>
+        </table>
+
+        <table width="100%" cellspacing="0" cellpadding="0">
+            <tr><td align="center" style="text-align: center; font-size: 8pt; letter-spacing: 3pt; color: #a0aec0; padding-bottom: 6pt;">
+                RECEIVED FROM
+            </td></tr>
+            <tr><td align="center" style="text-align: center; font-size: 24pt; font-weight: bold; color: #1a202c; padding-bottom: 8pt;">
+                {payer_name}
+            </td></tr>
+            <tr><td align="center" style="text-align: center; font-size: 18pt; font-weight: bold; color: #553c9a; padding-bottom: 4pt;">
+                {amount_display}
+            </td></tr>
+            <tr><td align="center" style="text-align: center; font-size: 9pt; color: #718096; padding-bottom: 18pt;">
+                {payment_meta}
+            </td></tr>
+        </table>
+
+        <table width="100%" cellspacing="0" cellpadding="0" style="border: 1px solid #edf2f7; background-color: #f8fafc;">
+        <tr><td style="padding: 16pt 18pt;">
+            <table width="100%" cellspacing="0" cellpadding="0">
+                <tr><td style="font-size: 7pt; letter-spacing: 2pt; color: #a0aec0; padding-bottom: 6pt;">EVENT DETAILS</td></tr>
+                <tr><td style="font-size: 14pt; font-weight: bold; color: #1a202c; padding-bottom: 4pt;">{event_name}</td></tr>
+                <tr><td style="font-size: 10pt; color: #4a5568; padding-bottom: 8pt;">{event_datetime}</td></tr>
+                {venue_block}
+                {address_block}
+            </table>
+        </td></tr>
+        </table>
+
+        {description_block}
+
+        <table width="85%" align="center" cellspacing="0" cellpadding="0" style="border-top: 1px solid #edf2f7; border-bottom: 1px solid #edf2f7; margin-top: 16pt;">
+            <tr>
+                <td width="50%" align="center" style="text-align: center; padding: 12pt 8pt;">
+                    <table width="100%" cellspacing="0" cellpadding="0">
+                        <tr><td align="center" style="text-align: center; font-size: 10pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{transaction_id}</td></tr>
+                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">TRANSACTION ID</td></tr>
+                    </table>
+                </td>
+                <td width="50%" align="center" style="text-align: center; padding: 12pt 8pt; border-left: 1px solid #edf2f7;">
+                    <table width="100%" cellspacing="0" cellpadding="0">
+                        <tr><td align="center" style="text-align: center; font-size: 10pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{receipt_id}</td></tr>
+                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">RECEIPT ID</td></tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+
+        {maps_block}
+
+        <table width="100%" cellspacing="0" cellpadding="0" style="margin-top: 14pt;">
+        <tr><td align="center" style="text-align: center;">
+            <table align="center" cellspacing="0" cellpadding="0">
+            <tr>
+                <td style="padding-right: 12pt; vertical-align: middle;">
+                    <img src="{qr_data_uri}" width="70" height="70" />
+                </td>
+                <td style="vertical-align: middle; text-align: left;">
+                    <table cellspacing="0" cellpadding="0"><tr><td style="font-size: 9pt; font-weight: bold; color: #2d3748; padding-bottom: 2pt;">Scan to View Receipt</td></tr></table>
+                    <table cellspacing="0" cellpadding="0"><tr><td style="font-size: 7pt; color: #a0aec0; line-height: 1.5;">Shareable link to this payment<br/>acknowledgement receipt.</td></tr></table>
+                </td>
+            </tr>
+            </table>
+        </td></tr>
+        </table>
+    </td></tr>
+    </table>
+
+    <table width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; border-top: 1px solid #edf2f7;">
+    <tr><td align="center" style="padding: 10pt 32pt; text-align: center; font-size: 7pt; color: #a0aec0;">
+        Issued by IntelliForge Events &nbsp;&middot;&nbsp; learning.intelliforge.tech &nbsp;&middot;&nbsp; support@intelliforge.tech
+    </td></tr>
+    </table>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>
+"""
+
+
+RECEIPT_VIEWER_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{payer_name} – Payment Receipt</title>
+    <meta property="og:title" content="{payer_name} – Payment Acknowledgement" />
+    <meta property="og:description" content="Payment received for {event_name} on {event_datetime}." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="{page_url}" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
+        body{{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:#0f0f23;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem}}
+        .bg-glow{{position:fixed;inset:0;background:radial-gradient(ellipse at 30% 20%,rgba(102,126,234,.18) 0%,transparent 50%),radial-gradient(ellipse at 70% 80%,rgba(118,75,162,.15) 0%,transparent 50%);pointer-events:none}}
+        .card{{position:relative;background:#fff;border-radius:24px;box-shadow:0 30px 100px rgba(0,0,0,.35);max-width:640px;width:100%;overflow:hidden;animation:up .6s ease-out}}
+        @keyframes up{{from{{opacity:0;transform:translateY(40px)}}to{{opacity:1;transform:translateY(0)}}}}
+        .card-header{{background:linear-gradient(135deg,#12124a 0%,#1e1e6e 50%,#2a1a5e 100%);padding:2rem 2.2rem 1.8rem;text-align:center}}
+        .hdr-org{{font-size:.6rem;letter-spacing:4px;text-transform:uppercase;color:#d4af37;margin-bottom:.35rem;font-weight:500}}
+        .hdr-brand{{font-family:'Playfair Display',serif;font-size:1.45rem;color:#fff;font-weight:700;margin-bottom:.7rem}}
+        .hdr-badge{{display:inline-block;background:rgba(212,175,55,.12);border:1px solid rgba(212,175,55,.4);color:#d4af37;font-size:.6rem;font-weight:600;letter-spacing:2.5px;text-transform:uppercase;padding:.35rem 1.2rem;border-radius:20px}}
+        .card-body{{padding:2rem 2.2rem 1.8rem;text-align:center}}
+        .verified{{display:inline-flex;align-items:center;gap:.4rem;background:#f0fff4;border:1px solid #68d391;color:#22543d;font-size:.7rem;font-weight:600;padding:.3rem .9rem;border-radius:20px;margin-bottom:1.4rem}}
+        .label{{font-size:.7rem;letter-spacing:2.5px;text-transform:uppercase;color:#a0aec0;margin-bottom:.35rem}}
+        .name{{font-family:'Playfair Display',serif;font-size:1.8rem;font-weight:700;color:#1a202c;line-height:1.15;margin-bottom:.5rem}}
+        .amount{{font-size:1.6rem;font-weight:700;color:#553c9a;margin-bottom:.35rem}}
+        .payment-meta{{font-size:.82rem;color:#718096;margin-bottom:1.4rem}}
+        .event-box{{text-align:left;background:#f8fafc;border:1px solid #edf2f7;border-radius:14px;padding:1.2rem 1.3rem;margin-bottom:1.2rem}}
+        .event-box h2{{font-size:.65rem;letter-spacing:2px;text-transform:uppercase;color:#a0aec0;margin-bottom:.5rem}}
+        .event-title{{font-size:1.05rem;font-weight:700;color:#1a202c;margin-bottom:.25rem}}
+        .event-when{{font-size:.88rem;color:#4a5568;margin-bottom:.6rem}}
+        .event-venue{{font-size:.88rem;font-weight:600;color:#2d3748;margin-bottom:.15rem}}
+        .event-address{{font-size:.84rem;color:#4a5568;line-height:1.5}}
+        .description{{text-align:left;font-size:.84rem;color:#4a5568;background:#fff;border:1px dashed #e2e8f0;border-radius:12px;padding:.9rem 1rem;margin-bottom:1.2rem;line-height:1.5}}
+        .meta{{display:flex;justify-content:center;gap:1.5rem;margin-bottom:1.4rem;flex-wrap:wrap}}
+        .meta-item{{text-align:center}}
+        .meta-val{{font-size:.8rem;color:#2d3748;font-weight:600;font-family:monospace}}
+        .meta-lbl{{font-size:.58rem;color:#a0aec0;text-transform:uppercase;letter-spacing:1px;margin-top:.15rem}}
+        .map-wrap{{margin-bottom:1.2rem;text-align:left}}
+        .map-wrap h3{{font-size:.65rem;letter-spacing:2px;text-transform:uppercase;color:#a0aec0;margin-bottom:.55rem;text-align:center}}
+        .map-frame{{width:100%;height:220px;border:0;border-radius:12px;background:#edf2f7}}
+        .map-link{{display:inline-block;margin-top:.55rem;font-size:.78rem;color:#667eea;text-decoration:none;font-weight:600}}
+        .map-link:hover{{text-decoration:underline}}
+        .actions{{display:flex;flex-direction:column;gap:.7rem;align-items:center}}
+        .btn-download{{display:inline-flex;align-items:center;gap:.6rem;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;border:none;padding:.85rem 2.2rem;border-radius:12px;font-size:.95rem;font-weight:600;cursor:pointer;text-decoration:none;transition:all .3s;box-shadow:0 4px 20px rgba(102,126,234,.35)}}
+        .btn-download:hover{{transform:translateY(-2px);box-shadow:0 8px 30px rgba(102,126,234,.5)}}
+        .btn-download svg{{width:18px;height:18px}}
+        .qr-section{{display:flex;align-items:center;justify-content:center;gap:.8rem;margin-top:1rem;padding-top:1rem;border-top:1px solid #f0f0f0}}
+        .qr-section img{{border-radius:6px;border:1px solid #e2e8f0}}
+        .qr-text{{font-size:.65rem;color:#a0aec0;text-align:left;line-height:1.5}}
+        .qr-text strong{{color:#4a5568;display:block;font-size:.7rem}}
+        .card-footer{{background:#f8fafc;border-top:1px solid #edf2f7;padding:1rem 2.2rem;text-align:center}}
+        .card-footer p{{font-size:.7rem;color:#a0aec0;line-height:1.6}}
+        .card-footer a{{color:#667eea;text-decoration:none}}
+        @media(max-width:480px){{body{{padding:1rem}}.card-body{{padding:1.4rem}}.name{{font-size:1.45rem}}.amount{{font-size:1.35rem}}}}
+    </style>
+</head>
+<body>
+    <div class="bg-glow"></div>
+    <div class="card">
+        <div class="card-header">
+            <div class="hdr-org">An IntelliForge AI Initiative</div>
+            <div class="hdr-brand">IntelliForge Events</div>
+            <div class="hdr-badge">Payment Acknowledgement</div>
+        </div>
+        <div class="card-body">
+            <div class="verified">&#10003; Payment Received</div>
+            <div class="label">Received from</div>
+            <div class="name">{payer_name}</div>
+            <div class="amount">{amount_display}</div>
+            <div class="payment-meta">{payment_meta}</div>
+
+            <div class="event-box">
+                <h2>Event Details</h2>
+                <div class="event-title">{event_name}</div>
+                <div class="event-when">{event_datetime}</div>
+                {venue_html}
+                {address_html}
+            </div>
+
+            {description_html}
+
+            <div class="meta">
+                <div class="meta-item"><div class="meta-val">{transaction_id}</div><div class="meta-lbl">Transaction ID</div></div>
+                <div class="meta-item"><div class="meta-val">{receipt_id}</div><div class="meta-lbl">Receipt ID</div></div>
+            </div>
+
+            {maps_html}
+
+            <div class="actions">
+                <a class="btn-download" href="{download_url}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download Receipt PDF
+                </a>
+            </div>
+
+            <div class="qr-section">
+                <img src="{qr_data_uri}" alt="QR Code" width="80" height="80" />
+                <div class="qr-text"><strong>Scan to View</strong>Shareable link to this payment acknowledgement receipt.</div>
+            </div>
+        </div>
+        <div class="card-footer">
+            <p>Issued by <a href="https://learning.intelliforge.tech/" target="_blank" rel="noopener">IntelliForge Events</a> &nbsp;&middot;&nbsp; <a href="mailto:support@intelliforge.tech">support@intelliforge.tech</a></p>
+        </div>
+    </div>
+</body>
+</html>"""
+
+
+def _receipt_payment_meta(data: dict) -> str:
+    parts = [f"Paid on {data.get('pd', '')}"]
+    if data.get("pm"):
+        parts.append(f"via {data['pm']}")
+    return " · ".join(parts)
+
+
+def _receipt_optional_blocks(data: dict) -> dict[str, str]:
+    venue_block = ""
+    if data.get("v"):
+        venue_block = (
+            f'<tr><td style="font-size: 11pt; font-weight: bold; color: #2d3748; padding-bottom: 4pt;">'
+            f'{_escape(data["v"])}</td></tr>'
+        )
+    address_block = ""
+    if data.get("a"):
+        address_block = (
+            f'<tr><td style="font-size: 10pt; color: #4a5568; line-height: 1.5;">'
+            f'{_escape(data["a"])}</td></tr>'
+        )
+    description_block = ""
+    if data.get("desc"):
+        description_block = (
+            f'<table width="100%" cellspacing="0" cellpadding="0" style="margin-top: 12pt;">'
+            f'<tr><td style="font-size: 7pt; letter-spacing: 2pt; color: #a0aec0; padding-bottom: 4pt;">DESCRIPTION</td></tr>'
+            f'<tr><td style="font-size: 10pt; color: #4a5568; line-height: 1.5;">{_escape(data["desc"])}</td></tr>'
+            f'</table>'
+        )
+    maps_block = ""
+    maps_open = _maps_open_url(data)
+    if maps_open:
+        maps_block = (
+            f'<table width="100%" cellspacing="0" cellpadding="0" style="margin-top: 14pt;">'
+            f'<tr><td align="center" style="text-align: center; font-size: 7pt; letter-spacing: 2pt; color: #a0aec0; padding-bottom: 6pt;">LOCATION</td></tr>'
+            f'<tr><td align="center" style="text-align: center; font-size: 9pt; color: #667eea;">{_escape(maps_open)}</td></tr>'
+            f'</table>'
+        )
+    return {
+        "venue_block": venue_block,
+        "address_block": address_block,
+        "description_block": description_block,
+        "maps_block": maps_block,
+    }
+
+
+def _build_receipt_pdf(data: dict, page_url: str = "") -> bytes:
+    blocks = _receipt_optional_blocks(data)
+    qr_data_uri = _generate_qr_data_uri(page_url) if page_url else ""
+    full_html = RECEIPT_PDF_TEMPLATE.format(
+        payer_name=_escape(data["n"]),
+        amount_display=_escape(_receipt_amount_display(data)),
+        payment_meta=_escape(_receipt_payment_meta(data)),
+        event_name=_escape(data["e"]),
+        event_datetime=_escape(_format_event_datetime(data)),
+        transaction_id=_escape(data["tx"]),
+        receipt_id=_escape(_receipt_id(data)),
+        qr_data_uri=qr_data_uri,
+        **blocks,
+    )
+    pdf_buffer = BytesIO()
+    pisa_status = pisa.CreatePDF(src=full_html, dest=pdf_buffer, encoding="UTF-8")
+    if pisa_status.err:
+        logging.error("Receipt PDF generation failed: %s", pisa_status.log)
+        raise Exception("Error generating receipt PDF")
+    pdf_buffer.seek(0)
+    return pdf_buffer.getvalue()
+
+
+def _resolve_receipt(token: str) -> dict:
+    data = _decode_cert(token)
+    if data is None or data.get("k") != "r":
+        raise HTTPException(status_code=404, detail="Invalid or tampered receipt")
+    return data
+
+
+@app.post("/api/receipt", tags=["Receipts"])
+async def generate_receipt(request: ReceiptRequest, req: Request):
+    """
+    Generate a signed payment acknowledgement receipt with event details.
+
+    Include `address` and/or `maps_url` for venue location. The public receipt page
+    embeds Google Maps when location data is provided.
+    """
+    try:
+        if request.idempotency_key:
+            cached = _check_idempotency(f"receipt:{request.idempotency_key}")
+            if cached:
+                return JSONResponse(cached)
+
+        if CERT_API_KEYS:
+            api_key = req.headers.get("X-API-Key", "")
+            origin = req.headers.get("origin", "")
+            base = str(req.base_url).rstrip("/")
+            is_same_origin = origin and base.startswith(origin)
+            if not is_same_origin and api_key not in CERT_API_KEYS:
+                raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+        client_ip = req.client.host if req.client else "unknown"
+        allowed, rate_headers = _check_rate_limit(client_ip)
+        if not allowed:
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded. Try again later.",
+                headers=rate_headers,
+            )
+
+        payer = request.payer_name.strip()
+        if not payer:
+            raise HTTPException(status_code=400, detail="Payer name is required")
+        if not request.transaction_id.strip():
+            raise HTTPException(status_code=400, detail="Transaction ID is required")
+
+        receipt_data = {
+            "k": "r",
+            "n": payer,
+            "e": request.event_name.strip(),
+            "ed": request.event_date.strip(),
+            "et": request.event_time.strip(),
+            "v": request.venue_name.strip(),
+            "a": request.address.strip(),
+            "m": request.maps_url.strip(),
+            "amt": request.amount.strip(),
+            "cur": request.currency.strip(),
+            "pd": request.payment_date.strip(),
+            "tx": request.transaction_id.strip(),
+            "pm": request.payment_method.strip(),
+            "desc": request.description.strip(),
+        }
+        token = _encode_cert(receipt_data)
+        receipt_id = _receipt_id(receipt_data)
+
+        base_url = str(req.base_url).rstrip("/")
+        shareable_url = f"{base_url}/receipt/{token}"
+        download_url = f"{shareable_url}/download"
+
+        logger.info(f"Receipt issued for {payer} – {request.event_name}")
+
+        response_data = {
+            "receipt_id": receipt_id,
+            "token": token,
+            "url": shareable_url,
+            "download_url": download_url,
+            "payer_name": payer,
+            "event_name": receipt_data["e"],
+            "amount": _receipt_amount_display(receipt_data),
+            "request_id": str(uuid_mod.uuid4()),
+        }
+
+        if request.idempotency_key:
+            _store_idempotency(f"receipt:{request.idempotency_key}", response_data)
+
+        if request.callback_url:
+            _fire_webhook(request.callback_url, {
+                "event": "receipt.created",
+                "data": response_data,
+            })
+
+        return JSONResponse(response_data, headers=rate_headers)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating receipt: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate receipt: {e}")
+
+
+@app.get("/receipt/{token}", tags=["Receipts"], include_in_schema=False)
+async def view_receipt(token: str, req: Request):
+    """Public payment receipt viewer with event details and optional Google Maps embed."""
+    data = _resolve_receipt(token)
+
+    base_url = str(req.base_url).rstrip("/")
+    page_url = f"{base_url}/receipt/{token}"
+    download_url = f"{page_url}/download"
+
+    venue_html = ""
+    if data.get("v"):
+        venue_html = f'<div class="event-venue">{_escape(data["v"])}</div>'
+    address_html = ""
+    if data.get("a"):
+        address_html = f'<div class="event-address">{_escape(data["a"])}</div>'
+
+    description_html = ""
+    if data.get("desc"):
+        description_html = f'<div class="description">{_escape(data["desc"])}</div>'
+
+    maps_html = ""
+    embed_url = _maps_embed_url(data)
+    maps_open = _maps_open_url(data)
+    if embed_url:
+        maps_html = (
+            f'<div class="map-wrap">'
+            f'<h3>Location</h3>'
+            f'<iframe class="map-frame" loading="lazy" referrerpolicy="no-referrer-when-downgrade" '
+            f'src="{_escape(embed_url)}" allowfullscreen></iframe>'
+            f'<div style="text-align:center;">'
+            f'<a class="map-link" href="{_escape(maps_open)}" target="_blank" rel="noopener noreferrer">Open in Google Maps</a>'
+            f'</div></div>'
+        )
+
+    html = RECEIPT_VIEWER_HTML.format(
+        payer_name=_escape(data["n"]),
+        amount_display=_escape(_receipt_amount_display(data)),
+        payment_meta=_escape(_receipt_payment_meta(data)),
+        event_name=_escape(data["e"]),
+        event_datetime=_escape(_format_event_datetime(data)),
+        transaction_id=_escape(data["tx"]),
+        receipt_id=_escape(_receipt_id(data)),
+        page_url=page_url,
+        download_url=download_url,
+        qr_data_uri=_generate_qr_data_uri(page_url),
+        venue_html=venue_html,
+        address_html=address_html,
+        description_html=description_html,
+        maps_html=maps_html,
+    )
+    return HTMLResponse(content=html)
+
+
+@app.get("/receipt/{token}/download", tags=["Receipts"])
+async def download_receipt(token: str, req: Request):
+    """Download a payment acknowledgement receipt as PDF."""
+    data = _resolve_receipt(token)
+    base_url = str(req.base_url).rstrip("/")
+    page_url = f"{base_url}/receipt/{token}"
+    pdf_bytes = _build_receipt_pdf(data, page_url=page_url)
+    safe_name = data["n"].replace(" ", "_")
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="Receipt_{safe_name}.pdf"',
+            "Content-Length": str(len(pdf_bytes)),
+        },
+    )
+
+
+@app.get("/receipt/{token}/verify", tags=["Receipts"])
+async def verify_receipt(token: str):
+    """Verify a payment receipt token and return decoded receipt data if valid."""
+    data = _decode_cert(token)
+    if data is None or data.get("k") != "r":
+        return JSONResponse({"valid": False, "message": "Invalid or tampered receipt"}, status_code=400)
+    return {
+        "valid": True,
+        "receipt_id": _receipt_id(data),
+        "payer_name": data["n"],
+        "event_name": data["e"],
+        "event_date": data.get("ed", ""),
+        "event_time": data.get("et", ""),
+        "venue_name": data.get("v", ""),
+        "address": data.get("a", ""),
+        "amount": _receipt_amount_display(data),
+        "payment_date": data.get("pd", ""),
+        "transaction_id": data.get("tx", ""),
+        "payment_method": data.get("pm", ""),
+    }
 
 
 @app.get("/certificate/{token}/verify", tags=["Verification"])

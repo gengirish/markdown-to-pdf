@@ -6,7 +6,15 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
       '/certificate': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/receipt': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       },

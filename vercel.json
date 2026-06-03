@@ -19,6 +19,10 @@
       "destination": "/api/index.py"
     },
     {
+      "source": "/receipt/:path*",
+      "destination": "/api/index.py"
+    },
+    {
       "source": "/docs",
       "destination": "/api/index.py"
     },

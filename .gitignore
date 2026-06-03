@@ -57,6 +57,10 @@ venv.bak/
 # Testing
 test_output.pdf
 *.pdf
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
 
 # Vercel
 .vercel

@@ -52,3 +52,24 @@ jobs:
         with: { node-version: "20" }
       - run: npm ci
       - run: npx vite build
+
+  test-e2e:
+    runs-on: ubuntu-latest
+    env:
+      CERT_SECRET_KEY: ci-test-secret-key-do-not-use-in-production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: npm ci
+      - run: pip install -r requirements.txt
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

@@ -81,8 +81,437 @@ const Icon = {
       <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
     </svg>
   ),
+  Receipt: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z" />
+      <path d="M8 10h8" />
+      <path d="M8 14h5" />
+    </svg>
+  ),
 }
 
+function formatReceiptAmount(amount, currency) {
+  const amt = (amount || '').trim()
+  const cur = (currency || '').trim()
+  if (cur && amt && !amt.startsWith(cur)) return `${cur} ${amt}`
+  return amt || '0'
+}
+
+function formatEventDatetime(eventDate, eventTime) {
+  return [eventDate, eventTime].filter(Boolean).join(' · ') || '—'
+}
+
+function mapsEmbedUrl({ venue_name, address, maps_url }) {
+  const custom = (maps_url || '').trim()
+  if (custom) {
+    if (custom.includes('google.com/maps/embed')) return custom
+    if (custom.startsWith('http')) {
+      return custom.includes('/embed/') ? custom : custom.replace('/maps/', '/maps/embed/')
+    }
+    return custom
+  }
+  const query = [venue_name, address].filter((v) => v && v.trim()).join(', ')
+  if (!query) return ''
+  return `https://maps.google.com/maps?q=${encodeURIComponent(query)}&hl=en&z=15&output=embed`
+}
+
+function ReceiptGenerator({ getApiUrl }) {
+  const [form, setForm] = useState({
+    payer_name: '',
+    event_name: '',
+    event_date: '',
+    event_time: '',
+    venue_name: '',
+    address: '',
+    maps_url: '',
+    amount: '',
+    currency: 'INR',
+    payment_date: new Date().toISOString().split('T')[0],
+    transaction_id: '',
+    payment_method: '',
+    description: '',
+  })
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [error, setError] = useState(null)
+  const [result, setResult] = useState(null)
+  const [copied, setCopied] = useState(false)
+
+  const updateField = (field, value) => {
+    setForm((prev) => ({ ...prev, [field]: value }))
+    setError(null)
+    setResult(null)
+  }
+
+  const generateReceipt = async (e) => {
+    e.preventDefault()
+    setIsGenerating(true)
+    setError(null)
+    setResult(null)
+
+    try {
+      if (!form.payer_name.trim()) throw new Error('Please enter payer name')
+      if (!form.event_name.trim()) throw new Error('Please enter event name')
+      if (!form.event_date) throw new Error('Please select event date')
+      if (!form.amount.trim()) throw new Error('Please enter payment amount')
+      if (!form.payment_date) throw new Error('Please select payment date')
+      if (!form.transaction_id.trim()) throw new Error('Please enter transaction ID')
+
+      const response = await fetch(getApiUrl('/api/receipt'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
+        const message = errorData.detail || errorData.error?.message || `Server error: ${response.status}`
+        throw new Error(typeof message === 'string' ? message : 'Request failed')
+      }
+
+      setResult(await response.json())
+    } catch (err) {
+      console.error('Error generating receipt:', err)
+      setError(err.message)
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  const downloadPdfDirect = async () => {
+    if (!result?.download_url) return
+    try {
+      const response = await fetch(result.download_url)
+      if (!response.ok) throw new Error('Download failed')
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Receipt_${result.payer_name.replace(/\s+/g, '_')}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch {
+      window.open(result.download_url, '_blank')
+    }
+  }
+
+  const copyShareableLink = async () => {
+    if (!result?.url) return
+    try {
+      await navigator.clipboard.writeText(result.url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      const input = document.createElement('input')
+      input.value = result.url
+      document.body.appendChild(input)
+      input.select()
+      document.execCommand('copy')
+      document.body.removeChild(input)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  const previewEmbed = mapsEmbedUrl(form)
+  const amountDisplay = formatReceiptAmount(form.amount, form.currency)
+  const eventWhen = formatEventDatetime(form.event_date, form.event_time)
+  const paymentMeta = [
+    form.payment_date ? `Paid on ${form.payment_date}` : '',
+    form.payment_method ? `via ${form.payment_method}` : '',
+  ].filter(Boolean).join(' · ')
+
+  return (
+    <div className="cert-container">
+      <div className="cert-form-section">
+        <div className="section-header">
+          <h2>Receipt Details</h2>
+        </div>
+        <form className="cert-form" onSubmit={generateReceipt}>
+          <fieldset className="form-fieldset">
+            <legend>Payment</legend>
+            <div className="form-group">
+              <label htmlFor="payer_name">Payer Name</label>
+              <input
+                id="payer_name"
+                type="text"
+                placeholder="e.g. Jane Doe"
+                value={form.payer_name}
+                onChange={(e) => updateField('payer_name', e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="amount">Amount</label>
+                <input
+                  id="amount"
+                  type="text"
+                  placeholder="e.g. 2,499"
+                  value={form.amount}
+                  onChange={(e) => updateField('amount', e.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="currency">Currency</label>
+                <select
+                  id="currency"
+                  value={form.currency}
+                  onChange={(e) => updateField('currency', e.target.value)}
+                >
+                  <option value="INR">INR</option>
+                  <option value="USD">USD</option>
+                  <option value="EUR">EUR</option>
+                  <option value="GBP">GBP</option>
+                  <option value="">None</option>
+                </select>
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="payment_date">Payment Date</label>
+                <input
+                  id="payment_date"
+                  type="date"
+                  value={form.payment_date}
+                  onChange={(e) => updateField('payment_date', e.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="payment_method">Payment Method <span className="form-optional">(optional)</span></label>
+                <input
+                  id="payment_method"
+                  type="text"
+                  placeholder="e.g. UPI, Card, Bank Transfer"
+                  value={form.payment_method}
+                  onChange={(e) => updateField('payment_method', e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label htmlFor="transaction_id">Transaction ID</label>
+              <input
+                id="transaction_id"
+                type="text"
+                placeholder="e.g. pay_abc123xyz"
+                value={form.transaction_id}
+                onChange={(e) => updateField('transaction_id', e.target.value)}
+                required
+              />
+            </div>
+          </fieldset>
+
+          <fieldset className="form-fieldset">
+            <legend>Event &amp; Location</legend>
+            <div className="form-group">
+              <label htmlFor="event_name">Event Name</label>
+              <input
+                id="event_name"
+                type="text"
+                placeholder="e.g. AI Product Workshop"
+                value={form.event_name}
+                onChange={(e) => updateField('event_name', e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="event_date">Event Date</label>
+                <input
+                  id="event_date"
+                  type="date"
+                  value={form.event_date}
+                  onChange={(e) => updateField('event_date', e.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="event_time">Event Time <span className="form-optional">(optional)</span></label>
+                <input
+                  id="event_time"
+                  type="text"
+                  placeholder="e.g. 10:00 AM IST"
+                  value={form.event_time}
+                  onChange={(e) => updateField('event_time', e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label htmlFor="venue_name">Venue Name <span className="form-optional">(optional)</span></label>
+              <input
+                id="venue_name"
+                type="text"
+                placeholder="e.g. IntelliForge Learning Hub"
+                value={form.venue_name}
+                onChange={(e) => updateField('venue_name', e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="address">Address <span className="form-optional">(optional – used for map)</span></label>
+              <textarea
+                id="address"
+                rows={2}
+                placeholder="e.g. MG Road, Bengaluru, Karnataka 560001"
+                value={form.address}
+                onChange={(e) => updateField('address', e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="maps_url">Google Maps URL <span className="form-optional">(optional override)</span></label>
+              <input
+                id="maps_url"
+                type="url"
+                placeholder="https://maps.google.com/..."
+                value={form.maps_url}
+                onChange={(e) => updateField('maps_url', e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="description">Description <span className="form-optional">(optional)</span></label>
+              <textarea
+                id="description"
+                rows={2}
+                placeholder="e.g. Early bird registration"
+                value={form.description}
+                onChange={(e) => updateField('description', e.target.value)}
+              />
+            </div>
+          </fieldset>
+
+          {error && (
+            <div className="error-message" role="alert">
+              <strong>Error:</strong> {error}
+            </div>
+          )}
+
+          <button type="submit" className="download-btn cert-submit-btn" disabled={isGenerating} data-testid="receipt-generate-btn">
+            {isGenerating ? <Icon.Loader /> : <Icon.Receipt />}
+            <span>{isGenerating ? 'Generating...' : 'Generate Receipt'}</span>
+          </button>
+        </form>
+
+        {result && (
+          <div className="cert-result" data-testid="receipt-result">
+            <div className="cert-result-header">
+              <span className="cert-result-check"><Icon.CheckCircle /></span>
+              Receipt issued for <strong>{result.payer_name}</strong>
+              <span className="cert-id-badge">{result.receipt_id}</span>
+            </div>
+
+            <div className="cert-link-box">
+              <label className="cert-link-label">Permanent Shareable Link</label>
+              <div className="cert-link-row">
+                <input
+                  className="cert-link-input"
+                  type="text"
+                  value={result.url}
+                  readOnly
+                  onClick={(e) => e.target.select()}
+                  aria-label="Receipt shareable link"
+                  data-testid="receipt-share-url"
+                />
+                <button className="cert-link-copy" onClick={copyShareableLink} type="button">
+                  {copied ? <Icon.Check /> : <Icon.Copy />}
+                  <span>{copied ? 'Copied' : 'Copy'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="cert-result-actions">
+              <button className="download-btn cert-action-btn" onClick={downloadPdfDirect} type="button">
+                <Icon.Download />
+                <span>Download PDF</span>
+              </button>
+              <a className="cert-view-btn cert-action-btn" href={result.url} target="_blank" rel="noopener noreferrer">
+                <Icon.ExternalLink />
+                <span>View Public Page</span>
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="cert-preview-section">
+        <div className="section-header">
+          <h2>Receipt Preview</h2>
+        </div>
+        <div className="cert-preview">
+          <div className="cert-card receipt-card">
+            <div className="cert-header">
+              <span className="cert-header-org">An IntelliForge AI Initiative</span>
+              <span className="cert-header-brand">IntelliForge Events</span>
+              <span className="cert-header-badge">Payment Acknowledgement</span>
+            </div>
+            <div className="cert-body receipt-body">
+              <div className="cert-verified receipt-verified">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg>
+                Payment Received
+              </div>
+              <p className="cert-award-label">Received From</p>
+              <p className="cert-name">{form.payer_name || 'Payer Name'}</p>
+              <p className="receipt-amount">{amountDisplay}</p>
+              <p className="receipt-payment-meta">{paymentMeta || 'Payment details'}</p>
+
+              <div className="receipt-event-box">
+                <span className="receipt-event-label">Event Details</span>
+                <p className="receipt-event-title">{form.event_name || 'Event name'}</p>
+                <p className="receipt-event-when">{eventWhen}</p>
+                {form.venue_name && <p className="receipt-event-venue">{form.venue_name}</p>}
+                {form.address && <p className="receipt-event-address">{form.address}</p>}
+              </div>
+
+              {form.description && (
+                <p className="receipt-description">{form.description}</p>
+              )}
+
+              <div className="cert-meta-row receipt-meta-row">
+                <div className="cert-meta-item">
+                  <span className="cert-meta-value cert-meta-id">{form.transaction_id || 'TXN-XXXX'}</span>
+                  <span className="cert-meta-label">Transaction ID</span>
+                </div>
+                <div className="cert-meta-item cert-meta-bordered">
+                  <span className="cert-meta-value cert-meta-id">RCP-XXXXXXXXXXXX</span>
+                  <span className="cert-meta-label">Receipt ID</span>
+                </div>
+              </div>
+
+              {previewEmbed ? (
+                <div className="receipt-map-preview" data-testid="receipt-map-preview">
+                  <span className="receipt-event-label">Location</span>
+                  <iframe
+                    title="Event location map preview"
+                    className="receipt-map-frame"
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                    src={previewEmbed}
+                  />
+                </div>
+              ) : (
+                <div className="receipt-map-placeholder">
+                  Add address or maps URL to preview location
+                </div>
+              )}
+
+              <div className="cert-qr-placeholder">
+                <div className="cert-qr-box">QR</div>
+                <div className="cert-qr-text">
+                  <strong>Scan to View</strong>
+                  QR code links to the shareable receipt page.
+                </div>
+              </div>
+            </div>
+            <div className="cert-footer-bar">
+              Issued by IntelliForge Events &middot; learning.intelliforge.tech &middot; support@intelliforge.tech
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 function AdminDashboard({ getApiUrl }) {
   const [adminKey, setAdminKey] = useState(() => localStorage.getItem('adminKey') || '')
   const [authenticated, setAuthenticated] = useState(false)
@@ -705,7 +1134,11 @@ function App() {
         </a>
         <h1>IntelliForge Certificates</h1>
         <p className="header-subtitle">
-          Issue verified training certificates, share links, and manage courses from one place
+          {activeTab === 'receipt'
+            ? 'Issue payment acknowledgement receipts with event details and map locations'
+            : activeTab === 'admin'
+              ? 'Manage courses, bulk certificates, and platform analytics'
+              : 'Issue verified training certificates, share links, and manage courses from one place'}
         </p>
         <nav className="tab-nav" role="tablist">
           <button
@@ -716,6 +1149,16 @@ function App() {
           >
             <Icon.CertTab />
             <span>Certificate Generator</span>
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'receipt' ? 'active' : ''}`}
+            onClick={() => setActiveTab('receipt')}
+            role="tab"
+            aria-selected={activeTab === 'receipt'}
+            data-testid="receipt-tab"
+          >
+            <Icon.Receipt />
+            <span>Payment Receipt</span>
           </button>
           <button
             className={`tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
@@ -961,6 +1404,10 @@ function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {activeTab === 'receipt' && (
+        <ReceiptGenerator getApiUrl={getApiUrl} />
       )}
 
       {activeTab === 'admin' && (
