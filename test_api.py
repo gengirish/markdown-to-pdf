@@ -90,6 +90,38 @@ def test_certificate_validation_empty_name():
     record("Empty name returns 400", r.status_code == 400)
 
 
+def test_internship_certificate():
+    """VTU-style internship payload: USN, duration, hours, mentor + verifiable token."""
+    body = {
+        "participant_name": "Internship API Test",
+        "course_name": "AI Code Reviewer Course",
+        "completion_date": "2026-06-10",
+        "instructor_name": "Program Lead",
+        "certificate_kind": "internship",
+        "usn": "1RV22CS099",
+        "internship_duration": "Jan 2026 – Jun 2026",
+        "internship_hours": "120",
+        "mentor_name": "Industry Mentor",
+        "institution_name": "Sample Engineering College",
+    }
+    r = requests.post(f"{BASE_URL}/api/certificate", json=body)
+    data = r.json()
+    record("POST internship certificate returns 200", r.status_code == 200)
+    record("Internship certificate_kind in response", data.get("certificate_kind") == "internship")
+    record("Internship USN echoed", data.get("usn") == "1RV22CS099")
+    token = data.get("token", "")
+    if not token:
+        record("Internship token present", False)
+        return
+    v = requests.get(f"{BASE_URL}/certificate/{token}/verify").json()
+    record("Verify internship returns certificate_kind", v.get("certificate_kind") == "internship")
+    record("Verify includes mentor_name", v.get("mentor_name") == "Industry Mentor")
+    pdf = requests.get(data.get("download_url", ""))
+    record("Internship PDF returns 200", pdf.status_code == 200)
+    record("Internship PDF is non-empty", len(pdf.content) > 500)
+    record("Internship PDF filename hint", "attachment" in pdf.headers.get("Content-Disposition", "").lower())
+
+
 # ── Public viewer page ────────────────────────────────────────────────
 
 def test_viewer_page(cert_data: dict):
@@ -126,6 +158,7 @@ def test_verify_valid(cert_data: dict):
     record("Verify response has valid=True", data.get("valid") is True)
     record("Verify returns correct participant", data.get("participant_name") == "Test User")
     record("Verify returns correct course", data.get("course_name") == "AI Code Reviewer Course")
+    record("Verify participation kind", data.get("certificate_kind") == "participation")
 
 
 # ── Tamper detection ──────────────────────────────────────────────────
@@ -180,6 +213,9 @@ def run_all():
     print("\n[Validation Errors]")
     test_certificate_validation_bad_course()
     test_certificate_validation_empty_name()
+
+    print("\n[Internship / VTU certificate]")
+    test_internship_certificate()
 
     print("\n[Public Viewer]")
     test_viewer_page(cert)

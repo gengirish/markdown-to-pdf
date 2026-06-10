@@ -263,12 +263,20 @@ class IntelliForge:
         participant_email: str | None = None,
         callback_url: str | None = None,
         idempotency_key: str | None = None,
+        *,
+        certificate_kind: str = "participation",
+        usn: str | None = None,
+        internship_duration: str | None = None,
+        internship_hours: str | None = None,
+        mentor_name: str | None = None,
+        institution_name: str | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "participant_name": participant_name,
             "course_name": course_name,
             "completion_date": completion_date,
             "instructor_name": instructor_name,
+            "certificate_kind": certificate_kind,
         }
         if participant_email is not None:
             payload["participant_email"] = participant_email
@@ -276,6 +284,17 @@ class IntelliForge:
             payload["callback_url"] = callback_url
         if idempotency_key is not None:
             payload["idempotency_key"] = idempotency_key
+        if certificate_kind == "internship":
+            if usn is not None:
+                payload["usn"] = usn
+            if internship_duration is not None:
+                payload["internship_duration"] = internship_duration
+            if internship_hours is not None:
+                payload["internship_hours"] = internship_hours
+            if mentor_name is not None:
+                payload["mentor_name"] = mentor_name
+            if institution_name is not None:
+                payload["institution_name"] = institution_name
         response = self._execute(
             "POST",
             "/api/certificate",

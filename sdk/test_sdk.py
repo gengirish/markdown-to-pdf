@@ -38,6 +38,7 @@ def test_create_and_verify():
     result = client.verify(cert["token"])
     assert result["valid"] is True
     assert result["participant_name"] == "SDK Test User"
+    assert result.get("certificate_kind") == "participation"
     
     # Idempotency
     cert2 = client.create_certificate(

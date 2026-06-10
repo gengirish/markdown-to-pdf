@@ -64,3 +64,6 @@ test_output.pdf
 
 # Vercel
 .vercel
+
+# Local duplicate; canonical sample is docs/samples/IntelliForge_Internship_Offer_Letter.docx
+/IntelliForge_Internship_Offer_Letter.docx

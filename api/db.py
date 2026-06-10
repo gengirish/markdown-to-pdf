@@ -53,6 +53,10 @@ SEED_COURSES = [
     ("Digital Profile Creation", "Build your professional digital presence"),
     ("Deploying AI Solutions", "Deploy and scale AI models in production"),
     ("AI Code Reviewer Course", "Learn systematic AI-assisted code review"),
+    (
+        "VTU Industry Internship – IntelliForge AI Programme",
+        "Formal internship completion credential for VTU / college records (USN, hours, mentor)",
+    ),
 ]
 
 

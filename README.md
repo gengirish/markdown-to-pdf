@@ -2,7 +2,7 @@
 
 **API-first verifiable credentials with zero vendor lock-in.**
 
-Generate tamper-proof participation certificates with shareable URLs. All certificate data lives inside the URL itself — signed with HMAC-SHA256, cryptographically verifiable without a database.
+Generate tamper-proof participation and **VTU-style internship completion** certificates with shareable URLs. All certificate data lives inside the URL itself — signed with HMAC-SHA256, cryptographically verifiable without a database. See [docs/certificate-internship-vtu.md](docs/certificate-internship-vtu.md) for internship fields and college workflow notes. **Offer letter (Word):** [docs/samples/IntelliForge_Internship_Offer_Letter.docx](docs/samples/IntelliForge_Internship_Offer_Letter.docx).
 
 **Live (certificate platform):** [certs.intelliforge.tech](https://certs.intelliforge.tech) · **Docs:** [/docs](https://certs.intelliforge.tech/docs) · **OpenAPI:** [/openapi.json](https://certs.intelliforge.tech/openapi.json) · **Agent discovery:** [/llms.txt](https://certs.intelliforge.tech/llms.txt)
 

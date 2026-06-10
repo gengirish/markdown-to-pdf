@@ -9,7 +9,7 @@ so no database is needed and certificates are permanent and tamper-proof.
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, HTMLResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from xhtml2pdf import pisa
 from io import BytesIO
 import logging
@@ -23,7 +23,16 @@ import time
 import math
 from collections import defaultdict
 from urllib.parse import quote_plus, urlencode
+from typing import Literal
+
 import html as html_mod
+
+from api.certificate_templates import (
+    CERTIFICATE_INTERNSHIP_VTU_HTML,
+    CERTIFICATE_PARTICIPATION_HTML,
+    CERT_EMAIL_INTERNSHIP_HTML,
+    VIEWER_INTERNSHIP_HTML,
+)
 
 import uuid as uuid_mod
 import threading
@@ -187,7 +196,7 @@ app = FastAPI(
     title="IntelliForge Certificate API",
     description=(
         "**API-first verifiable credentials with zero vendor lock-in.**\n\n"
-        "Generate tamper-proof participation certificates with shareable URLs. "
+        "Generate tamper-proof participation and VTU-style internship completion certificates with shareable URLs. "
         "All certificate data is encoded in the URL itself — signed with HMAC-SHA256, "
         "cryptographically verifiable without a database.\n\n"
         "## Authentication\n"
@@ -287,8 +296,22 @@ def _decode_cert(token: str) -> dict | None:
 
 def _cert_id(data: dict) -> str:
     """Generate a short deterministic certificate ID for display."""
-    raw = f"{data['n']}-{data['c']}-{data['d']}"
+    if data.get("k") == "i":
+        raw = json.dumps(data, separators=(",", ":"), sort_keys=True)
+    else:
+        raw = f"{data['n']}-{data['c']}-{data['d']}"
     return "IF-" + hashlib.sha256(raw.encode()).hexdigest()[:12].upper()
+
+
+def _is_internship_payload(data: dict) -> bool:
+    return data.get("k") == "i"
+
+
+def _institution_clause_for_pdf(inst: str) -> str:
+    t = (inst or "").strip()
+    if not t:
+        return ""
+    return f"who is enrolled at <strong>{html_mod.escape(t)}</strong>, "
 
 
 def _certificate_is_revoked(token: str) -> bool:
@@ -377,6 +400,30 @@ class CertificateRequest(BaseModel):
     participant_email: str = ""
     callback_url: str = ""
     idempotency_key: str = ""
+    certificate_kind: Literal["participation", "internship"] = "participation"
+    usn: str = ""
+    internship_duration: str = ""
+    internship_hours: str = ""
+    mentor_name: str = ""
+    institution_name: str = ""
+
+    @model_validator(mode="after")
+    def _internship_required_fields(self):
+        if self.certificate_kind == "internship":
+            missing: list[str] = []
+            if not self.usn.strip():
+                missing.append("usn")
+            if not self.internship_duration.strip():
+                missing.append("internship_duration")
+            if not self.internship_hours.strip():
+                missing.append("internship_hours")
+            if not self.mentor_name.strip():
+                missing.append("mentor_name")
+            if missing:
+                raise ValueError(
+                    "Internship certificates require non-empty: " + ", ".join(missing)
+                )
+        return self
 
 
 class ReceiptRequest(BaseModel):
@@ -916,6 +963,7 @@ async def get_info():
             "Stateless verification (no database)",
             "Public shareable certificate pages",
             "PDF certificate generation with QR codes",
+            "VTU-style internship completion (USN, hours, mentor, Forge letterhead)",
             "Event entry tickets with maps and WhatsApp delivery",
             "LinkedIn and X social sharing",
         ],
@@ -944,6 +992,7 @@ COURSES_FALLBACK = [
     "Digital Profile Creation",
     "Deploying AI Solutions",
     "AI Code Reviewer Course",
+    "VTU Industry Internship – IntelliForge AI Programme",
 ]
 
 
@@ -962,212 +1011,44 @@ async def get_courses():
     return {"courses": _get_course_names()}
 
 
-CERTIFICATE_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        @page {{
-            size: 842pt 595pt;
-            margin: 0;
-        }}
-        body {{
-            font-family: Helvetica, Arial, sans-serif;
-            color: #2d3748;
-            margin: 0;
-            padding: 0;
-        }}
-        table {{
-            border-collapse: collapse;
-        }}
-        td {{
-            padding: 0;
-        }}
-    </style>
-</head>
-<body>
-
-<!-- Full-page outer wrapper with dark background -->
-<table width="100%" height="100%" style="background-color: #0f0f23;">
-<tr><td style="padding: 24pt 32pt;">
-
-<!-- Card with white background and rounded appearance -->
-<table width="100%" style="background-color: #ffffff;">
-<tr><td>
-
-    <!-- ═══════════════ HEADER ═══════════════ -->
-    <table width="100%" style="background-color: #15155e;">
-    <tr><td style="padding: 30pt 40pt 26pt;">
-        <table width="100%" cellspacing="0" cellpadding="0">
-            <tr><td align="center" style="font-size: 8pt; letter-spacing: 4pt; color: #d4af37; font-weight: bold; padding-bottom: 4pt; text-align: center;">
-                AN INTELLIFORGE AI INITIATIVE
-            </td></tr>
-            <tr><td align="center" style="font-size: 24pt; font-weight: bold; color: #ffffff; padding: 6pt 0 12pt; text-align: center;">
-                IntelliForge Learning
-            </td></tr>
-            <tr><td align="center" style="text-align: center; padding: 0;">
-                <table align="center" cellspacing="0" cellpadding="0" style="border: 2px solid #d4af37;">
-                <tr><td align="center" style="padding: 6pt 30pt; font-size: 9pt; letter-spacing: 3pt; color: #d4af37; font-weight: bold; text-align: center;">
-                    CERTIFICATE OF PARTICIPATION
-                </td></tr>
-                </table>
-            </td></tr>
-        </table>
-    </td></tr>
-    </table>
-
-    <!-- ═══════════════ BODY ═══════════════ -->
-    <table width="100%">
-    <tr><td style="padding: 28pt 50pt 20pt;">
-
-        <!-- Verified badge -->
-        <table width="100%" cellspacing="0" cellpadding="0">
-        <tr><td align="center" style="text-align: center; padding-bottom: 18pt;">
-            <table align="center" cellspacing="0" cellpadding="0" style="border: 1px solid #68d391;">
-            <tr><td align="center" style="padding: 4pt 14pt; font-size: 8pt; color: #276749; font-weight: bold; background-color: #f0fff4; text-align: center;">
-                &#10003; &nbsp; Verified &amp; Authentic
-            </td></tr>
-            </table>
-        </td></tr>
-        </table>
-
-        <!-- Award label + Name + Divider + Course -->
-        <table width="100%" cellspacing="0" cellpadding="0">
-            <tr><td align="center" style="text-align: center; font-size: 8pt; letter-spacing: 3pt; color: #a0aec0; padding-bottom: 6pt;">
-                THIS CERTIFICATE IS AWARDED TO
-            </td></tr>
-            <tr><td align="center" style="text-align: center; font-size: 32pt; font-weight: bold; color: #1a202c; padding: 4pt 0 2pt;">
-                {participant_name}
-            </td></tr>
-        </table>
-
-        <!-- Gold divider -->
-        <table width="60%" align="center" cellspacing="0" cellpadding="0"><tr>
-            <td style="border-top: 2px solid #d4af37; font-size: 1pt;">&nbsp;</td>
-        </tr></table>
-
-        <!-- Course name -->
-        <table width="100%" cellspacing="0" cellpadding="0">
-            <tr><td align="center" style="text-align: center; font-size: 1pt; padding-top: 10pt;">&nbsp;</td></tr>
-            <tr><td align="center" style="text-align: center; font-size: 15pt; font-weight: bold; color: #553c9a; padding-bottom: 20pt;">
-                {course_name}
-            </td></tr>
-        </table>
-
-        <!-- Metadata row -->
-        <table width="85%" align="center" cellspacing="0" cellpadding="0" style="border-top: 1px solid #edf2f7; border-bottom: 1px solid #edf2f7;">
-            <tr>
-                <td width="33%" align="center" style="text-align: center; padding: 12pt 8pt;">
-                    <table width="100%" cellspacing="0" cellpadding="0">
-                        <tr><td align="center" style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{completion_date}</td></tr>
-                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">DATE</td></tr>
-                    </table>
-                </td>
-                <td width="34%" align="center" style="text-align: center; padding: 12pt 8pt; border-left: 1px solid #edf2f7; border-right: 1px solid #edf2f7;">
-                    <table width="100%" cellspacing="0" cellpadding="0">
-                        <tr><td align="center" style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{instructor_name}</td></tr>
-                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">INSTRUCTOR</td></tr>
-                    </table>
-                </td>
-                <td width="33%" align="center" style="text-align: center; padding: 12pt 8pt;">
-                    <table width="100%" cellspacing="0" cellpadding="0">
-                        <tr><td align="center" style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{certificate_id}</td></tr>
-                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">CERTIFICATE ID</td></tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
-
-        <!-- Spacer -->
-        <table width="100%"><tr><td style="font-size: 8pt;">&nbsp;</td></tr></table>
-
-        <!-- Signatures -->
-        <table width="70%" align="center" cellspacing="0" cellpadding="0">
-            <tr>
-                <td width="50%" align="center" style="text-align: center; padding: 8pt 12pt; vertical-align: bottom;">
-                    <img src="{signature_data_uri}" width="150" height="50" />
-                    <table width="100%" cellspacing="0" cellpadding="0">
-                        <tr><td align="center" style="border-top: 1px solid #c4b5fd; font-size: 8pt; color: #553c9a; font-weight: bold; padding-top: 4pt; text-align: center;">
-                            {founder_name}
-                        </td></tr>
-                        <tr><td align="center" style="font-size: 6pt; color: #a0aec0; text-align: center; letter-spacing: 1pt;">
-                            {founder_title}
-                        </td></tr>
-                    </table>
-                </td>
-                <td width="50%" align="center" style="text-align: center; padding: 8pt 12pt; vertical-align: bottom;">
-                    <img src="{instructor_signature_data_uri}" width="150" height="50" />
-                    <table width="100%" cellspacing="0" cellpadding="0">
-                        <tr><td align="center" style="border-top: 1px solid #c4b5fd; font-size: 8pt; color: #553c9a; font-weight: bold; padding-top: 4pt; text-align: center;">
-                            {instructor_name}
-                        </td></tr>
-                        <tr><td align="center" style="font-size: 6pt; color: #a0aec0; text-align: center; letter-spacing: 1pt;">
-                            COURSE INSTRUCTOR
-                        </td></tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
-
-        <!-- Spacer -->
-        <table width="100%"><tr><td style="font-size: 8pt;">&nbsp;</td></tr></table>
-
-        <!-- QR code + verify section -->
-        <table width="100%" cellspacing="0" cellpadding="0">
-        <tr><td align="center" style="text-align: center;">
-            <table align="center" cellspacing="0" cellpadding="0">
-            <tr>
-                <td style="padding-right: 12pt; vertical-align: middle;">
-                    <img src="{qr_data_uri}" width="70" height="70" />
-                </td>
-                <td style="vertical-align: middle; text-align: left;">
-                    <table cellspacing="0" cellpadding="0"><tr><td style="font-size: 9pt; font-weight: bold; color: #2d3748; padding-bottom: 2pt;">Scan to Verify</td></tr></table>
-                    <table cellspacing="0" cellpadding="0"><tr><td style="font-size: 7pt; color: #a0aec0; line-height: 1.5;">This QR code links to this certificate's<br/>permanent verification page.</td></tr></table>
-                </td>
-            </tr>
-            </table>
-        </td></tr>
-        </table>
-
-    </td></tr>
-    </table>
-
-    <!-- ═══════════════ FOOTER ═══════════════ -->
-    <table width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; border-top: 1px solid #edf2f7;">
-    <tr><td align="center" style="padding: 10pt 40pt; text-align: center; font-size: 7pt; color: #a0aec0;">
-        Issued by IntelliForge Learning &nbsp;&middot;&nbsp; learning.intelliforge.tech &nbsp;&middot;&nbsp; support@intelliforge.tech
-    </td></tr>
-    </table>
-
-</td></tr>
-</table>
-<!-- End card -->
-
-</td></tr>
-</table>
-<!-- End outer wrapper -->
-
-</body>
-</html>
-"""
-
-
 def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
     """Render certificate compact data into PDF bytes."""
     qr_data_uri = _generate_qr_data_uri(verify_url) if verify_url else ""
-    full_html = CERTIFICATE_TEMPLATE.format(
-        participant_name=data["n"],
-        course_name=data["c"],
-        completion_date=data["d"],
-        instructor_name=data["i"],
-        certificate_id=_cert_id(data),
-        qr_data_uri=qr_data_uri,
-        signature_data_uri=_generate_signature_data_uri(),
-        instructor_signature_data_uri=_generate_signature_data_uri(data["i"]),
-        founder_name=FOUNDER_NAME,
-        founder_title=FOUNDER_TITLE,
-    )
+    cert_id = _cert_id(data)
+    if _is_internship_payload(data):
+        inst = (data.get("s") or "").strip()
+        institution_clause = _institution_clause_for_pdf(inst)
+        full_html = CERTIFICATE_INTERNSHIP_VTU_HTML.format(
+            participant_name=html_mod.escape(data["n"]),
+            course_name=html_mod.escape(data["c"]),
+            completion_date=html_mod.escape(data["d"]),
+            instructor_name=html_mod.escape(data["i"]),
+            mentor_name=html_mod.escape(data["m"]),
+            usn=html_mod.escape(data["u"]),
+            duration_text=html_mod.escape(data["w"]),
+            hours_text=html_mod.escape(data["h"]),
+            certificate_id=html_mod.escape(cert_id),
+            institution_clause=institution_clause,
+            qr_data_uri=qr_data_uri,
+            signature_data_uri=_generate_signature_data_uri(),
+            mentor_signature_data_uri=_generate_signature_data_uri(data["m"]),
+            instructor_signature_data_uri=_generate_signature_data_uri(data["i"]),
+            founder_name=html_mod.escape(FOUNDER_NAME),
+            founder_title=html_mod.escape(FOUNDER_TITLE),
+        )
+    else:
+        full_html = CERTIFICATE_PARTICIPATION_HTML.format(
+            participant_name=data["n"],
+            course_name=data["c"],
+            completion_date=data["d"],
+            instructor_name=data["i"],
+            certificate_id=cert_id,
+            qr_data_uri=qr_data_uri,
+            signature_data_uri=_generate_signature_data_uri(),
+            instructor_signature_data_uri=_generate_signature_data_uri(data["i"]),
+            founder_name=FOUNDER_NAME,
+            founder_title=FOUNDER_TITLE,
+        )
     pdf_buffer = BytesIO()
     pisa_status = pisa.CreatePDF(src=full_html, dest=pdf_buffer, encoding="UTF-8")
     if pisa_status.err:
@@ -1261,6 +1142,60 @@ def _send_certificate_email(
         return True
     except Exception as e:
         logger.warning(f"Failed to send certificate email to {to_email}: {e}")
+        return False
+
+
+def _send_internship_certificate_email(
+    to_email: str,
+    participant_name: str,
+    course_name: str,
+    completion_date: str,
+    instructor_name: str,
+    mentor_name: str,
+    usn: str,
+    duration_text: str,
+    hours_text: str,
+    certificate_id: str,
+    view_url: str,
+    download_url: str,
+) -> bool:
+    """Send VTU-style internship certificate email via AgentMail."""
+    if not _agentmail_client or not to_email:
+        return False
+    try:
+        html = CERT_EMAIL_INTERNSHIP_HTML.format(
+            participant_name=participant_name,
+            course_name=course_name,
+            completion_date=completion_date,
+            instructor_name=instructor_name,
+            mentor_name=mentor_name,
+            usn=usn,
+            duration_text=duration_text,
+            hours_text=hours_text,
+            certificate_id=certificate_id,
+            view_url=view_url,
+            download_url=download_url,
+        )
+        _agentmail_client.inboxes.messages.send(
+            AGENTMAIL_INBOX_ID,
+            to=to_email,
+            subject=f"Your IntelliForge internship certificate – {course_name}",
+            text=(
+                f"Congratulations {participant_name} (USN {usn})!\n\n"
+                f"Your industry internship completion certificate for {course_name} is ready.\n"
+                f"Duration: {duration_text} · Contact hours: {hours_text}\n"
+                f"Mentor: {mentor_name} · Program lead: {instructor_name}\n\n"
+                f"Certificate ID: {certificate_id}\n"
+                f"View: {view_url}\n"
+                f"Download PDF: {download_url}\n\n"
+                f"– Intelliforge Digital Services"
+            ),
+            html=html,
+        )
+        logger.info(f"Internship certificate email sent to {to_email}")
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to send internship certificate email to {to_email}: {e}")
         return False
 
 
@@ -1376,6 +1311,12 @@ async def generate_certificate(request: CertificateRequest, req: Request):
     """
     Generate a signed certificate and return shareable URL + PDF download URL.
 
+    **Participation (default):** `certificate_kind` omitted or `"participation"` — standard course certificate.
+
+    **Internship (VTU / college records):** set `certificate_kind` to `"internship"` and include
+    `usn`, `internship_duration`, `internship_hours`, and `mentor_name` (plus optional `institution_name`).
+    Same verification URLs and QR as participation certificates; PDF uses the Forge internship layout.
+
     **Idempotency:** Pass `idempotency_key` to safely retry without creating duplicates.
     The cached result is returned for 1 hour.
 
@@ -1414,12 +1355,21 @@ async def generate_certificate(request: CertificateRequest, req: Request):
         if not name:
             raise HTTPException(status_code=400, detail="Participant name is required")
 
-        cert_data = {
+        lead = request.instructor_name.strip() or "IntelliForge AI Team"
+        cert_data: dict = {
             "n": name,
             "c": request.course_name,
             "d": request.completion_date,
-            "i": request.instructor_name,
+            "i": lead,
         }
+        if request.certificate_kind == "internship":
+            cert_data["k"] = "i"
+            cert_data["u"] = request.usn.strip()
+            cert_data["w"] = request.internship_duration.strip()
+            cert_data["h"] = request.internship_hours.strip()
+            cert_data["m"] = request.mentor_name.strip()
+            if request.institution_name.strip():
+                cert_data["s"] = request.institution_name.strip()
         token = _encode_cert(cert_data)
         cert_id = _cert_id(cert_data)
 
@@ -1433,7 +1383,7 @@ async def generate_certificate(request: CertificateRequest, req: Request):
                     participant_name=name,
                     course_name=request.course_name,
                     completion_date=request.completion_date,
-                    instructor_name=request.instructor_name,
+                    instructor_name=lead,
                     client_ip=client_ip,
                     participant_email=participant_email,
                 )
@@ -1449,12 +1399,30 @@ async def generate_certificate(request: CertificateRequest, req: Request):
         if participant_email:
             if not _agentmail_client:
                 email_error = "Email service is not configured on this server."
+            elif request.certificate_kind == "internship":
+                if _send_internship_certificate_email(
+                    to_email=participant_email,
+                    participant_name=name,
+                    course_name=request.course_name,
+                    completion_date=request.completion_date,
+                    instructor_name=lead,
+                    mentor_name=request.mentor_name.strip(),
+                    usn=request.usn.strip(),
+                    duration_text=request.internship_duration.strip(),
+                    hours_text=request.internship_hours.strip(),
+                    certificate_id=cert_id,
+                    view_url=shareable_url,
+                    download_url=download_url,
+                ):
+                    email_sent = True
+                else:
+                    email_error = "Could not deliver email. Share the certificate link instead."
             elif _send_certificate_email(
                 to_email=participant_email,
                 participant_name=name,
                 course_name=request.course_name,
                 completion_date=request.completion_date,
-                instructor_name=request.instructor_name,
+                instructor_name=lead,
                 certificate_id=cert_id,
                 view_url=shareable_url,
                 download_url=download_url,
@@ -1472,10 +1440,18 @@ async def generate_certificate(request: CertificateRequest, req: Request):
             "download_url": download_url,
             "participant_name": name,
             "course_name": request.course_name,
+            "certificate_kind": request.certificate_kind,
             "email_sent": email_sent,
             "email_error": email_error,
             "request_id": str(uuid_mod.uuid4()),
         }
+        if request.certificate_kind == "internship":
+            response_data["usn"] = request.usn.strip()
+            response_data["internship_duration"] = request.internship_duration.strip()
+            response_data["internship_hours"] = request.internship_hours.strip()
+            response_data["mentor_name"] = request.mentor_name.strip()
+            if request.institution_name.strip():
+                response_data["institution_name"] = request.institution_name.strip()
 
         if request.idempotency_key:
             _store_idempotency(request.idempotency_key, response_data)
@@ -1663,28 +1639,56 @@ async def view_certificate(token: str, req: Request):
     page_url = f"{base_url}/certificate/{token}"
     download_url = f"{page_url}/download"
 
-    cert_desc = f"I completed {data['c']} at IntelliForge Learning!"
-
     linkedin_params = urlencode({"url": page_url})
     linkedin_url = f"https://www.linkedin.com/sharing/share-offsite/?{linkedin_params}"
 
-    twitter_params = urlencode({"text": cert_desc, "url": page_url})
-    twitter_url = f"https://twitter.com/intent/tweet?{twitter_params}"
-
-    html = VIEWER_HTML.format(
-        participant_name=data["n"],
-        course_name=data["c"],
-        completion_date=data["d"],
-        instructor_name=data["i"],
-        cert_id=_cert_id(data),
-        page_url=page_url,
-        download_url=download_url,
-        linkedin_url=linkedin_url,
-        twitter_url=twitter_url,
-        qr_data_uri=_generate_qr_data_uri(page_url),
-        founder_name=FOUNDER_NAME,
-        founder_title=FOUNDER_TITLE,
-    )
+    if _is_internship_payload(data):
+        cert_desc = (
+            f"I completed my IntelliForge industry internship ({data['c']}) — USN {data['u']}!"
+        )
+        twitter_params = urlencode({"text": cert_desc, "url": page_url})
+        twitter_url = f"https://twitter.com/intent/tweet?{twitter_params}"
+        inst = (data.get("s") or "").strip()
+        institution_block = (
+            f'<div class="inst">{html_mod.escape(inst)}</div>' if inst else ""
+        )
+        html = VIEWER_INTERNSHIP_HTML.format(
+            participant_name=html_mod.escape(data["n"]),
+            usn=html_mod.escape(data["u"]),
+            course_name=html_mod.escape(data["c"]),
+            completion_date=html_mod.escape(data["d"]),
+            instructor_name=html_mod.escape(data["i"]),
+            mentor_name=html_mod.escape(data["m"]),
+            duration_text=html_mod.escape(data["w"]),
+            hours_text=html_mod.escape(data["h"]),
+            cert_id=html_mod.escape(_cert_id(data)),
+            institution_block=institution_block,
+            page_url=page_url,
+            download_url=download_url,
+            linkedin_url=linkedin_url,
+            twitter_url=twitter_url,
+            qr_data_uri=_generate_qr_data_uri(page_url),
+            founder_name=html_mod.escape(FOUNDER_NAME),
+            founder_title=html_mod.escape(FOUNDER_TITLE),
+        )
+    else:
+        cert_desc = f"I completed {data['c']} at IntelliForge Learning!"
+        twitter_params = urlencode({"text": cert_desc, "url": page_url})
+        twitter_url = f"https://twitter.com/intent/tweet?{twitter_params}"
+        html = VIEWER_HTML.format(
+            participant_name=data["n"],
+            course_name=data["c"],
+            completion_date=data["d"],
+            instructor_name=data["i"],
+            cert_id=_cert_id(data),
+            page_url=page_url,
+            download_url=download_url,
+            linkedin_url=linkedin_url,
+            twitter_url=twitter_url,
+            qr_data_uri=_generate_qr_data_uri(page_url),
+            founder_name=FOUNDER_NAME,
+            founder_title=FOUNDER_TITLE,
+        )
     return HTMLResponse(content=html)
 
 
@@ -1696,12 +1700,16 @@ async def download_certificate(token: str, req: Request):
     verify_url = f"{base_url}/certificate/{token}"
     pdf_bytes = _build_cert_pdf(data, verify_url=verify_url)
     safe_name = data["n"].replace(" ", "_")
+    if _is_internship_payload(data):
+        filename = f"Internship_Certificate_{safe_name}.pdf"
+    else:
+        filename = f"Certificate_{safe_name}.pdf"
 
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="Certificate_{safe_name}.pdf"',
+            "Content-Disposition": f'attachment; filename="{filename}"',
             "Content-Length": str(len(pdf_bytes)),
         },
     )
@@ -2268,6 +2276,27 @@ async def verify_receipt(token: str):
     }
 
 
+def _certificate_verify_public(data: dict) -> dict:
+    """Public fields returned by GET /certificate/{token}/verify (and batch verify)."""
+    out = {
+        "valid": True,
+        "certificate_id": _cert_id(data),
+        "participant_name": data["n"],
+        "course_name": data["c"],
+        "completion_date": data["d"],
+        "instructor_name": data["i"],
+        "certificate_kind": "internship" if _is_internship_payload(data) else "participation",
+    }
+    if _is_internship_payload(data):
+        out["usn"] = data["u"]
+        out["internship_duration"] = data["w"]
+        out["internship_hours"] = data["h"]
+        out["mentor_name"] = data["m"]
+        if data.get("s"):
+            out["institution_name"] = data["s"]
+    return out
+
+
 @app.get("/certificate/{token}/verify", tags=["Verification"])
 async def verify_certificate(token: str):
     """Verify a single certificate's authenticity by its token. Returns the decoded certificate data if valid."""
@@ -2278,14 +2307,7 @@ async def verify_certificate(token: str):
         return JSONResponse(
             {"valid": False, "revoked": True, "message": "Certificate has been revoked"},
         )
-    return {
-        "valid": True,
-        "certificate_id": _cert_id(data),
-        "participant_name": data["n"],
-        "course_name": data["c"],
-        "completion_date": data["d"],
-        "instructor_name": data["i"],
-    }
+    return _certificate_verify_public(data)
 
 
 class BatchVerifyRequest(BaseModel):
@@ -2316,15 +2338,7 @@ async def batch_verify_certificates(request: BatchVerifyRequest):
                 }
             )
         else:
-            results.append({
-                "token": token[:20] + "...",
-                "valid": True,
-                "certificate_id": _cert_id(data),
-                "participant_name": data["n"],
-                "course_name": data["c"],
-                "completion_date": data["d"],
-                "instructor_name": data["i"],
-            })
+            results.append({"token": token[:20] + "...", **_certificate_verify_public(data)})
     valid_count = sum(1 for r in results if r["valid"])
     return {"total": len(request.tokens), "valid": valid_count, "invalid": len(request.tokens) - valid_count, "results": results}
 
@@ -2361,7 +2375,22 @@ X-API-Key: <key>
   "idempotency_key": "unique-request-id"
 }
 
-Response: { certificate_id, token, url, download_url, email_sent, request_id }
+Internship (VTU / college records) — add:
+
+{
+  "certificate_kind": "internship",
+  "participant_name": "Jane Doe",
+  "course_name": "VTU Industry Internship – IntelliForge AI Programme",
+  "completion_date": "2026-06-10",
+  "instructor_name": "Program Lead",
+  "usn": "1RV22CS001",
+  "internship_duration": "January 2026 – June 2026",
+  "internship_hours": "120",
+  "mentor_name": "Industry Mentor Name",
+  "institution_name": "Affiliated Engineering College (optional)"
+}
+
+Response: { certificate_id, token, url, download_url, certificate_kind, email_sent, request_id, ... }
 
 ### List Courses
 GET /api/courses
@@ -2383,7 +2412,7 @@ Response: application/pdf
 ### Bulk Generate (Admin)
 POST /api/admin/certificates/bulk
 X-Admin-Key: <key>
-{ "entries": [{ participant_name, course_name, completion_date, participant_email }, ...] }
+{ "entries": [{ participant_name, course_name, completion_date, participant_email, certificate_kind?, usn?, internship_duration?, internship_hours?, mentor_name?, institution_name? }, ...] }
 
 ### OpenAPI Spec
 GET /openapi.json
@@ -2411,9 +2440,9 @@ async def ai_plugin():
         "schema_version": "v1",
         "name_for_human": "IntelliForge Certificates",
         "name_for_model": "intelliforge_certificates",
-        "description_for_human": "Generate and verify tamper-proof participation certificates with shareable URLs.",
+        "description_for_human": "Generate and verify tamper-proof course and internship (VTU-ready) certificates with shareable URLs.",
         "description_for_model": (
-            "API for generating HMAC-signed verifiable certificates. "
+            "API for generating HMAC-signed verifiable certificates (participation and internship with USN, hours, mentor). "
             "Use POST /api/certificate to create, GET /certificate/{token}/verify to verify, "
             "POST /api/certificates/verify for batch verification. "
             "Supports idempotency_key, callback_url webhooks, and email delivery."
@@ -2476,6 +2505,12 @@ class BulkCertificateEntry(BaseModel):
     completion_date: str
     instructor_name: str = "IntelliForge AI Team"
     participant_email: str = ""
+    certificate_kind: Literal["participation", "internship"] = "participation"
+    usn: str = ""
+    internship_duration: str = ""
+    internship_hours: str = ""
+    mentor_name: str = ""
+    institution_name: str = ""
 
 
 class BulkCertificateRequest(BaseModel):
@@ -2507,8 +2542,40 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
             results.append({"index": i, "status": "error", "error": f"Unknown course: {entry.course_name}"})
             continue
 
+        if entry.certificate_kind == "internship":
+            miss = []
+            if not entry.usn.strip():
+                miss.append("usn")
+            if not entry.internship_duration.strip():
+                miss.append("internship_duration")
+            if not entry.internship_hours.strip():
+                miss.append("internship_hours")
+            if not entry.mentor_name.strip():
+                miss.append("mentor_name")
+            if miss:
+                results.append({
+                    "index": i,
+                    "status": "error",
+                    "error": "Internship entry requires: " + ", ".join(miss),
+                })
+                continue
+
         try:
-            cert_data = {"n": name, "c": entry.course_name, "d": entry.completion_date, "i": entry.instructor_name}
+            lead = entry.instructor_name.strip() or "IntelliForge AI Team"
+            cert_data: dict = {
+                "n": name,
+                "c": entry.course_name,
+                "d": entry.completion_date,
+                "i": lead,
+            }
+            if entry.certificate_kind == "internship":
+                cert_data["k"] = "i"
+                cert_data["u"] = entry.usn.strip()
+                cert_data["w"] = entry.internship_duration.strip()
+                cert_data["h"] = entry.internship_hours.strip()
+                cert_data["m"] = entry.mentor_name.strip()
+                if entry.institution_name.strip():
+                    cert_data["s"] = entry.institution_name.strip()
             token = _encode_cert(cert_data)
             cert_id = _cert_id(cert_data)
             p_email = entry.participant_email.strip() if entry.participant_email else ""
@@ -2520,7 +2587,7 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
                     participant_name=name,
                     course_name=entry.course_name,
                     completion_date=entry.completion_date,
-                    instructor_name=entry.instructor_name,
+                    instructor_name=lead,
                     client_ip=client_ip,
                     participant_email=p_email,
                 )
@@ -2532,27 +2599,47 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
 
             email_sent = False
             if p_email:
-                email_sent = _send_certificate_email(
-                    to_email=p_email,
-                    participant_name=name,
-                    course_name=entry.course_name,
-                    completion_date=entry.completion_date,
-                    instructor_name=entry.instructor_name,
-                    certificate_id=cert_id,
-                    view_url=shareable_url,
-                    download_url=download_url,
-                )
+                if entry.certificate_kind == "internship":
+                    email_sent = _send_internship_certificate_email(
+                        to_email=p_email,
+                        participant_name=name,
+                        course_name=entry.course_name,
+                        completion_date=entry.completion_date,
+                        instructor_name=lead,
+                        mentor_name=entry.mentor_name.strip(),
+                        usn=entry.usn.strip(),
+                        duration_text=entry.internship_duration.strip(),
+                        hours_text=entry.internship_hours.strip(),
+                        certificate_id=cert_id,
+                        view_url=shareable_url,
+                        download_url=download_url,
+                    )
+                else:
+                    email_sent = _send_certificate_email(
+                        to_email=p_email,
+                        participant_name=name,
+                        course_name=entry.course_name,
+                        completion_date=entry.completion_date,
+                        instructor_name=lead,
+                        certificate_id=cert_id,
+                        view_url=shareable_url,
+                        download_url=download_url,
+                    )
 
-            results.append({
+            row = {
                 "index": i,
                 "status": "success",
                 "certificate_id": cert_id,
                 "participant_name": name,
                 "course_name": entry.course_name,
+                "certificate_kind": entry.certificate_kind,
                 "url": shareable_url,
                 "download_url": download_url,
                 "email_sent": email_sent,
-            })
+            }
+            if entry.certificate_kind == "internship":
+                row["usn"] = entry.usn.strip()
+            results.append(row)
         except Exception as e:
             results.append({"index": i, "status": "error", "error": str(e)})
 
