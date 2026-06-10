@@ -1275,11 +1275,17 @@ function App() {
   }, [])
 
   const [certForm, setCertForm] = useState({
+    certificate_kind: 'participation',
     participant_name: '',
     participant_email: '',
     course_name: '',
     completion_date: new Date().toISOString().split('T')[0],
     instructor_name: 'IntelliForge AI Team',
+    usn: '',
+    internship_duration: '',
+    internship_hours: '',
+    mentor_name: '',
+    institution_name: '',
   })
   const [isGenerating, setIsGenerating] = useState(false)
   const [certError, setCertError] = useState(null)
@@ -1295,16 +1301,49 @@ function App() {
       if (!certForm.participant_name.trim()) throw new Error('Please enter participant name')
       if (!certForm.course_name) throw new Error('Please select a course')
       if (!certForm.completion_date) throw new Error('Please select a date')
+      if (certForm.certificate_kind === 'internship') {
+        if (!certForm.usn?.trim()) throw new Error('USN is required for internship certificates')
+        if (!certForm.internship_duration?.trim()) throw new Error('Internship duration is required')
+        if (!certForm.internship_hours?.trim()) throw new Error('Internship hours are required')
+        if (!certForm.mentor_name?.trim()) throw new Error('Industry mentor name is required')
+      }
+
+      const payload = {
+        participant_name: certForm.participant_name.trim(),
+        course_name: certForm.course_name,
+        completion_date: certForm.completion_date,
+        instructor_name: (certForm.instructor_name || 'IntelliForge AI Team').trim(),
+      }
+      if (certForm.participant_email?.trim()) {
+        payload.participant_email = certForm.participant_email.trim()
+      }
+      if (certForm.certificate_kind === 'internship') {
+        payload.certificate_kind = 'internship'
+        payload.usn = certForm.usn.trim()
+        payload.internship_duration = certForm.internship_duration.trim()
+        payload.internship_hours = certForm.internship_hours.trim()
+        payload.mentor_name = certForm.mentor_name.trim()
+        if (certForm.institution_name?.trim()) {
+          payload.institution_name = certForm.institution_name.trim()
+        }
+      }
 
       const response = await fetch(getApiUrl('/api/certificate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(certForm),
+        body: JSON.stringify(payload),
       })
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
-        throw new Error(errorData.detail || `Server error: ${response.status}`)
+        const detail = errorData.detail
+        const msg =
+          typeof detail === 'string'
+            ? detail
+            : Array.isArray(detail)
+              ? detail.map((x) => (x && typeof x === 'object' && x.msg ? x.msg : JSON.stringify(x))).join(' ')
+              : `Server error: ${response.status}`
+        throw new Error(msg)
       }
 
       const data = await response.json()
@@ -1326,7 +1365,9 @@ function App() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `Certificate_${certResult.participant_name.replace(/\s+/g, '_')}.pdf`
+      const prefix =
+        certResult.certificate_kind === 'internship' ? 'Internship_Certificate_' : 'Certificate_'
+      a.download = `${prefix}${certResult.participant_name.replace(/\s+/g, '_')}.pdf`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
@@ -1383,7 +1424,7 @@ function App() {
             ? 'Issue event entry tickets with WhatsApp delivery, maps, and shareable links'
             : activeTab === 'admin'
               ? 'Manage courses, bulk certificates, and platform analytics'
-              : 'Issue verified training certificates, share links, and manage courses from one place'}
+              : 'Issue verified training and VTU internship certificates, share links, and manage courses from one place'}
         </p>
         <nav className="tab-nav" role="tablist">
           <button
@@ -1424,6 +1465,31 @@ function App() {
               <h2>Certificate Details</h2>
             </div>
             <form className="cert-form" onSubmit={generateCertificate}>
+              <fieldset className="form-group cert-type-fieldset">
+                <legend className="cert-type-legend">Certificate type</legend>
+                <div className="cert-type-toggle" role="radiogroup" aria-label="Certificate type">
+                  <button
+                    type="button"
+                    className={certForm.certificate_kind === 'participation' ? 'active' : ''}
+                    onClick={() => updateCertField('certificate_kind', 'participation')}
+                    aria-pressed={certForm.certificate_kind === 'participation'}
+                  >
+                    Course participation
+                  </button>
+                  <button
+                    type="button"
+                    className={certForm.certificate_kind === 'internship' ? 'active' : ''}
+                    onClick={() => updateCertField('certificate_kind', 'internship')}
+                    aria-pressed={certForm.certificate_kind === 'internship'}
+                  >
+                    VTU internship completion
+                  </button>
+                </div>
+                <p className="form-hint">
+                  Internship mode adds USN, duration, hours, and mentor for the Forge PDF and verify link.
+                </p>
+              </fieldset>
+
               <div className="form-group">
                 <label htmlFor="participant_name">Participant Name</label>
                 <input
@@ -1448,7 +1514,11 @@ function App() {
               </div>
 
               <div className="form-group">
-                <label htmlFor="course_name">Training Course</label>
+                <label htmlFor="course_name">
+                  {certForm.certificate_kind === 'internship'
+                    ? 'Internship programme / course'
+                    : 'Training course'}
+                </label>
                 <select
                   id="course_name"
                   value={certForm.course_name}
@@ -1475,16 +1545,85 @@ function App() {
                   />
                 </div>
                 <div className="form-group">
-                  <label htmlFor="instructor_name">Instructor Name</label>
+                  <label htmlFor="instructor_name">
+                    {certForm.certificate_kind === 'internship' ? 'Program lead' : 'Instructor name'}
+                  </label>
                   <input
                     id="instructor_name"
                     type="text"
-                    placeholder="IntelliForge AI Team"
+                    placeholder={
+                      certForm.certificate_kind === 'internship'
+                        ? 'e.g. IntelliForge Program Lead'
+                        : 'IntelliForge AI Team'
+                    }
                     value={certForm.instructor_name}
                     onChange={(e) => updateCertField('instructor_name', e.target.value)}
                   />
                 </div>
               </div>
+
+              {certForm.certificate_kind === 'internship' && (
+                <>
+                  <div className="form-group">
+                    <label htmlFor="usn">USN (University Seat Number)</label>
+                    <input
+                      id="usn"
+                      type="text"
+                      placeholder="e.g. 1RV22CS014"
+                      value={certForm.usn}
+                      onChange={(e) => updateCertField('usn', e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label htmlFor="internship_duration">Internship duration</label>
+                      <input
+                        id="internship_duration"
+                        type="text"
+                        placeholder="e.g. January 2026 – June 2026"
+                        value={certForm.internship_duration}
+                        onChange={(e) => updateCertField('internship_duration', e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="internship_hours">Contact hours</label>
+                      <input
+                        id="internship_hours"
+                        type="text"
+                        placeholder="e.g. 120"
+                        value={certForm.internship_hours}
+                        onChange={(e) => updateCertField('internship_hours', e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="mentor_name">Industry mentor</label>
+                    <input
+                      id="mentor_name"
+                      type="text"
+                      placeholder="Mentor name (appears on certificate)"
+                      value={certForm.mentor_name}
+                      onChange={(e) => updateCertField('mentor_name', e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="institution_name">
+                      College / institution <span className="form-optional">(optional)</span>
+                    </label>
+                    <input
+                      id="institution_name"
+                      type="text"
+                      placeholder="Affiliated college name (VTU)"
+                      value={certForm.institution_name}
+                      onChange={(e) => updateCertField('institution_name', e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
 
               {certError && (
                 <div className="error-message" role="alert">
@@ -1498,7 +1637,13 @@ function App() {
                 disabled={isGenerating}
               >
                 {isGenerating ? <Icon.Loader /> : <Icon.Award />}
-                <span>{isGenerating ? 'Generating...' : 'Generate Certificate'}</span>
+                <span>
+                  {isGenerating
+                    ? 'Generating...'
+                    : certForm.certificate_kind === 'internship'
+                      ? 'Generate internship certificate'
+                      : 'Generate certificate'}
+                </span>
               </button>
             </form>
 
@@ -1507,6 +1652,9 @@ function App() {
                 <div className="cert-result-header">
                   <span className="cert-result-check"><Icon.CheckCircle /></span>
                   Certificate issued for <strong>{certResult.participant_name}</strong>
+                  {certResult.certificate_kind === 'internship' && (
+                    <span className="cert-kind-badge">VTU internship</span>
+                  )}
                   <span className="cert-id-badge">{certResult.certificate_id}</span>
                 </div>
                 {certForm.participant_email && (
