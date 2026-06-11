@@ -83,6 +83,65 @@ const Icon = {
   ),
 }
 
+const PREVIEW_CERT_URL = '/certificate/preview'
+
+function useBranding(getApiUrl) {
+  const [branding, setBranding] = useState({
+    founder_name: 'Girish Hiremath',
+    founder_title: 'PDF Cert Generator',
+    founder_signature_data_uri: '',
+  })
+
+  useEffect(() => {
+    fetch(getApiUrl('/api/info'))
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.branding) setBranding((prev) => ({ ...prev, ...data.branding }))
+      })
+      .catch(() => {})
+  }, [getApiUrl])
+
+  return branding
+}
+
+function PreviewQrBlock({ getApiUrl, url, title, subtitle }) {
+  const [qrDataUri, setQrDataUri] = useState('')
+
+  useEffect(() => {
+    const params = new URLSearchParams({ url })
+    fetch(getApiUrl(`/api/preview/qr?${params}`))
+      .then((res) => res.json())
+      .then((data) => setQrDataUri(data.qr_data_uri || ''))
+      .catch(() => setQrDataUri(''))
+  }, [url, getApiUrl])
+
+  return (
+    <div className="cert-qr-placeholder">
+      {qrDataUri ? (
+        <img src={qrDataUri} alt={title} className="cert-qr-image" />
+      ) : (
+        <div className="cert-qr-box" aria-hidden="true">QR</div>
+      )}
+      <div className="cert-qr-text">
+        <strong>{title}</strong>
+        {subtitle}
+      </div>
+    </div>
+  )
+}
+
+function DeliveryStatus({ success, successText, failureText, detail }) {
+  if (success) {
+    return <div className="cert-delivery-success">{successText}</div>
+  }
+  return (
+    <div className="cert-delivery-failed" role="alert">
+      <strong>{failureText}</strong>
+      {detail ? <span>{detail}</span> : null}
+    </div>
+  )
+}
+
 function AdminDashboard({ getApiUrl }) {
   const [adminKey, setAdminKey] = useState(() => localStorage.getItem('adminKey') || '')
   const [authenticated, setAuthenticated] = useState(false)
@@ -640,7 +699,7 @@ function App() {
         participant_name: certForm.participant_name.trim(),
         course_name: certForm.course_name,
         completion_date: certForm.completion_date,
-        instructor_name: (certForm.instructor_name || 'IntelliForge AI Team').trim(),
+        instructor_name: (certForm.instructor_name || 'Certificate Team').trim(),
       }
       if (certForm.participant_email?.trim()) {
         payload.participant_email = certForm.participant_email.trim()
