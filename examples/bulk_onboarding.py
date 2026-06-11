@@ -4,7 +4,7 @@
 CSV columns: name,email,course (header row required). Optional: completion_date (YYYY-MM-DD).
 
 Requires: pip install httpx
-Env: INTELLIFORGE_URL, INTELLIFORGE_ADMIN_KEY
+Env: PDFCERT_URL, PDFCERT_ADMIN_KEY
 
 Note: POST /api/admin/certificates/bulk requires the server to have DATABASE_URL configured.
 """
@@ -19,13 +19,13 @@ from datetime import date
 
 import httpx
 
-BASE_URL = os.environ.get("INTELLIFORGE_URL", "https://certs.intelliforge.tech").rstrip("/")
-ADMIN_KEY = os.environ.get("INTELLIFORGE_ADMIN_KEY", "").strip()
+BASE_URL = os.environ.get("PDFCERT_URL", "http://localhost:8000").rstrip("/")
+ADMIN_KEY = os.environ.get("PDFCERT_ADMIN_KEY", "").strip()
 
 
 def main() -> None:
     if not ADMIN_KEY:
-        print("Set INTELLIFORGE_ADMIN_KEY.", file=sys.stderr)
+        print("Set PDFCERT_ADMIN_KEY.", file=sys.stderr)
         sys.exit(1)
 
     p = argparse.ArgumentParser(description="Bulk issue certificates from CSV.")
@@ -50,7 +50,7 @@ def main() -> None:
                     "participant_email": email,
                     "course_name": course,
                     "completion_date": completion,
-                    "instructor_name": "IntelliForge AI Team",
+                    "instructor_name": "Certificate Team",
                 }
             )
 

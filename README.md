@@ -1,10 +1,10 @@
-# IntelliForge Certificates
+# PDF Cert Generator
 
-**API-first verifiable credentials with zero vendor lock-in.**
+**API-first PDF certificate generation with tamper-proof signed URLs.**
 
-Generate tamper-proof participation and **VTU-style internship completion** certificates with shareable URLs. All certificate data lives inside the URL itself — signed with HMAC-SHA256, cryptographically verifiable without a database. See [docs/certificate-internship-vtu.md](docs/certificate-internship-vtu.md) for internship fields and college workflow notes. **Offer letter (Word):** [docs/samples/IntelliForge_Internship_Offer_Letter.docx](docs/samples/IntelliForge_Internship_Offer_Letter.docx).
+Generate tamper-proof participation and **VTU-style internship completion** certificates as downloadable PDFs with shareable verification links. Certificate data is encoded in the URL itself — signed with HMAC-SHA256, cryptographically verifiable without a database. See [docs/certificate-internship-vtu.md](docs/certificate-internship-vtu.md) for internship fields and college workflow notes. **Offer letter (Word):** [docs/samples/IntelliForge_Internship_Offer_Letter.docx](docs/samples/IntelliForge_Internship_Offer_Letter.docx).
 
-**Live (certificate platform):** [certs.intelliforge.tech](https://certs.intelliforge.tech) · **Docs:** [/docs](https://certs.intelliforge.tech/docs) · **OpenAPI:** [/openapi.json](https://certs.intelliforge.tech/openapi.json) · **Agent discovery:** [/llms.txt](https://certs.intelliforge.tech/llms.txt)
+**API docs:** `/docs` · **OpenAPI:** `/openapi.json` · **Agent discovery:** `/llms.txt`
 
 ---
 
@@ -18,14 +18,13 @@ Generate tamper-proof participation and **VTU-style internship completion** cert
 5. POST /api/certificates/verify      → Batch verification
 ```
 
-### What makes this different
+### Features
 
 - **Stateless** — Certificates live in the URL. No database needed for verification.
 - **Tamper-proof** — HMAC-SHA256 signature; any modification is detected.
 - **API-first** — OpenAPI docs, `llms.txt`, webhook callbacks, idempotency keys.
-- **Agent-friendly** — Structured for LLM/agent consumption with discovery endpoints.
-- **Privacy-first** — QR codes rendered server-side, no third-party calls.
-- **Serverless-native** — Runs on Vercel Functions with zero cold-start state.
+- **PDF output** — Download polished certificate PDFs with QR verification codes.
+- **Serverless-native** — Runs on Vercel Functions.
 
 ---
 
@@ -46,8 +45,6 @@ Open **http://localhost:5173** · API docs at **http://localhost:8000/docs**
 ---
 
 ## API Reference
-
-Interactive docs available at [`/docs`](https://certs.intelliforge.tech/docs) (Swagger UI) and [`/redoc`](https://certs.intelliforge.tech/redoc).
 
 ### Public Endpoints
 
@@ -88,14 +85,13 @@ Interactive docs available at [`/docs`](https://certs.intelliforge.tech/docs) (S
 ## Create a Certificate
 
 ```bash
-curl -X POST https://certs.intelliforge.tech/api/certificate \
+curl -X POST http://localhost:8000/api/certificate \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: your-key" \
   -d '{
     "participant_name": "Jane Doe",
     "course_name": "AI Product Development Fundamentals",
     "completion_date": "2026-04-15",
-    "instructor_name": "IntelliForge AI Team",
+    "instructor_name": "Certificate Team",
     "participant_email": "jane@example.com",
     "callback_url": "https://your-server.com/webhook",
     "idempotency_key": "unique-request-id"
@@ -106,10 +102,10 @@ Response:
 
 ```json
 {
-  "certificate_id": "IF-A1B2C3D4E5F6",
+  "certificate_id": "CERT-A1B2C3D4E5F6",
   "token": "eyJjIjoi...",
-  "url": "https://certs.intelliforge.tech/certificate/eyJjIjoi...",
-  "download_url": "https://certs.intelliforge.tech/certificate/eyJjIjoi.../download",
+  "url": "http://localhost:8000/certificate/eyJjIjoi...",
+  "download_url": "http://localhost:8000/certificate/eyJjIjoi.../download",
   "participant_name": "Jane Doe",
   "course_name": "AI Product Development Fundamentals",
   "email_sent": true,
@@ -117,41 +113,27 @@ Response:
 }
 ```
 
-### Automation Features
+---
 
-**Idempotency** — Pass `idempotency_key` to safely retry requests. Cached for 1 hour.
-
-```bash
-# Both requests return the same certificate
-curl -X POST .../api/certificate -d '{"idempotency_key": "order-123", ...}'
-curl -X POST .../api/certificate -d '{"idempotency_key": "order-123", ...}'
-```
-
-**Webhook Callbacks** — Pass `callback_url` to receive async POST notification:
-
-```json
-// POST to your callback_url
-{
-  "event": "certificate.created",
-  "data": { "certificate_id": "IF-...", "url": "...", ... }
-}
-```
-
-**Batch Verification** — Verify up to 100 certificates in one request:
+## Python SDK
 
 ```bash
-curl -X POST .../api/certificates/verify \
-  -H "Content-Type: application/json" \
-  -d '{"tokens": ["token1", "token2"]}'
+cd sdk && pip install -e .
 ```
 
-**Bulk Generation** — Admin endpoint to create up to 500 certificates with email delivery:
+```python
+from pdfcert import PdfCert
 
-```bash
-curl -X POST .../api/admin/certificates/bulk \
-  -H "X-Admin-Key: your-key" \
-  -d '{"entries": [{"participant_name": "Alice", "course_name": "...", "participant_email": "alice@example.com"}, ...]}'
+client = PdfCert(base_url="http://localhost:8000")
+cert = client.create_certificate(
+    participant_name="Ada Lovelace",
+    course_name="API Design Workshop",
+    completion_date="2026-04-15",
+)
+client.download_pdf(cert["token"], path="certificate.pdf")
 ```
+
+See [`sdk/README.md`](sdk/README.md) for full SDK documentation.
 
 ---
 
@@ -162,18 +144,11 @@ curl -X POST .../api/admin/certificates/bulk \
 | `CERT_SECRET_KEY` | **Yes** (prod) | HMAC-SHA256 signing secret |
 | `CERT_API_KEYS` | No | Comma-separated API keys for certificate creation |
 | `ADMIN_KEY` | No | Admin API authentication key |
-| `DATABASE_URL` | No | PostgreSQL connection string (Neon) for analytics & admin |
+| `DATABASE_URL` | No | PostgreSQL for analytics & admin |
 | `AGENTMAIL_API_KEY` | No | AgentMail API key for email delivery |
-| `AGENTMAIL_INBOX_ID` | No | AgentMail inbox (default: `support@intelliforge.tech`) |
-| `WHATSAPP_TOKEN` | No | Meta WhatsApp Cloud API access token |
-| `WHATSAPP_PHONE_ID` | No | WhatsApp Business phone number ID |
-| `WHATSAPP_RECEIPT_TEMPLATE` | No | Approved template name for entry tickets (e.g. `event_entry_ticket`) |
-| `WHATSAPP_TEMPLATE_LANG` | No | Template language code (default: `en`) |
-| `WHATSAPP_TEMPLATE_URL_BUTTON` | No | Set `true` if template has a dynamic URL button |
-| `WHATSAPP_ALLOW_TEXT` | No | Set `true` to send plain-text tickets in dev/sandbox |
-| `WHATSAPP_DEFAULT_COUNTRY_CODE` | No | Prefix for 10-digit numbers (default: `91`) |
-| `FOUNDER_NAME` | No | Signature name on certificates (default: `Girish Hiremath`) |
-| `FOUNDER_TITLE` | No | Signature title (default: `Founder & CEO, IntelliForge AI`) |
+| `AGENTMAIL_INBOX_ID` | No | AgentMail inbox address |
+| `FOUNDER_NAME` | No | Signature name on certificates |
+| `FOUNDER_TITLE` | No | Signature title (default: `PDF Cert Generator`) |
 
 ---
 
@@ -183,12 +158,11 @@ curl -X POST .../api/admin/certificates/bulk \
 |-------|-----------|
 | Frontend | React 19, Vite 7 |
 | Backend | FastAPI, Python 3.9+ |
-| Database | PostgreSQL (Neon) — optional |
-| PDF | xhtml2pdf, ReportLab |
+| Database | PostgreSQL — optional |
+| PDF | xhtml2pdf |
 | QR Codes | python-qrcode, Pillow |
-| Email | AgentMail |
-| WhatsApp | Meta WhatsApp Cloud API (entry tickets) |
-| Crypto | HMAC-SHA256 (stdlib) |
+| Email | AgentMail (optional) |
+| Crypto | HMAC-SHA256 |
 | Hosting | Vercel (serverless) |
 
 ---

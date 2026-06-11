@@ -4,7 +4,7 @@
 Requires: pip install httpx
 Comments (#) and blank lines are ignored. Batches of up to 100 tokens per API call.
 
-Env: INTELLIFORGE_URL (optional; public verify endpoint works without API key).
+Env: PDFCERT_URL (optional; public verify endpoint works without API key).
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from collections import Counter
 
 import httpx
 
-BASE_URL = os.environ.get("INTELLIFORGE_URL", "https://certs.intelliforge.tech").rstrip("/")
+BASE_URL = os.environ.get("PDFCERT_URL", "http://localhost:8000").rstrip("/")
 
 
 def read_tokens(path: str | None) -> list[str]:

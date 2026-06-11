@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sample FastAPI receiver for IntelliForge certificate.created webhook callbacks.
+"""Sample FastAPI receiver for PDF Cert Generator certificate.created webhook callbacks.
 
 Requires: pip install fastapi uvicorn
 Run: python webhook_receiver.py  (listens on port 9000)
@@ -18,7 +18,7 @@ from fastapi import FastAPI, Request
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("webhook_receiver")
 
-app = FastAPI(title="IntelliForge Webhook Demo", version="1.0.0")
+app = FastAPI(title="PDF Cert Generator Webhook Demo", version="1.0.0")
 
 
 def handle_certificate_created(data: dict[str, Any]) -> None:

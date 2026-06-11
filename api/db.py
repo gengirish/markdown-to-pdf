@@ -1,5 +1,5 @@
 """
-Database layer for IntelliForge Certificate Platform.
+Database layer for PDF Cert Generator.
 Uses Neon PostgreSQL via psycopg2.
 """
 

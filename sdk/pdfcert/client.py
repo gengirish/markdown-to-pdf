@@ -5,18 +5,18 @@ from typing import Any, Mapping
 
 import httpx
 
-from intelliforge.exceptions import (
+from pdfcert.exceptions import (
     AuthenticationError,
-    IntelliForgeError,
+    PdfCertError,
     RateLimitError,
     ValidationError,
 )
 
 
 class Admin:
-    """Admin API bound to an :class:`IntelliForge` client (requires ``admin_key``)."""
+    """Admin API bound to a :class:`PdfCert` client (requires ``admin_key``)."""
 
-    def __init__(self, client: IntelliForge) -> None:
+    def __init__(self, client: PdfCert) -> None:
         self._c = client
 
     def stats(self) -> dict[str, Any]:
@@ -73,9 +73,9 @@ class Admin:
         )
 
 
-class IntelliForge:
+class PdfCert:
     """
-    Client for the IntelliForge Certificate API.
+    Client for the PDF Cert Generator API.
 
     Use ``X-API-Key`` for certificate creation and ``X-Admin-Key`` for admin routes.
     """
@@ -84,7 +84,7 @@ class IntelliForge:
         self,
         api_key: str | None = None,
         admin_key: str | None = None,
-        base_url: str = "https://certs.intelliforge.tech",
+        base_url: str = "http://localhost:8000",
         *,
         timeout: float = 60.0,
     ) -> None:
@@ -95,14 +95,14 @@ class IntelliForge:
         self._http = httpx.Client(
             base_url=self._base_url,
             timeout=httpx.Timeout(timeout),
-            headers={"User-Agent": "intelliforge-python-sdk/2.0.0"},
+            headers={"User-Agent": "pdfcert-python-sdk/2.0.0"},
         )
         self.admin = Admin(self)
 
     def close(self) -> None:
         self._http.close()
 
-    def __enter__(self) -> IntelliForge:
+    def __enter__(self) -> PdfCert:
         return self
 
     def __exit__(self, *args: object) -> None:
@@ -152,7 +152,7 @@ class IntelliForge:
                 headers=dict(headers) if headers else None,
             )
         except httpx.RequestError as exc:
-            raise IntelliForgeError(f"HTTP request failed: {exc}") from exc
+            raise PdfCertError(f"HTTP request failed: {exc}") from exc
 
     def _raise_for_status(self, response: httpx.Response) -> None:
         if response.is_success:
@@ -190,7 +190,7 @@ class IntelliForge:
                 status_code=status,
                 response_body=body,
             )
-        raise IntelliForgeError(
+        raise PdfCertError(
             message,
             status_code=status,
             response_body=body,
@@ -216,7 +216,7 @@ class IntelliForge:
         self._raise_for_status(response)
         data = response.json()
         if not isinstance(data, dict):
-            raise IntelliForgeError(
+            raise PdfCertError(
                 "Expected JSON object in response.",
                 status_code=response.status_code,
                 response_body=response.text,
@@ -248,7 +248,7 @@ class IntelliForge:
         data = self._request_json("GET", "/api/courses")
         courses = data.get("courses")
         if not isinstance(courses, list):
-            raise IntelliForgeError(
+            raise PdfCertError(
                 "Invalid response: missing or invalid 'courses' array.",
                 status_code=None,
             )
@@ -259,7 +259,7 @@ class IntelliForge:
         participant_name: str,
         course_name: str,
         completion_date: str,
-        instructor_name: str = "IntelliForge AI Team",
+        instructor_name: str = "Certificate Team",
         participant_email: str | None = None,
         callback_url: str | None = None,
         idempotency_key: str | None = None,
@@ -304,7 +304,7 @@ class IntelliForge:
         self._raise_for_status(response)
         out = response.json()
         if not isinstance(out, dict):
-            raise IntelliForgeError(
+            raise PdfCertError(
                 "Expected JSON object in response.",
                 status_code=response.status_code,
                 response_body=response.text,

@@ -1,10 +1,9 @@
 {
-  "name": "intelliforge-certificates",
+  "name": "pdf-cert-generator",
   "private": true,
   "version": "2.0.0",
   "type": "module",
-  "description": "API-first verifiable certificate platform with stateless HMAC-signed tokens and shareable credential URLs",
-  "author": "IntelliForge",
+  "description": "API-first PDF certificate generator with HMAC-signed tokens and shareable verification URLs",
   "license": "MIT",
   "scripts": {
     "dev": "vite",

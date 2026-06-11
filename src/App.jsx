@@ -1,7 +1,7 @@
 import { useState, useEffect, useId } from 'react'
 import './App.css'
 
-function IntelliForgeIcon({ size = 32 }) {
+function CertIcon({ size = 32 }) {
   const id = useId()
   const gradId = `if-grad-${id}`
   return (
@@ -81,680 +81,8 @@ const Icon = {
       <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
     </svg>
   ),
-  Receipt: () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z" />
-      <path d="M8 10h8" />
-      <path d="M8 14h5" />
-    </svg>
-  ),
 }
 
-function formatReceiptAmount(amount, currency) {
-  const amt = (amount || '').trim()
-  const cur = (currency || '').trim()
-  if (cur && amt && !amt.startsWith(cur)) return `${cur} ${amt}`
-  return amt || '0'
-}
-
-function formatEventDatetime(eventDate, eventTime) {
-  return [eventDate, eventTime].filter(Boolean).join(' · ') || '—'
-}
-
-const PREVIEW_CERT_URL = 'https://certs.intelliforge.tech/certificate/preview'
-const PREVIEW_TICKET_URL = 'https://certs.intelliforge.tech/receipt/preview'
-
-function useBranding(getApiUrl) {
-  const [branding, setBranding] = useState({
-    founder_name: 'Girish Hiremath',
-    founder_title: 'Founder & CEO, IntelliForge AI',
-    founder_signature_data_uri: '',
-  })
-
-  useEffect(() => {
-    fetch(getApiUrl('/api/info'))
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.branding) setBranding((prev) => ({ ...prev, ...data.branding }))
-      })
-      .catch(() => {})
-  }, [getApiUrl])
-
-  return branding
-}
-
-function PreviewQrBlock({ getApiUrl, url, title, subtitle }) {
-  const [qrDataUri, setQrDataUri] = useState('')
-
-  useEffect(() => {
-    const params = new URLSearchParams({ url })
-    fetch(getApiUrl(`/api/preview/qr?${params}`))
-      .then((res) => res.json())
-      .then((data) => setQrDataUri(data.qr_data_uri || ''))
-      .catch(() => setQrDataUri(''))
-  }, [url, getApiUrl])
-
-  return (
-    <div className="cert-qr-placeholder">
-      {qrDataUri ? (
-        <img src={qrDataUri} alt={title} className="cert-qr-image" />
-      ) : (
-        <div className="cert-qr-box" aria-hidden="true">QR</div>
-      )}
-      <div className="cert-qr-text">
-        <strong>{title}</strong>
-        {subtitle}
-      </div>
-    </div>
-  )
-}
-
-function DeliveryStatus({ success, successText, failureText, detail }) {
-  if (success) {
-    return <div className="cert-delivery-success">{successText}</div>
-  }
-  return (
-    <div className="cert-delivery-failed" role="alert">
-      <strong>{failureText}</strong>
-      {detail ? <span>{detail}</span> : null}
-    </div>
-  )
-}
-
-function MapPreview({ venue_name, address, maps_url, getApiUrl }) {
-  const [preview, setPreview] = useState(null)
-  const [loading, setLoading] = useState(false)
-
-  const hasLocation = Boolean(
-    (maps_url || '').trim() || (venue_name || '').trim() || (address || '').trim(),
-  )
-
-  useEffect(() => {
-    if (!hasLocation) {
-      setPreview(null)
-      setLoading(false)
-      return undefined
-    }
-
-    const controller = new AbortController()
-    const params = new URLSearchParams()
-    if ((maps_url || '').trim()) params.set('maps_url', maps_url.trim())
-    if ((venue_name || '').trim()) params.set('venue', venue_name.trim())
-    if ((address || '').trim()) params.set('address', address.trim())
-
-    setLoading(true)
-    fetch(getApiUrl(`/api/maps/embed?${params}`), { signal: controller.signal })
-      .then((res) => res.json())
-      .then((data) => setPreview(data))
-      .catch(() => setPreview({ embed_url: '', static_image_url: '', open_url: '' }))
-      .finally(() => setLoading(false))
-
-    return () => controller.abort()
-  }, [venue_name, address, maps_url, getApiUrl, hasLocation])
-
-  if (!hasLocation) {
-    return (
-      <div className="receipt-map-placeholder">
-        Add address or maps URL to preview location
-      </div>
-    )
-  }
-
-  if (loading && !preview) {
-    return (
-      <div className="receipt-map-preview" data-testid="receipt-map-preview">
-        <span className="receipt-event-label">Location</span>
-        <div className="receipt-map-loading">Loading map…</div>
-      </div>
-    )
-  }
-
-  if (!preview?.embed_url && !preview?.static_image_url) {
-    return (
-      <div className="receipt-map-preview" data-testid="receipt-map-preview">
-        <span className="receipt-event-label">Location</span>
-        <div className="receipt-map-placeholder">
-          {preview?.open_url ? (
-            <a href={preview.open_url} target="_blank" rel="noopener noreferrer">
-              Open location in Google Maps
-            </a>
-          ) : (
-            'Could not load map preview'
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="receipt-map-preview" data-testid="receipt-map-preview">
-      <span className="receipt-event-label">Location</span>
-      {preview.embed_url ? (
-        <iframe
-          title="Event location map preview"
-          className="receipt-map-frame"
-          loading="lazy"
-          referrerPolicy="no-referrer-when-downgrade"
-          src={preview.embed_url}
-          allowFullScreen
-        />
-      ) : (
-        <a href={preview.open_url} target="_blank" rel="noopener noreferrer">
-          <img
-            className="receipt-map-static"
-            src={preview.static_image_url}
-            alt="Event location map preview"
-          />
-        </a>
-      )}
-      {preview.open_url && (
-        <div className="receipt-map-link-wrap">
-          <a
-            className="receipt-map-open-link"
-            href={preview.open_url}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Open in Google Maps
-          </a>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ReceiptGenerator({ getApiUrl }) {
-  const [form, setForm] = useState({
-    payer_name: '',
-    event_name: '',
-    event_date: '',
-    event_time: '',
-    venue_name: '',
-    address: '',
-    maps_url: '',
-    amount: '',
-    currency: 'INR',
-    payment_date: new Date().toISOString().split('T')[0],
-    transaction_id: '',
-    participant_phone: '',
-    participant_email: '',
-    payment_method: '',
-    description: '',
-  })
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [error, setError] = useState(null)
-  const [result, setResult] = useState(null)
-  const [copied, setCopied] = useState(false)
-  const [mapsValidation, setMapsValidation] = useState(null)
-  const [mapsValidating, setMapsValidating] = useState(false)
-
-  const updateField = (field, value) => {
-    setForm((prev) => ({ ...prev, [field]: value }))
-    setError(null)
-    setResult(null)
-    if (field === 'maps_url') setMapsValidation(null)
-  }
-
-  const validateMapsUrl = async () => {
-    const url = form.maps_url.trim()
-    if (!url) {
-      setMapsValidation(null)
-      return
-    }
-    setMapsValidating(true)
-    try {
-      const params = new URLSearchParams({ maps_url: url })
-      const response = await fetch(getApiUrl(`/api/maps/validate?${params}`))
-      setMapsValidation(await response.json())
-    } catch {
-      setMapsValidation({
-        valid: false,
-        status: 'error',
-        message: 'Could not validate this maps link.',
-      })
-    } finally {
-      setMapsValidating(false)
-    }
-  }
-
-  const generateReceipt = async (e) => {
-    e.preventDefault()
-    setIsGenerating(true)
-    setError(null)
-    setResult(null)
-
-    try {
-      if (!form.payer_name.trim()) throw new Error('Please enter payer name')
-      if (!form.event_name.trim()) throw new Error('Please enter event name')
-      if (!form.event_date) throw new Error('Please select event date')
-      if (!form.amount.trim()) throw new Error('Please enter payment amount')
-      if (!form.payment_date) throw new Error('Please select payment date')
-      if (!form.transaction_id.trim()) throw new Error('Please enter transaction ID')
-
-      const response = await fetch(getApiUrl('/api/receipt'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
-        const message = errorData.detail || errorData.error?.message || `Server error: ${response.status}`
-        throw new Error(typeof message === 'string' ? message : 'Request failed')
-      }
-
-      setResult(await response.json())
-    } catch (err) {
-      console.error('Error generating receipt:', err)
-      setError(err.message)
-    } finally {
-      setIsGenerating(false)
-    }
-  }
-
-  const downloadPdfDirect = async () => {
-    if (!result?.download_url) return
-    try {
-      const response = await fetch(result.download_url)
-      if (!response.ok) throw new Error('Download failed')
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `Entry_Ticket_${result.payer_name.replace(/\s+/g, '_')}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-    } catch {
-      window.open(result.download_url, '_blank')
-    }
-  }
-
-  const copyShareableLink = async () => {
-    if (!result?.url) return
-    try {
-      await navigator.clipboard.writeText(result.url)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      const input = document.createElement('input')
-      input.value = result.url
-      document.body.appendChild(input)
-      input.select()
-      document.execCommand('copy')
-      document.body.removeChild(input)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }
-  }
-
-  const amountDisplay = formatReceiptAmount(form.amount, form.currency)
-  const eventWhen = formatEventDatetime(form.event_date, form.event_time)
-  const paymentMeta = [
-    form.payment_date ? `Paid on ${form.payment_date}` : '',
-    form.payment_method ? `via ${form.payment_method}` : '',
-  ].filter(Boolean).join(' · ')
-
-  return (
-    <div className="cert-container">
-      <div className="cert-form-section">
-        <div className="section-header">
-          <h2>Entry Ticket Details</h2>
-        </div>
-        <form className="cert-form" onSubmit={generateReceipt}>
-          <fieldset className="form-fieldset">
-            <legend>Payment</legend>
-            <div className="form-group">
-              <label htmlFor="payer_name">Payer Name</label>
-              <input
-                id="payer_name"
-                type="text"
-                placeholder="e.g. Jane Doe"
-                value={form.payer_name}
-                onChange={(e) => updateField('payer_name', e.target.value)}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="receipt_participant_phone">
-                WhatsApp Number <span className="form-optional">(optional – sends entry ticket)</span>
-              </label>
-              <input
-                id="receipt_participant_phone"
-                type="tel"
-                placeholder="e.g. +91 9876543210"
-                value={form.participant_phone}
-                onChange={(e) => updateField('participant_phone', e.target.value)}
-                autoComplete="tel"
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="receipt_participant_email">
-                Email <span className="form-optional">(optional – sends entry ticket)</span>
-              </label>
-              <input
-                id="receipt_participant_email"
-                type="email"
-                placeholder="e.g. jane@example.com"
-                value={form.participant_email}
-                onChange={(e) => updateField('participant_email', e.target.value)}
-                autoComplete="email"
-              />
-            </div>
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="amount">Amount</label>
-                <input
-                  id="amount"
-                  type="text"
-                  placeholder="e.g. 2,499"
-                  value={form.amount}
-                  onChange={(e) => updateField('amount', e.target.value)}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="currency">Currency</label>
-                <select
-                  id="currency"
-                  value={form.currency}
-                  onChange={(e) => updateField('currency', e.target.value)}
-                >
-                  <option value="INR">INR</option>
-                  <option value="USD">USD</option>
-                  <option value="EUR">EUR</option>
-                  <option value="GBP">GBP</option>
-                  <option value="">None</option>
-                </select>
-              </div>
-            </div>
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="payment_date">Payment Date</label>
-                <input
-                  id="payment_date"
-                  type="date"
-                  value={form.payment_date}
-                  onChange={(e) => updateField('payment_date', e.target.value)}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="payment_method">Payment Method <span className="form-optional">(optional)</span></label>
-                <input
-                  id="payment_method"
-                  type="text"
-                  placeholder="e.g. UPI, Card, Bank Transfer"
-                  value={form.payment_method}
-                  onChange={(e) => updateField('payment_method', e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="form-group">
-              <label htmlFor="transaction_id">Transaction ID</label>
-              <input
-                id="transaction_id"
-                type="text"
-                placeholder="e.g. pay_abc123xyz"
-                value={form.transaction_id}
-                onChange={(e) => updateField('transaction_id', e.target.value)}
-                required
-              />
-            </div>
-          </fieldset>
-
-          <fieldset className="form-fieldset">
-            <legend>Event &amp; Location</legend>
-            <div className="form-group">
-              <label htmlFor="event_name">Event Name</label>
-              <input
-                id="event_name"
-                type="text"
-                placeholder="e.g. AI Product Workshop"
-                value={form.event_name}
-                onChange={(e) => updateField('event_name', e.target.value)}
-                required
-              />
-            </div>
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="event_date">Event Date</label>
-                <input
-                  id="event_date"
-                  type="date"
-                  value={form.event_date}
-                  onChange={(e) => updateField('event_date', e.target.value)}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="event_time">Event Time <span className="form-optional">(optional)</span></label>
-                <input
-                  id="event_time"
-                  type="text"
-                  placeholder="e.g. 10:00 AM IST"
-                  value={form.event_time}
-                  onChange={(e) => updateField('event_time', e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="form-group">
-              <label htmlFor="venue_name">Venue Name <span className="form-optional">(optional)</span></label>
-              <input
-                id="venue_name"
-                type="text"
-                placeholder="e.g. IntelliForge Learning Hub"
-                value={form.venue_name}
-                onChange={(e) => updateField('venue_name', e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="address">Address <span className="form-optional">(optional – used for map)</span></label>
-              <textarea
-                id="address"
-                rows={2}
-                placeholder="e.g. MG Road, Bengaluru, Karnataka 560001"
-                value={form.address}
-                onChange={(e) => updateField('address', e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="maps_url">
-                Google Maps URL <span className="form-optional">(optional override)</span>
-              </label>
-              <input
-                id="maps_url"
-                type="url"
-                placeholder="https://maps.google.com/..."
-                value={form.maps_url}
-                onChange={(e) => updateField('maps_url', e.target.value)}
-                onBlur={validateMapsUrl}
-                aria-describedby={mapsValidation ? 'maps-url-hint' : undefined}
-              />
-              {mapsValidating && (
-                <p className="field-hint field-hint-neutral" id="maps-url-hint">
-                  Checking maps link…
-                </p>
-              )}
-              {!mapsValidating && mapsValidation?.message && (
-                <p
-                  className={`field-hint ${
-                    mapsValidation.valid && mapsValidation.status !== 'warning'
-                      ? 'field-hint-ok'
-                      : mapsValidation.valid
-                        ? 'field-hint-warn'
-                        : 'field-hint-error'
-                  }`}
-                  id="maps-url-hint"
-                  role={mapsValidation.valid ? 'status' : 'alert'}
-                >
-                  {mapsValidation.message}
-                </p>
-              )}
-            </div>
-            <div className="form-group">
-              <label htmlFor="description">Description <span className="form-optional">(optional)</span></label>
-              <textarea
-                id="description"
-                rows={2}
-                placeholder="e.g. Early bird registration"
-                value={form.description}
-                onChange={(e) => updateField('description', e.target.value)}
-              />
-            </div>
-          </fieldset>
-
-          {error && (
-            <div className="error-message" role="alert">
-              <strong>Error:</strong> {error}
-            </div>
-          )}
-
-          <button type="submit" className="download-btn cert-submit-btn" disabled={isGenerating} data-testid="receipt-generate-btn">
-            {isGenerating ? <Icon.Loader /> : <Icon.Receipt />}
-            <span>{isGenerating ? 'Generating...' : 'Generate Entry Ticket'}</span>
-          </button>
-        </form>
-
-        {result && (
-          <div className="cert-result" data-testid="receipt-result">
-            <div className="cert-result-header">
-              <span className="cert-result-check"><Icon.CheckCircle /></span>
-              Entry ticket issued for <strong>{result.payer_name}</strong>
-              <span className="cert-id-badge">{result.receipt_id}</span>
-            </div>
-            {form.participant_phone && (
-              <DeliveryStatus
-                success={result.whatsapp_sent}
-                successText={
-                  <>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-                    {' '}Entry ticket sent on WhatsApp to {form.participant_phone}
-                  </>
-                }
-                failureText="WhatsApp delivery failed."
-                detail={result.whatsapp_error || 'Share the ticket link below instead.'}
-              />
-            )}
-            {form.participant_email && (
-              <DeliveryStatus
-                success={result.email_sent}
-                successText={
-                  <>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                    {' '}Entry ticket emailed to {form.participant_email}
-                  </>
-                }
-                failureText="Email delivery failed."
-                detail={result.email_error || 'Share the ticket link below instead.'}
-              />
-            )}
-
-            <div className="cert-link-box">
-              <label className="cert-link-label">Permanent Shareable Link</label>
-              <div className="cert-link-row">
-                <input
-                  className="cert-link-input"
-                  type="text"
-                  value={result.url}
-                  readOnly
-                  onClick={(e) => e.target.select()}
-                  aria-label="Receipt shareable link"
-                  data-testid="receipt-share-url"
-                />
-                <button className="cert-link-copy" onClick={copyShareableLink} type="button">
-                  {copied ? <Icon.Check /> : <Icon.Copy />}
-                  <span>{copied ? 'Copied' : 'Copy'}</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="cert-result-actions">
-              <button className="download-btn cert-action-btn" onClick={downloadPdfDirect} type="button">
-                <Icon.Download />
-                <span>Download PDF</span>
-              </button>
-              <a className="cert-view-btn cert-action-btn" href={result.url} target="_blank" rel="noopener noreferrer">
-                <Icon.ExternalLink />
-                <span>View Public Page</span>
-              </a>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="cert-preview-section">
-        <div className="section-header">
-          <h2>Entry Ticket Preview</h2>
-        </div>
-        <div className="cert-preview">
-          <div className="cert-card receipt-card">
-            <div className="cert-header">
-              <span className="cert-header-org">An IntelliForge AI Initiative</span>
-              <span className="cert-header-brand">IntelliForge Events</span>
-              <span className="cert-header-badge">Event Entry Ticket</span>
-            </div>
-            <div className="cert-body receipt-body">
-              <div className="cert-verified receipt-verified">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg>
-                Entry Confirmed
-              </div>
-              <p className="cert-award-label">Ticket Holder</p>
-              <p className="cert-name">{form.payer_name || 'Payer Name'}</p>
-              <p className="receipt-amount">{amountDisplay}</p>
-              <p className="receipt-payment-meta">{paymentMeta || 'Payment details'}</p>
-
-              <div className="receipt-event-box">
-                <span className="receipt-event-label">Event Details</span>
-                <p className="receipt-event-title">{form.event_name || 'Event name'}</p>
-                <p className="receipt-event-when">{eventWhen}</p>
-                {form.venue_name && <p className="receipt-event-venue">{form.venue_name}</p>}
-                {form.address && <p className="receipt-event-address">{form.address}</p>}
-              </div>
-
-              {form.description && (
-                <p className="receipt-description">{form.description}</p>
-              )}
-
-              <div className="cert-meta-row receipt-meta-row">
-                <div className="cert-meta-item">
-                  <span className="cert-meta-value cert-meta-id">{form.transaction_id || 'TXN-XXXX'}</span>
-                  <span className="cert-meta-label">Booking Ref</span>
-                </div>
-                <div className="cert-meta-item cert-meta-bordered">
-                  <span className="cert-meta-value cert-meta-id">RCP-XXXXXXXXXXXX</span>
-                  <span className="cert-meta-label">Ticket No</span>
-                </div>
-              </div>
-
-              <MapPreview
-                venue_name={form.venue_name}
-                address={form.address}
-                maps_url={form.maps_url}
-                getApiUrl={getApiUrl}
-              />
-
-              <PreviewQrBlock
-                getApiUrl={getApiUrl}
-                url={result?.url || PREVIEW_TICKET_URL}
-                title="Scan at Venue Gate"
-                subtitle={
-                  result?.url
-                    ? 'QR code links to this entry ticket.'
-                    : 'Sample QR — your ticket link appears after generation.'
-                }
-              />
-            </div>
-            <div className="cert-footer-bar">
-              Issued by IntelliForge Events &middot; learning.intelliforge.tech &middot; support@intelliforge.tech
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
 function AdminDashboard({ getApiUrl }) {
   const [adminKey, setAdminKey] = useState(() => localStorage.getItem('adminKey') || '')
   const [authenticated, setAuthenticated] = useState(false)
@@ -899,7 +227,7 @@ function AdminDashboard({ getApiUrl }) {
           participant_email: emailIdx >= 0 ? cols[emailIdx]?.trim() || '' : '',
           course_name: courseIdx >= 0 ? cols[courseIdx]?.trim() || '' : '',
           completion_date: dateIdx >= 0 ? cols[dateIdx]?.trim() || '' : '',
-          instructor_name: instrIdx >= 0 ? cols[instrIdx]?.trim() || 'IntelliForge AI Team' : 'IntelliForge AI Team',
+          instructor_name: instrIdx >= 0 ? cols[instrIdx]?.trim() || 'Certificate Team' : 'Certificate Team',
         })
       }
       setBulkEntries(entries)
@@ -1280,7 +608,7 @@ function App() {
     participant_email: '',
     course_name: '',
     completion_date: new Date().toISOString().split('T')[0],
-    instructor_name: 'IntelliForge AI Team',
+    instructor_name: 'Certificate Team',
     usn: '',
     internship_duration: '',
     internship_hours: '',
@@ -1406,25 +734,17 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <a
-          href="https://www.intelliforge.tech/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="brand-link"
-          aria-label="IntelliForge AI"
-        >
+        <div className="brand-link" aria-label="PDF Cert Generator">
           <div className="header-icon">
-            <IntelliForgeIcon size={32} />
+            <CertIcon size={32} />
           </div>
-          <span className="brand-wordmark">IntelliForge AI</span>
-        </a>
-        <h1>IntelliForge Certificates</h1>
+          <span className="brand-wordmark">PDF Cert Generator</span>
+        </div>
+        <h1>PDF Cert Generator</h1>
         <p className="header-subtitle">
-          {activeTab === 'receipt'
-            ? 'Issue event entry tickets with WhatsApp delivery, maps, and shareable links'
-            : activeTab === 'admin'
-              ? 'Manage courses, bulk certificates, and platform analytics'
-              : 'Issue verified training and VTU internship certificates, share links, and manage courses from one place'}
+          {activeTab === 'admin'
+            ? 'Manage courses, bulk certificates, and platform analytics'
+            : 'Create tamper-proof PDF certificates and VTU internship credentials with shareable verification links'}
         </p>
         <nav className="tab-nav" role="tablist">
           <button
@@ -1434,17 +754,7 @@ function App() {
             aria-selected={activeTab === 'certificate'}
           >
             <Icon.CertTab />
-            <span>Certificate Generator</span>
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'receipt' ? 'active' : ''}`}
-            onClick={() => setActiveTab('receipt')}
-            role="tab"
-            aria-selected={activeTab === 'receipt'}
-            data-testid="receipt-tab"
-          >
-            <Icon.Receipt />
-            <span>Entry Ticket</span>
+            <span>Generate Certificate</span>
           </button>
           <button
             className={`tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
@@ -1553,8 +863,8 @@ function App() {
                     type="text"
                     placeholder={
                       certForm.certificate_kind === 'internship'
-                        ? 'e.g. IntelliForge Program Lead'
-                        : 'IntelliForge AI Team'
+                        ? 'e.g. Program Lead'
+                        : 'Certificate Team'
                     }
                     value={certForm.instructor_name}
                     onChange={(e) => updateCertField('instructor_name', e.target.value)}
@@ -1721,7 +1031,7 @@ function App() {
                   </a>
                   <a
                     className="cert-share-btn cert-share-twitter"
-                    href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`I completed ${certResult.course_name} at IntelliForge Learning!`)}&url=${encodeURIComponent(certResult.url)}`}
+                    href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`I completed ${certResult.course_name} — PDF Cert Generator!`)}&url=${encodeURIComponent(certResult.url)}`}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -1740,8 +1050,8 @@ function App() {
             <div className="cert-preview">
               <div className="cert-card">
                 <div className="cert-header">
-                  <span className="cert-header-org">An IntelliForge AI Initiative</span>
-                  <span className="cert-header-brand">IntelliForge Learning</span>
+                  <span className="cert-header-org">PDF Cert Generator</span>
+                  <span className="cert-header-brand">Certificate of Completion</span>
                   <span className="cert-header-badge">Certificate of Participation</span>
                 </div>
                 <div className="cert-body">
@@ -1763,11 +1073,11 @@ function App() {
                       <span className="cert-meta-label">Date</span>
                     </div>
                     <div className="cert-meta-item cert-meta-bordered">
-                      <span className="cert-meta-value">{certForm.instructor_name || 'IntelliForge AI Team'}</span>
+                      <span className="cert-meta-value">{certForm.instructor_name || 'Certificate Team'}</span>
                       <span className="cert-meta-label">Instructor</span>
                     </div>
                     <div className="cert-meta-item">
-                      <span className="cert-meta-value cert-meta-id">IF-XXXXXXXXXXXX</span>
+                      <span className="cert-meta-value cert-meta-id">CERT-XXXXXXXXXXXX</span>
                       <span className="cert-meta-label">Certificate ID</span>
                     </div>
                   </div>
@@ -1788,11 +1098,11 @@ function App() {
                     </div>
                     <div className="cert-sig-block">
                       <span className="cert-sig-hand">
-                        {certForm.instructor_name || 'IntelliForge AI Team'}
+                        {certForm.instructor_name || 'Certificate Team'}
                       </span>
                       <span className="cert-sig-line" />
                       <span className="cert-sig-name">
-                        {certForm.instructor_name || 'IntelliForge AI Team'}
+                        {certForm.instructor_name || 'Certificate Team'}
                       </span>
                       <span className="cert-sig-role">Course Instructor</span>
                     </div>
@@ -1809,16 +1119,12 @@ function App() {
                   />
                 </div>
                 <div className="cert-footer-bar">
-                  Issued by IntelliForge Learning &middot; learning.intelliforge.tech &middot; support@intelliforge.tech
+                  Issued by PDF Cert Generator
                 </div>
               </div>
             </div>
           </div>
         </div>
-      )}
-
-      {activeTab === 'receipt' && (
-        <ReceiptGenerator getApiUrl={getApiUrl} />
       )}
 
       {activeTab === 'admin' && (
@@ -1829,25 +1135,12 @@ function App() {
 
       <footer className="footer">
         <div className="footer-brand">
-          <IntelliForgeIcon size={22} />
-          <span className="footer-brand-name">IntelliForge AI</span>
+          <CertIcon size={22} />
+          <span className="footer-brand-name">PDF Cert Generator</span>
         </div>
         <p className="footer-tagline">
-          AI Agent Development & Workflow Automation
+          API-first PDF certificate generation
         </p>
-        <div className="footer-links">
-          <a href="https://www.intelliforge.tech/" target="_blank" rel="noopener noreferrer">
-            intelliforge.tech
-          </a>
-          <span className="footer-divider" aria-hidden="true" />
-          <a href="https://learning.intelliforge.tech/" target="_blank" rel="noopener noreferrer">
-            IntelliForge Learning
-          </a>
-          <span className="footer-divider" aria-hidden="true" />
-          <a href="https://www.intelliforge.tech/services" target="_blank" rel="noopener noreferrer">
-            Services
-          </a>
-        </div>
         <p className="footer-copy">
           Built with React, Vite, FastAPI & Python
         </p>

@@ -14,10 +14,6 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
-      '/receipt': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
     },
   },
 })

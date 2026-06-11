@@ -1,6 +1,6 @@
 """
-FastAPI backend for the IntelliForge Certificate Platform API.
-Handles certificate creation, verification, and certificate PDF generation.
+FastAPI backend for PDF Cert Generator.
+Handles certificate creation, verification, and PDF certificate generation.
 
 Certificates use stateless HMAC-SHA256 signed tokens encoded in the URL itself,
 so no database is needed and certificates are permanent and tamper-proof.
@@ -17,14 +17,12 @@ import hashlib
 import hmac as hmac_mod
 import json
 import os
-import re
 import base64
 import time
 import math
 from collections import defaultdict
-from urllib.parse import quote_plus, urlencode
+from urllib.parse import urlencode
 from typing import Literal
-
 import html as html_mod
 
 from api.certificate_templates import (
@@ -65,7 +63,7 @@ CERT_SECRET = os.environ.get("CERT_SECRET_KEY", "").strip()
 if not CERT_SECRET:
     if IS_PROD:
         raise RuntimeError("CERT_SECRET_KEY environment variable is required in production")
-    CERT_SECRET = "intelliforge-dev-secret-local-only"
+    CERT_SECRET = "pdfcert-dev-secret-local-only"
     logger.warning("CERT_SECRET_KEY not set — using insecure dev default. Set it before deploying.")
 
 CERT_API_KEYS: set[str] = set()
@@ -78,7 +76,7 @@ if not ADMIN_KEY and not IS_PROD:
     ADMIN_KEY = "admin-dev-key"
 
 AGENTMAIL_API_KEY = os.environ.get("AGENTMAIL_API_KEY", "").strip()
-AGENTMAIL_INBOX_ID = os.environ.get("AGENTMAIL_INBOX_ID", "support@intelliforge.tech").strip()
+AGENTMAIL_INBOX_ID = os.environ.get("AGENTMAIL_INBOX_ID", "support@example.com").strip()
 _agentmail_client = None
 if AGENTMAIL_API_KEY:
     try:
@@ -88,23 +86,7 @@ if AGENTMAIL_API_KEY:
     except Exception as e:
         logger.warning(f"AgentMail initialization failed: {e}")
 
-WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN", "").strip()
-WHATSAPP_PHONE_ID = os.environ.get("WHATSAPP_PHONE_ID", "").strip()
-WHATSAPP_RECEIPT_TEMPLATE = os.environ.get("WHATSAPP_RECEIPT_TEMPLATE", "").strip()
-WHATSAPP_TEMPLATE_LANG = os.environ.get("WHATSAPP_TEMPLATE_LANG", "en").strip()
-WHATSAPP_API_VERSION = os.environ.get("WHATSAPP_API_VERSION", "v21.0").strip()
-WHATSAPP_DEFAULT_COUNTRY_CODE = os.environ.get("WHATSAPP_DEFAULT_COUNTRY_CODE", "91").strip()
-WHATSAPP_TEMPLATE_URL_BUTTON = os.environ.get("WHATSAPP_TEMPLATE_URL_BUTTON", "").strip().lower() in (
-    "1",
-    "true",
-    "yes",
-)
-WHATSAPP_ALLOW_TEXT = os.environ.get("WHATSAPP_ALLOW_TEXT", "").strip().lower() in ("1", "true", "yes")
-if WHATSAPP_TOKEN and WHATSAPP_PHONE_ID:
-    logger.info("WhatsApp Cloud API configured for entry ticket delivery")
 
-GOOGLE_MAPS_EMBED_API_KEY = os.environ.get("GOOGLE_MAPS_EMBED_API_KEY", "").strip()
-NOMINATIM_USER_AGENT = "IntelliForge-Certificates/2.0 (support@intelliforge.tech)"
 
 # ---------------------------------------------------------------------------
 # Rate limiter (in-memory, per-IP, resets on cold start)
@@ -185,7 +167,6 @@ def _fire_webhook(callback_url: str, payload: dict):
 
 API_TAGS = [
     {"name": "Certificates", "description": "Create, view, download, and verify tamper-proof certificates"},
-    {"name": "Receipts", "description": "Create, view, and download payment acknowledgement receipts with event details"},
     {"name": "Verification", "description": "Verify certificate authenticity (single and batch)"},
     {"name": "Courses", "description": "List available courses"},
     {"name": "Admin", "description": "Admin endpoints for certificate and course management (requires X-Admin-Key)"},
@@ -193,10 +174,10 @@ API_TAGS = [
 ]
 
 app = FastAPI(
-    title="IntelliForge Certificate API",
+    title="PDF Cert Generator API",
     description=(
-        "**API-first verifiable credentials with zero vendor lock-in.**\n\n"
-        "Generate tamper-proof participation and VTU-style internship completion certificates with shareable URLs. "
+        "**API-first PDF certificate generation.**\n\n"
+        "Generate tamper-proof participation and VTU-style internship completion certificates as downloadable PDFs with shareable URLs. "
         "All certificate data is encoded in the URL itself — signed with HMAC-SHA256, "
         "cryptographically verifiable without a database.\n\n"
         "## Authentication\n"
@@ -300,7 +281,7 @@ def _cert_id(data: dict) -> str:
         raw = json.dumps(data, separators=(",", ":"), sort_keys=True)
     else:
         raw = f"{data['n']}-{data['c']}-{data['d']}"
-    return "IF-" + hashlib.sha256(raw.encode()).hexdigest()[:12].upper()
+    return "CERT-" + hashlib.sha256(raw.encode()).hexdigest()[:12].upper()
 
 
 def _is_internship_payload(data: dict) -> bool:
@@ -347,7 +328,7 @@ def _generate_qr_data_uri(url: str) -> str:
 
 
 FOUNDER_NAME = os.environ.get("FOUNDER_NAME", "Girish Hiremath").strip()
-FOUNDER_TITLE = os.environ.get("FOUNDER_TITLE", "Founder & CEO, IntelliForge AI").strip()
+FOUNDER_TITLE = os.environ.get("FOUNDER_TITLE", "PDF Cert Generator").strip()
 _signature_cache: dict[str, str] = {}
 
 
@@ -396,7 +377,7 @@ class CertificateRequest(BaseModel):
     participant_name: str
     course_name: str
     completion_date: str
-    instructor_name: str = "IntelliForge AI Team"
+    instructor_name: str = "Certificate Team"
     participant_email: str = ""
     callback_url: str = ""
     idempotency_key: str = ""
@@ -426,493 +407,10 @@ class CertificateRequest(BaseModel):
         return self
 
 
-class ReceiptRequest(BaseModel):
-    payer_name: str
-    event_name: str
-    event_date: str
-    amount: str
-    payment_date: str
-    transaction_id: str
-    event_time: str = ""
-    venue_name: str = ""
-    address: str = ""
-    maps_url: str = ""
-    currency: str = ""
-    payment_method: str = ""
-    description: str = ""
-    participant_phone: str = ""
-    participant_email: str = ""
-    callback_url: str = ""
-    idempotency_key: str = ""
-
 
 def _escape(value: str) -> str:
     return html_mod.escape(value or "", quote=True)
 
-
-def _receipt_id(data: dict) -> str:
-    raw = f"{data['tx']}-{data['n']}-{data['e']}-{data['pd']}"
-    return "RCP-" + hashlib.sha256(raw.encode()).hexdigest()[:12].upper()
-
-
-def _receipt_amount_display(data: dict) -> str:
-    amount = data.get("amt", "")
-    currency = data.get("cur", "").strip()
-    if currency and not amount.startswith(currency):
-        return f"{currency} {amount}"
-    return amount
-
-
-def _maps_query(data: dict) -> str:
-    if data.get("m"):
-        return data["m"]
-    parts = [p for p in (data.get("v"), data.get("a")) if p]
-    return ", ".join(parts)
-
-
-def _resolve_maps_redirect(url: str) -> str:
-    """Follow Google Maps short/share links to their final destination URL."""
-    try:
-        with httpx.Client(timeout=10, follow_redirects=True) as client:
-            response = client.get(
-                url,
-                headers={
-                    "User-Agent": (
-                        "Mozilla/5.0 (compatible; IntelliForge-Certificates/2.0; "
-                        "+https://certs.intelliforge.tech)"
-                    ),
-                },
-            )
-            if response.status_code >= 400:
-                return url
-            return str(response.url)
-    except Exception as e:
-        logger.warning(f"Maps redirect resolve failed for {url}: {e}")
-        return url
-
-
-def _parse_google_maps_coords(url: str) -> tuple[float, float] | None:
-    for pattern in (
-        r"!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)",
-        r"@(-?\d+\.\d+),(-?\d+\.\d+)",
-        r"[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)",
-    ):
-        match = re.search(pattern, url)
-        if match:
-            return float(match.group(1)), float(match.group(2))
-    return None
-
-
-def _geocode_location(query: str) -> tuple[float, float] | None:
-    cleaned = " ".join(query.split())
-    if not cleaned:
-        return None
-    try:
-        with httpx.Client(timeout=10) as client:
-            response = client.get(
-                "https://nominatim.openstreetmap.org/search",
-                params={"q": cleaned, "format": "json", "limit": 1},
-                headers={"User-Agent": NOMINATIM_USER_AGENT},
-            )
-            if response.is_success:
-                results = response.json()
-                if results:
-                    return float(results[0]["lat"]), float(results[0]["lon"])
-    except Exception as e:
-        logger.warning(f"Geocoding failed for '{query}': {e}")
-    return None
-
-
-def _osm_embed_url(lat: float, lon: float) -> str:
-    pad = 0.012
-    bbox = f"{lon - pad},{lat - pad},{lon + pad},{lat + pad}"
-    return (
-        f"https://www.openstreetmap.org/export/embed.html"
-        f"?bbox={bbox}&layer=mapnik&marker={lat}%2C{lon}"
-    )
-
-
-def _osm_static_map_url(lat: float, lon: float) -> str:
-    return (
-        "https://staticmap.openstreetmap.de/staticmap.php"
-        f"?center={lat},{lon}&zoom=15&size=640x280&markers={lat},{lon}"
-    )
-
-
-def _embed_url_from_coords(lat: float, lon: float) -> str:
-    if GOOGLE_MAPS_EMBED_API_KEY:
-        return (
-            f"https://www.google.com/maps/embed/v1/view"
-            f"?key={GOOGLE_MAPS_EMBED_API_KEY}&center={lat},{lon}&zoom=15"
-        )
-    return _osm_embed_url(lat, lon)
-
-
-def _resolve_map_preview(maps_url: str = "", venue: str = "", address: str = "") -> dict[str, str]:
-    """
-    Build embeddable map URLs from a Google Maps link and/or venue text.
-
-    Short links (maps.app.goo.gl) cannot be used directly in iframes; we resolve
-    them and fall back to OpenStreetMap embeds when no Google embed key is set.
-    """
-    maps_url = (maps_url or "").strip()
-    venue = (venue or "").strip()
-    address = (address or "").strip()
-    text_query = ", ".join(p for p in (venue, address) if p)
-
-    open_url = ""
-    if maps_url.startswith("http://") or maps_url.startswith("https://"):
-        open_url = maps_url
-
-    if maps_url:
-        resolved = maps_url
-        if any(host in maps_url for host in ("goo.gl", "maps.app.goo.gl", "google.com/maps", "maps.google.com")):
-            resolved = _resolve_maps_redirect(maps_url)
-            if resolved.startswith("http"):
-                open_url = resolved
-
-        if "google.com/maps/embed" in resolved:
-            return {
-                "embed_url": resolved,
-                "static_image_url": "",
-                "open_url": open_url or resolved,
-            }
-
-        coords = _parse_google_maps_coords(resolved)
-        if coords:
-            lat, lon = coords
-            return {
-                "embed_url": _embed_url_from_coords(lat, lon),
-                "static_image_url": _osm_static_map_url(lat, lon),
-                "open_url": open_url or f"https://www.google.com/maps/search/?api=1&query={lat},{lon}",
-            }
-
-        # Share link provided but not embeddable — keep the original link, skip bad geocoding.
-        return {"embed_url": "", "static_image_url": "", "open_url": open_url or maps_url}
-
-    if not text_query:
-        return {"embed_url": "", "static_image_url": "", "open_url": open_url}
-
-    if not open_url:
-        open_url = f"https://www.google.com/maps/search/?api=1&query={quote_plus(text_query or maps_url)}"
-
-    if GOOGLE_MAPS_EMBED_API_KEY:
-        target = text_query or maps_url
-        return {
-            "embed_url": (
-                f"https://www.google.com/maps/embed/v1/place"
-                f"?key={GOOGLE_MAPS_EMBED_API_KEY}&q={quote_plus(target)}"
-            ),
-            "static_image_url": "",
-            "open_url": open_url,
-        }
-
-    coords = None
-    for candidate in (text_query, address, venue):
-        if not candidate:
-            continue
-        coords = _geocode_location(candidate)
-        if coords:
-            break
-    if coords:
-        lat, lon = coords
-        return {
-            "embed_url": _osm_embed_url(lat, lon),
-            "static_image_url": _osm_static_map_url(lat, lon),
-            "open_url": open_url,
-        }
-
-    return {"embed_url": "", "static_image_url": "", "open_url": open_url}
-
-
-def _map_preview_from_receipt(data: dict) -> dict[str, str]:
-    return _resolve_map_preview(
-        maps_url=data.get("m", ""),
-        venue=data.get("v", ""),
-        address=data.get("a", ""),
-    )
-
-
-def _maps_open_url(data: dict) -> str:
-    preview = _map_preview_from_receipt(data)
-    if preview["open_url"]:
-        return preview["open_url"]
-    query = _maps_query(data)
-    if not query:
-        return ""
-    if query.startswith("http://") or query.startswith("https://"):
-        return query
-    return f"https://www.google.com/maps/search/?api=1&query={quote_plus(query)}"
-
-
-def _maps_embed_url(data: dict) -> str:
-    return _map_preview_from_receipt(data).get("embed_url", "")
-
-
-@app.get("/api/maps/embed", tags=["Receipts"])
-async def maps_embed_preview(
-    maps_url: str = "",
-    venue: str = "",
-    address: str = "",
-    query: str = "",
-):
-    """Resolve venue/address or Google Maps links into an iframe-safe embed URL."""
-    if query and not venue and not address:
-        venue = query
-    return _resolve_map_preview(maps_url=maps_url, venue=venue, address=address)
-
-
-def _validate_maps_url(maps_url: str) -> dict[str, str | bool]:
-    """Check whether a Google Maps URL is reachable and likely to produce a map preview."""
-    maps_url = (maps_url or "").strip()
-    if not maps_url:
-        return {"valid": True, "status": "empty", "message": "", "resolved_url": ""}
-
-    if not maps_url.startswith("http://") and not maps_url.startswith("https://"):
-        return {
-            "valid": False,
-            "status": "invalid",
-            "message": "Enter a full https:// URL from Google Maps.",
-            "resolved_url": "",
-        }
-
-    if any(host in maps_url for host in ("goo.gl", "maps.app.goo.gl")):
-        try:
-            with httpx.Client(timeout=10, follow_redirects=True) as client:
-                response = client.get(
-                    maps_url,
-                    headers={
-                        "User-Agent": (
-                            "Mozilla/5.0 (compatible; IntelliForge-Certificates/2.0; "
-                            "+https://certs.intelliforge.tech)"
-                        ),
-                    },
-                )
-                if response.status_code >= 400:
-                    return {
-                        "valid": False,
-                        "status": "unreachable",
-                        "message": (
-                            "Short link expired or invalid. Open the place in Google Maps "
-                            "and paste the full browser URL, or add a street address."
-                        ),
-                        "resolved_url": maps_url,
-                    }
-        except Exception:
-            return {
-                "valid": False,
-                "status": "unreachable",
-                "message": "Could not reach this maps link. Check the URL or add a street address.",
-                "resolved_url": maps_url,
-            }
-
-    preview = _resolve_map_preview(maps_url=maps_url)
-    resolved = preview.get("open_url") or maps_url
-    if preview.get("embed_url") or preview.get("static_image_url"):
-        return {
-            "valid": True,
-            "status": "ok",
-            "message": "Map link verified — preview available.",
-            "resolved_url": resolved,
-        }
-
-    return {
-        "valid": True,
-        "status": "warning",
-        "message": "Link saved. Add a street address if you need an embedded map preview.",
-        "resolved_url": resolved,
-    }
-
-
-@app.get("/api/maps/validate", tags=["Receipts"])
-async def maps_validate(maps_url: str = ""):
-    """Validate a Google Maps URL before issuing an entry ticket."""
-    return _validate_maps_url(maps_url)
-
-
-def _format_event_datetime(data: dict) -> str:
-    parts = [data.get("ed", "")]
-    if data.get("et"):
-        parts.append(data["et"])
-    return " · ".join(p for p in parts if p)
-
-
-def _whatsapp_configured() -> bool:
-    return bool(WHATSAPP_TOKEN and WHATSAPP_PHONE_ID)
-
-
-def _normalize_whatsapp_phone(phone: str) -> str:
-    digits = re.sub(r"\D", "", phone.strip())
-    if not digits:
-        return ""
-    if len(digits) == 10 and WHATSAPP_DEFAULT_COUNTRY_CODE:
-        digits = WHATSAPP_DEFAULT_COUNTRY_CODE + digits
-    return digits
-
-
-def _whatsapp_ticket_location(data: dict) -> str:
-    parts = [p for p in (data.get("v"), data.get("a")) if p]
-    return " · ".join(parts) if parts else "See ticket link for venue details"
-
-
-def _whatsapp_text_param(value: str, limit: int = 100) -> str:
-    cleaned = " ".join((value or "").split())
-    return cleaned[:limit] if cleaned else "-"
-
-
-def _build_whatsapp_entry_ticket_text(
-    data: dict,
-    receipt_id: str,
-    shareable_url: str,
-) -> str:
-    maps_url = _maps_open_url(data)
-    lines = [
-        "🎟️ *Event Entry Ticket*",
-        "",
-        f"Hi {data['n']},",
-        "",
-        f"Your entry for *{data['e']}* is confirmed.",
-        "",
-        f"📅 {_format_event_datetime(data)}",
-        f"📍 {_whatsapp_ticket_location(data)}",
-        f"💳 Paid: {_receipt_amount_display(data)}",
-        f"🎫 Ticket No: {receipt_id}",
-    ]
-    if maps_url:
-        lines.append(f"🗺️ Directions: {maps_url}")
-    lines.extend([
-        "",
-        "View and show this ticket at the venue gate:",
-        shareable_url,
-        "",
-        "_IntelliForge Events_",
-    ])
-    return "\n".join(lines)
-
-
-def _whatsapp_post_message(payload: dict) -> bool:
-    url = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{WHATSAPP_PHONE_ID}/messages"
-    try:
-        with httpx.Client(timeout=15) as client:
-            response = client.post(
-                url,
-                headers={
-                    "Authorization": f"Bearer {WHATSAPP_TOKEN}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
-        if response.is_success:
-            return True
-        logger.warning("WhatsApp send failed (%s): %s", response.status_code, response.text)
-        return False
-    except Exception as e:
-        logger.warning(f"WhatsApp send error: {e}")
-        return False
-
-
-def _send_whatsapp_template_ticket(
-    to_phone: str,
-    data: dict,
-    receipt_id: str,
-    shareable_url: str,
-) -> bool:
-    token = shareable_url.rstrip("/").split("/receipt/")[-1]
-    components = [
-        {
-            "type": "body",
-            "parameters": [
-                {"type": "text", "text": _whatsapp_text_param(data["n"])},
-                {"type": "text", "text": _whatsapp_text_param(data["e"])},
-                {"type": "text", "text": _whatsapp_text_param(_format_event_datetime(data))},
-                {"type": "text", "text": _whatsapp_text_param(_whatsapp_ticket_location(data), 200)},
-                {"type": "text", "text": _whatsapp_text_param(_receipt_amount_display(data), 50)},
-                {"type": "text", "text": _whatsapp_text_param(receipt_id, 50)},
-                {"type": "text", "text": _whatsapp_text_param(shareable_url, 500)},
-            ],
-        }
-    ]
-    if WHATSAPP_TEMPLATE_URL_BUTTON:
-        components.append(
-            {
-                "type": "button",
-                "sub_type": "url",
-                "index": "0",
-                "parameters": [{"type": "text", "text": _whatsapp_text_param(token, 1000)}],
-            }
-        )
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to_phone,
-        "type": "template",
-        "template": {
-            "name": WHATSAPP_RECEIPT_TEMPLATE,
-            "language": {"code": WHATSAPP_TEMPLATE_LANG},
-            "components": components,
-        },
-    }
-    return _whatsapp_post_message(payload)
-
-
-def _send_whatsapp_text_ticket(
-    to_phone: str,
-    data: dict,
-    receipt_id: str,
-    shareable_url: str,
-) -> bool:
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to_phone,
-        "type": "text",
-        "text": {
-            "preview_url": True,
-            "body": _build_whatsapp_entry_ticket_text(data, receipt_id, shareable_url),
-        },
-    }
-    return _whatsapp_post_message(payload)
-
-
-def _send_receipt_whatsapp(
-    phone: str,
-    data: dict,
-    receipt_id: str,
-    shareable_url: str,
-) -> bool:
-    """
-    Send an event entry ticket to the participant on WhatsApp.
-
-    Production outbound requires an approved Meta template (WHATSAPP_RECEIPT_TEMPLATE).
-    Set WHATSAPP_ALLOW_TEXT=true for sandbox/dev text messages.
-    """
-    if not _whatsapp_configured():
-        return False
-
-    to_phone = _normalize_whatsapp_phone(phone)
-    if not to_phone:
-        logger.warning("WhatsApp skipped: invalid participant phone")
-        return False
-
-    if WHATSAPP_RECEIPT_TEMPLATE:
-        if _send_whatsapp_template_ticket(to_phone, data, receipt_id, shareable_url):
-            logger.info(f"WhatsApp entry ticket sent to {to_phone[-4:].rjust(len(to_phone), '*')}")
-            return True
-        if not WHATSAPP_ALLOW_TEXT and IS_PROD:
-            return False
-
-    if WHATSAPP_ALLOW_TEXT or not IS_PROD:
-        if _send_whatsapp_text_ticket(to_phone, data, receipt_id, shareable_url):
-            logger.info(f"WhatsApp entry ticket (text) sent to {to_phone[-4:].rjust(len(to_phone), '*')}")
-            return True
-
-    return False
-
-
-def _dispatch_receipt_whatsapp(phone: str, data: dict, receipt_id: str, shareable_url: str):
-    """Send WhatsApp entry ticket in a background thread. Best-effort."""
-    def _do():
-        _send_receipt_whatsapp(phone, data, receipt_id, shareable_url)
-
-    threading.Thread(target=_do, daemon=True).start()
 
 
 @app.get("/", tags=["System"])
@@ -920,11 +418,10 @@ async def root():
     """API root with version and available endpoints."""
     return {
         "status": "ok",
-        "message": "IntelliForge Certificate API is running",
+        "message": "PDF Cert Generator API is running",
         "version": "2.0.0",
         "endpoints": {
             "certificate": "/api/certificate",
-            "receipt": "/api/receipt",
             "courses": "/api/courses",
             "health": "/api/health",
         }
@@ -936,12 +433,11 @@ async def health_check():
     """Health check. Returns 200 if the service is running."""
     return {
         "status": "healthy",
-        "service": "intelliforge-certificate-api",
+        "service": "pdf-cert-generator-api",
         "version": "2.0.0",
         "dependencies": {
             "database": "connected" if DB_AVAILABLE else "not_configured",
             "email": "configured" if _agentmail_client else "not_configured",
-            "whatsapp": "configured" if _whatsapp_configured() else "not_configured",
         },
     }
 
@@ -950,9 +446,9 @@ async def health_check():
 async def get_info():
     """API metadata including version, features, branding, and tech stack."""
     return {
-        "name": "IntelliForge Certificate API",
+        "name": "PDF Cert Generator API",
         "version": "2.0.0",
-        "description": "Verifiable certificates and event entry tickets with shareable URLs",
+        "description": "Generate and verify tamper-proof PDF certificates with shareable URLs",
         "branding": {
             "founder_name": FOUNDER_NAME,
             "founder_title": FOUNDER_TITLE,
@@ -963,8 +459,7 @@ async def get_info():
             "Stateless verification (no database)",
             "Public shareable certificate pages",
             "PDF certificate generation with QR codes",
-            "VTU-style internship completion (USN, hours, mentor, Forge letterhead)",
-            "Event entry tickets with maps and WhatsApp delivery",
+            "VTU-style internship completion (USN, hours, mentor)",
             "LinkedIn and X social sharing",
         ],
         "tech_stack": {
@@ -979,7 +474,7 @@ async def get_info():
 @app.get("/api/preview/qr", tags=["System"])
 async def preview_qr(url: str = ""):
     """Generate a QR code data URI for UI previews (does not create credentials)."""
-    sample = url.strip() or "https://certs.intelliforge.tech"
+    sample = url.strip() or "https://example.com/certificate/preview"
     return {"qr_data_uri": _generate_qr_data_uri(sample), "url": sample}
 
 
@@ -1063,8 +558,8 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
 CERT_EMAIL_HTML = """
 <div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;max-width:600px;margin:0 auto;background:#0f0f23;padding:24px;border-radius:16px;">
   <div style="background:linear-gradient(135deg,#12124a 0%,#1e1e6e 50%,#2a1a5e 100%);padding:28px 32px 24px;text-align:center;border-radius:12px 12px 0 0;">
-    <div style="font-size:11px;letter-spacing:4px;text-transform:uppercase;color:#d4af37;font-weight:600;">An IntelliForge AI Initiative</div>
-    <div style="font-size:24px;font-weight:700;color:#fff;margin:8px 0 12px;">IntelliForge Learning</div>
+    <div style="font-size:11px;letter-spacing:4px;text-transform:uppercase;color:#d4af37;font-weight:600;">PDF Cert Generator</div>
+    <div style="font-size:24px;font-weight:700;color:#fff;margin:8px 0 12px;">PDF Cert Generator</div>
     <div style="display:inline-block;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#d4af37;font-weight:600;border:1px solid rgba(139,125,60,0.6);padding:6px 18px;border-radius:20px;">Certificate of Participation</div>
   </div>
   <div style="background:#ffffff;padding:32px;text-align:center;">
@@ -1093,7 +588,7 @@ CERT_EMAIL_HTML = """
     <p style="font-size:12px;color:#a0aec0;margin:12px 0 0;">Or download the PDF directly: <a href="{download_url}" style="color:#667eea;text-decoration:none;font-weight:500;">Download PDF</a></p>
   </div>
   <div style="background:#f8fafc;padding:16px 32px;text-align:center;border-radius:0 0 12px 12px;border-top:1px solid #edf2f7;">
-    <p style="font-size:12px;color:#a0aec0;margin:0;">Issued by <a href="https://learning.intelliforge.tech/" style="color:#667eea;text-decoration:none;">IntelliForge Learning</a> &middot; <a href="mailto:support@intelliforge.tech" style="color:#667eea;text-decoration:none;">support@intelliforge.tech</a></p>
+    <p style="font-size:12px;color:#a0aec0;margin:0;">Issued by <a href="/" style="color:#667eea;text-decoration:none;">PDF Cert Generator</a> &middot; <a href="mailto:support@example.com" style="color:#667eea;text-decoration:none;">support@example.com</a></p>
   </div>
 </div>
 """
@@ -1125,16 +620,16 @@ def _send_certificate_email(
         _agentmail_client.inboxes.messages.send(
             AGENTMAIL_INBOX_ID,
             to=to_email,
-            subject=f"Your IntelliForge Certificate – {course_name}",
+            subject=f"Your Certificate – {course_name}",
             text=(
                 f"Congratulations {participant_name}!\n\n"
                 f"You have been awarded a Certificate of Participation for completing "
-                f"{course_name} at IntelliForge Learning.\n\n"
+                f"{course_name} at PDF Cert Generator.\n\n"
                 f"Certificate ID: {certificate_id}\n"
                 f"View your certificate: {view_url}\n"
                 f"Download PDF: {download_url}\n\n"
                 f"Share this achievement on LinkedIn or X!\n\n"
-                f"– IntelliForge Learning Team"
+                f"– PDF Cert Generator Team"
             ),
             html=html,
         )
@@ -1179,7 +674,7 @@ def _send_internship_certificate_email(
         _agentmail_client.inboxes.messages.send(
             AGENTMAIL_INBOX_ID,
             to=to_email,
-            subject=f"Your IntelliForge internship certificate – {course_name}",
+            subject=f"Your internship certificate – {course_name}",
             text=(
                 f"Congratulations {participant_name} (USN {usn})!\n\n"
                 f"Your industry internship completion certificate for {course_name} is ready.\n"
@@ -1188,7 +683,7 @@ def _send_internship_certificate_email(
                 f"Certificate ID: {certificate_id}\n"
                 f"View: {view_url}\n"
                 f"Download PDF: {download_url}\n\n"
-                f"– Intelliforge Digital Services"
+                f"– PDF Cert Generator"
             ),
             html=html,
         )
@@ -1196,113 +691,6 @@ def _send_internship_certificate_email(
         return True
     except Exception as e:
         logger.warning(f"Failed to send internship certificate email to {to_email}: {e}")
-        return False
-
-
-RECEIPT_EMAIL_HTML = """
-<div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;max-width:600px;margin:0 auto;background:#0f0f23;padding:24px;border-radius:16px;">
-  <div style="background:linear-gradient(135deg,#12124a 0%,#1e1e6e 50%,#2a1a5e 100%);padding:28px 32px 24px;text-align:center;border-radius:12px 12px 0 0;">
-    <div style="font-size:11px;letter-spacing:4px;text-transform:uppercase;color:#d4af37;font-weight:600;">An IntelliForge AI Initiative</div>
-    <div style="font-size:24px;font-weight:700;color:#fff;margin:8px 0 12px;">IntelliForge Events</div>
-    <div style="display:inline-block;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#d4af37;font-weight:600;border:1px solid rgba(139,125,60,0.6);padding:6px 18px;border-radius:20px;">Event Entry Ticket</div>
-  </div>
-  <div style="background:#ffffff;padding:32px;text-align:center;">
-    <div style="display:inline-block;background:#f0fff4;border:1px solid #68d391;color:#276749;font-size:12px;font-weight:600;padding:5px 14px;border-radius:20px;margin-bottom:20px;">&#10003; Entry Confirmed</div>
-    <p style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#a0aec0;margin:0 0 6px;">Ticket Holder</p>
-    <h1 style="font-size:28px;font-weight:700;color:#1a202c;margin:0 0 4px;">{payer_name}</h1>
-    <p style="font-size:18px;font-weight:700;color:#553c9a;margin:0 0 8px;">{amount_display}</p>
-    <p style="font-size:13px;color:#718096;margin:0 0 20px;">{payment_meta}</p>
-    <div style="background:#f8fafc;border:1px solid #edf2f7;border-radius:12px;padding:16px;margin-bottom:20px;text-align:left;">
-      <div style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#a0aec0;margin-bottom:8px;">Event Details</div>
-      <div style="font-size:16px;font-weight:600;color:#2d3748;margin-bottom:4px;">{event_name}</div>
-      <div style="font-size:14px;color:#4a5568;margin-bottom:4px;">{event_datetime}</div>
-      {venue_html}
-    </div>
-    <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #edf2f7;border-bottom:1px solid #edf2f7;margin-bottom:24px;">
-      <tr>
-        <td style="text-align:center;padding:14px 8px;width:50%;">
-          <div style="font-size:14px;font-weight:600;color:#2d3748;font-family:monospace;">{transaction_id}</div>
-          <div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#a0aec0;margin-top:4px;">Booking Ref</div>
-        </td>
-        <td style="text-align:center;padding:14px 8px;width:50%;border-left:1px solid #edf2f7;">
-          <div style="font-size:14px;font-weight:600;color:#2d3748;font-family:monospace;">{receipt_id}</div>
-          <div style="font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#a0aec0;margin-top:4px;">Ticket No</div>
-        </td>
-      </tr>
-    </table>
-    <a href="{view_url}" style="display:inline-block;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:14px 36px;border-radius:12px;font-size:16px;font-weight:600;text-decoration:none;margin-bottom:12px;">View Entry Ticket</a>
-    <p style="font-size:12px;color:#a0aec0;margin:12px 0 0;">Or download the PDF directly: <a href="{download_url}" style="color:#667eea;text-decoration:none;font-weight:500;">Download Entry Ticket PDF</a></p>
-    <p style="font-size:12px;color:#718096;margin:16px 0 0;">Show the QR code on your ticket at the venue gate for quick entry verification.</p>
-  </div>
-  <div style="background:#f8fafc;padding:16px 32px;text-align:center;border-radius:0 0 12px 12px;border-top:1px solid #edf2f7;">
-    <p style="font-size:12px;color:#a0aec0;margin:0;">Issued by IntelliForge Events &middot; <a href="mailto:support@intelliforge.tech" style="color:#667eea;text-decoration:none;">support@intelliforge.tech</a></p>
-  </div>
-</div>
-"""
-
-
-def _receipt_payment_meta(data: dict) -> str:
-    parts = []
-    if data.get("pd"):
-        parts.append(f"Paid on {data['pd']}")
-    if data.get("pm"):
-        parts.append(f"via {data['pm']}")
-    return " · ".join(parts) if parts else "Payment confirmed"
-
-
-def _send_receipt_email(
-    to_email: str,
-    data: dict,
-    receipt_id: str,
-    view_url: str,
-    download_url: str,
-) -> bool:
-    """Send event entry ticket notification email via AgentMail. Returns True on success."""
-    if not _agentmail_client or not to_email:
-        return False
-    try:
-        venue_bits = []
-        if data.get("v"):
-            venue_bits.append(f'<div style="font-size:14px;color:#4a5568;">{html_mod.escape(data["v"])}</div>')
-        if data.get("a"):
-            venue_bits.append(
-                f'<div style="font-size:13px;color:#718096;margin-top:4px;">{html_mod.escape(data["a"])}</div>'
-            )
-        venue_html = "".join(venue_bits)
-        html = RECEIPT_EMAIL_HTML.format(
-            payer_name=html_mod.escape(data.get("n", "")),
-            amount_display=html_mod.escape(_receipt_amount_display(data)),
-            payment_meta=html_mod.escape(_receipt_payment_meta(data)),
-            event_name=html_mod.escape(data.get("e", "")),
-            event_datetime=html_mod.escape(_format_event_datetime(data)),
-            venue_html=venue_html,
-            transaction_id=html_mod.escape(data.get("tx", "")),
-            receipt_id=html_mod.escape(receipt_id),
-            view_url=view_url,
-            download_url=download_url,
-        )
-        _agentmail_client.inboxes.messages.send(
-            AGENTMAIL_INBOX_ID,
-            to=to_email,
-            subject=f"Your Event Entry Ticket – {data.get('e', 'IntelliForge Event')}",
-            text=(
-                f"Hi {data.get('n', '')},\n\n"
-                f"Your entry ticket for {data.get('e', '')} is confirmed.\n\n"
-                f"Event: {_format_event_datetime(data)}\n"
-                f"Amount: {_receipt_amount_display(data)}\n"
-                f"Ticket No: {receipt_id}\n"
-                f"Booking Ref: {data.get('tx', '')}\n\n"
-                f"View your ticket: {view_url}\n"
-                f"Download PDF: {download_url}\n\n"
-                f"Show the QR code at the venue gate for entry.\n\n"
-                f"– IntelliForge Events"
-            ),
-            html=html,
-        )
-        logger.info(f"Entry ticket email sent to {to_email}")
-        return True
-    except Exception as e:
-        logger.warning(f"Failed to send entry ticket email to {to_email}: {e}")
         return False
 
 
@@ -1479,13 +867,13 @@ VIEWER_HTML = """<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{participant_name} – IntelliForge Certificate</title>
+    <title>{participant_name} – Certificate</title>
     <meta property="og:title" content="{participant_name} – Certificate of Participation" />
-    <meta property="og:description" content="{participant_name} successfully completed {course_name} at IntelliForge Learning." />
+    <meta property="og:description" content="{participant_name} successfully completed {course_name} at PDF Cert Generator." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="{page_url}" />
     <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="{participant_name} – IntelliForge Certificate" />
+    <meta name="twitter:title" content="{participant_name} – Certificate" />
     <meta name="twitter:description" content="Verified certificate for completing {course_name}" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
@@ -1558,8 +946,8 @@ VIEWER_HTML = """<!DOCTYPE html>
     <div class="bg-glow"></div>
     <div class="card">
         <div class="card-header">
-            <div class="hdr-org">An IntelliForge AI Initiative</div>
-            <div class="hdr-brand">IntelliForge Learning</div>
+            <div class="hdr-org">PDF Cert Generator</div>
+            <div class="hdr-brand">PDF Cert Generator</div>
             <div class="hdr-badge">Certificate of Participation</div>
         </div>
         <div class="card-body">
@@ -1613,8 +1001,8 @@ VIEWER_HTML = """<!DOCTYPE html>
         </div>
         <div class="card-footer">
             <p>
-                Issued by <a href="https://learning.intelliforge.tech/" target="_blank" rel="noopener">IntelliForge Learning</a>
-                &nbsp;&middot;&nbsp; <a href="mailto:support@intelliforge.tech">support@intelliforge.tech</a>
+                Issued by <a href="/" target="_blank" rel="noopener">PDF Cert Generator</a>
+                &nbsp;&middot;&nbsp; <a href="mailto:support@example.com">support@example.com</a>
             </p>
         </div>
     </div>
@@ -1644,7 +1032,7 @@ async def view_certificate(token: str, req: Request):
 
     if _is_internship_payload(data):
         cert_desc = (
-            f"I completed my IntelliForge industry internship ({data['c']}) — USN {data['u']}!"
+            f"I completed my industry internship ({data['c']}) — USN {data['u']}!"
         )
         twitter_params = urlencode({"text": cert_desc, "url": page_url})
         twitter_url = f"https://twitter.com/intent/tweet?{twitter_params}"
@@ -1714,566 +1102,6 @@ async def download_certificate(token: str, req: Request):
         },
     )
 
-
-# ---------------------------------------------------------------------------
-# Payment acknowledgement receipts
-# ---------------------------------------------------------------------------
-
-RECEIPT_PDF_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        @page {{
-            size: A4;
-            margin: 24pt;
-        }}
-        body {{
-            font-family: Helvetica, Arial, sans-serif;
-            color: #2d3748;
-            margin: 0;
-            padding: 0;
-        }}
-        table {{ border-collapse: collapse; }}
-        td {{ padding: 0; }}
-    </style>
-</head>
-<body>
-<table width="100%" style="background-color: #0f0f23;">
-<tr><td style="padding: 18pt 24pt;">
-<table width="100%" style="background-color: #ffffff;">
-<tr><td>
-    <table width="100%" style="background-color: #15155e;">
-    <tr><td style="padding: 24pt 32pt 20pt;">
-        <table width="100%" cellspacing="0" cellpadding="0">
-            <tr><td align="center" style="font-size: 8pt; letter-spacing: 4pt; color: #d4af37; font-weight: bold; padding-bottom: 4pt; text-align: center;">
-                AN INTELLIFORGE AI INITIATIVE
-            </td></tr>
-            <tr><td align="center" style="font-size: 22pt; font-weight: bold; color: #ffffff; padding: 6pt 0 10pt; text-align: center;">
-                IntelliForge Events
-            </td></tr>
-            <tr><td align="center" style="text-align: center;">
-                <table align="center" cellspacing="0" cellpadding="0" style="border: 2px solid #d4af37;">
-                <tr><td align="center" style="padding: 6pt 24pt; font-size: 9pt; letter-spacing: 3pt; color: #d4af37; font-weight: bold; text-align: center;">
-                    EVENT ENTRY TICKET
-                </td></tr>
-                </table>
-            </td></tr>
-        </table>
-    </td></tr>
-    </table>
-
-    <table width="100%">
-    <tr><td style="padding: 24pt 32pt 18pt;">
-        <table width="100%" cellspacing="0" cellpadding="0">
-        <tr><td align="center" style="text-align: center; padding-bottom: 14pt;">
-            <table align="center" cellspacing="0" cellpadding="0" style="border: 1px solid #68d391;">
-            <tr><td align="center" style="padding: 4pt 14pt; font-size: 8pt; color: #276749; font-weight: bold; background-color: #f0fff4; text-align: center;">
-                &#10003; &nbsp; Entry Confirmed
-            </td></tr>
-            </table>
-        </td></tr>
-        </table>
-
-        <table width="100%" cellspacing="0" cellpadding="0">
-            <tr><td align="center" style="text-align: center; font-size: 8pt; letter-spacing: 3pt; color: #a0aec0; padding-bottom: 6pt;">
-                RECEIVED FROM
-            </td></tr>
-            <tr><td align="center" style="text-align: center; font-size: 24pt; font-weight: bold; color: #1a202c; padding-bottom: 8pt;">
-                {payer_name}
-            </td></tr>
-            <tr><td align="center" style="text-align: center; font-size: 18pt; font-weight: bold; color: #553c9a; padding-bottom: 4pt;">
-                {amount_display}
-            </td></tr>
-            <tr><td align="center" style="text-align: center; font-size: 9pt; color: #718096; padding-bottom: 18pt;">
-                {payment_meta}
-            </td></tr>
-        </table>
-
-        <table width="100%" cellspacing="0" cellpadding="0" style="border: 1px solid #edf2f7; background-color: #f8fafc;">
-        <tr><td style="padding: 16pt 18pt;">
-            <table width="100%" cellspacing="0" cellpadding="0">
-                <tr><td style="font-size: 7pt; letter-spacing: 2pt; color: #a0aec0; padding-bottom: 6pt;">EVENT DETAILS</td></tr>
-                <tr><td style="font-size: 14pt; font-weight: bold; color: #1a202c; padding-bottom: 4pt;">{event_name}</td></tr>
-                <tr><td style="font-size: 10pt; color: #4a5568; padding-bottom: 8pt;">{event_datetime}</td></tr>
-                {venue_block}
-                {address_block}
-            </table>
-        </td></tr>
-        </table>
-
-        {description_block}
-
-        <table width="85%" align="center" cellspacing="0" cellpadding="0" style="border-top: 1px solid #edf2f7; border-bottom: 1px solid #edf2f7; margin-top: 16pt;">
-            <tr>
-                <td width="50%" align="center" style="text-align: center; padding: 12pt 8pt;">
-                    <table width="100%" cellspacing="0" cellpadding="0">
-                        <tr><td align="center" style="text-align: center; font-size: 10pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{transaction_id}</td></tr>
-                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">TRANSACTION ID</td></tr>
-                    </table>
-                </td>
-                <td width="50%" align="center" style="text-align: center; padding: 12pt 8pt; border-left: 1px solid #edf2f7;">
-                    <table width="100%" cellspacing="0" cellpadding="0">
-                        <tr><td align="center" style="text-align: center; font-size: 10pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{receipt_id}</td></tr>
-                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">RECEIPT ID</td></tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
-
-        {maps_block}
-
-        <table width="100%" cellspacing="0" cellpadding="0" style="margin-top: 14pt;">
-        <tr><td align="center" style="text-align: center;">
-            <table align="center" cellspacing="0" cellpadding="0">
-            <tr>
-                <td style="padding-right: 12pt; vertical-align: middle;">
-                    <img src="{qr_data_uri}" width="70" height="70" />
-                </td>
-                <td style="vertical-align: middle; text-align: left;">
-                    <table cellspacing="0" cellpadding="0"><tr><td style="font-size: 9pt; font-weight: bold; color: #2d3748; padding-bottom: 2pt;">Scan to View Receipt</td></tr></table>
-                    <table cellspacing="0" cellpadding="0"><tr><td style="font-size: 7pt; color: #a0aec0; line-height: 1.5;">Shareable link to this payment<br/>acknowledgement receipt.</td></tr></table>
-                </td>
-            </tr>
-            </table>
-        </td></tr>
-        </table>
-    </td></tr>
-    </table>
-
-    <table width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; border-top: 1px solid #edf2f7;">
-    <tr><td align="center" style="padding: 10pt 32pt; text-align: center; font-size: 7pt; color: #a0aec0;">
-        Issued by IntelliForge Events &nbsp;&middot;&nbsp; learning.intelliforge.tech &nbsp;&middot;&nbsp; support@intelliforge.tech
-    </td></tr>
-    </table>
-</td></tr>
-</table>
-</td></tr>
-</table>
-</body>
-</html>
-"""
-
-
-RECEIPT_VIEWER_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{payer_name} – Event Entry Ticket</title>
-    <meta property="og:title" content="{payer_name} – Event Entry Ticket" />
-    <meta property="og:description" content="Entry confirmed for {event_name} on {event_datetime}." />
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="{page_url}" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
-    <style>
-        *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
-        body{{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:#0f0f23;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem}}
-        .bg-glow{{position:fixed;inset:0;background:radial-gradient(ellipse at 30% 20%,rgba(102,126,234,.18) 0%,transparent 50%),radial-gradient(ellipse at 70% 80%,rgba(118,75,162,.15) 0%,transparent 50%);pointer-events:none}}
-        .card{{position:relative;background:#fff;border-radius:24px;box-shadow:0 30px 100px rgba(0,0,0,.35);max-width:640px;width:100%;overflow:hidden;animation:up .6s ease-out}}
-        @keyframes up{{from{{opacity:0;transform:translateY(40px)}}to{{opacity:1;transform:translateY(0)}}}}
-        .card-header{{background:linear-gradient(135deg,#12124a 0%,#1e1e6e 50%,#2a1a5e 100%);padding:2rem 2.2rem 1.8rem;text-align:center}}
-        .hdr-org{{font-size:.6rem;letter-spacing:4px;text-transform:uppercase;color:#d4af37;margin-bottom:.35rem;font-weight:500}}
-        .hdr-brand{{font-family:'Playfair Display',serif;font-size:1.45rem;color:#fff;font-weight:700;margin-bottom:.7rem}}
-        .hdr-badge{{display:inline-block;background:rgba(212,175,55,.12);border:1px solid rgba(212,175,55,.4);color:#d4af37;font-size:.6rem;font-weight:600;letter-spacing:2.5px;text-transform:uppercase;padding:.35rem 1.2rem;border-radius:20px}}
-        .card-body{{padding:2rem 2.2rem 1.8rem;text-align:center}}
-        .verified{{display:inline-flex;align-items:center;gap:.4rem;background:#f0fff4;border:1px solid #68d391;color:#22543d;font-size:.7rem;font-weight:600;padding:.3rem .9rem;border-radius:20px;margin-bottom:1.4rem}}
-        .label{{font-size:.7rem;letter-spacing:2.5px;text-transform:uppercase;color:#a0aec0;margin-bottom:.35rem}}
-        .name{{font-family:'Playfair Display',serif;font-size:1.8rem;font-weight:700;color:#1a202c;line-height:1.15;margin-bottom:.5rem}}
-        .amount{{font-size:1.6rem;font-weight:700;color:#553c9a;margin-bottom:.35rem}}
-        .payment-meta{{font-size:.82rem;color:#718096;margin-bottom:1.4rem}}
-        .event-box{{text-align:left;background:#f8fafc;border:1px solid #edf2f7;border-radius:14px;padding:1.2rem 1.3rem;margin-bottom:1.2rem}}
-        .event-box h2{{font-size:.65rem;letter-spacing:2px;text-transform:uppercase;color:#a0aec0;margin-bottom:.5rem}}
-        .event-title{{font-size:1.05rem;font-weight:700;color:#1a202c;margin-bottom:.25rem}}
-        .event-when{{font-size:.88rem;color:#4a5568;margin-bottom:.6rem}}
-        .event-venue{{font-size:.88rem;font-weight:600;color:#2d3748;margin-bottom:.15rem}}
-        .event-address{{font-size:.84rem;color:#4a5568;line-height:1.5}}
-        .description{{text-align:left;font-size:.84rem;color:#4a5568;background:#fff;border:1px dashed #e2e8f0;border-radius:12px;padding:.9rem 1rem;margin-bottom:1.2rem;line-height:1.5}}
-        .meta{{display:flex;justify-content:center;gap:1.5rem;margin-bottom:1.4rem;flex-wrap:wrap}}
-        .meta-item{{text-align:center}}
-        .meta-val{{font-size:.8rem;color:#2d3748;font-weight:600;font-family:monospace}}
-        .meta-lbl{{font-size:.58rem;color:#a0aec0;text-transform:uppercase;letter-spacing:1px;margin-top:.15rem}}
-        .map-wrap{{margin-bottom:1.2rem;text-align:left}}
-        .map-wrap h3{{font-size:.65rem;letter-spacing:2px;text-transform:uppercase;color:#a0aec0;margin-bottom:.55rem;text-align:center}}
-        .map-frame{{width:100%;height:220px;border:0;border-radius:12px;background:#edf2f7}}
-        .map-static{{width:100%;height:220px;object-fit:cover;border:0;border-radius:12px;background:#edf2f7;display:block}}
-        .map-link{{display:inline-block;margin-top:.55rem;font-size:.78rem;color:#667eea;text-decoration:none;font-weight:600}}
-        .map-link:hover{{text-decoration:underline}}
-        .actions{{display:flex;flex-direction:column;gap:.7rem;align-items:center}}
-        .btn-download{{display:inline-flex;align-items:center;gap:.6rem;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;border:none;padding:.85rem 2.2rem;border-radius:12px;font-size:.95rem;font-weight:600;cursor:pointer;text-decoration:none;transition:all .3s;box-shadow:0 4px 20px rgba(102,126,234,.35)}}
-        .btn-download:hover{{transform:translateY(-2px);box-shadow:0 8px 30px rgba(102,126,234,.5)}}
-        .btn-download svg{{width:18px;height:18px}}
-        .qr-section{{display:flex;align-items:center;justify-content:center;gap:.8rem;margin-top:1rem;padding-top:1rem;border-top:1px solid #f0f0f0}}
-        .qr-section img{{border-radius:6px;border:1px solid #e2e8f0}}
-        .qr-text{{font-size:.65rem;color:#a0aec0;text-align:left;line-height:1.5}}
-        .qr-text strong{{color:#4a5568;display:block;font-size:.7rem}}
-        .card-footer{{background:#f8fafc;border-top:1px solid #edf2f7;padding:1rem 2.2rem;text-align:center}}
-        .card-footer p{{font-size:.7rem;color:#a0aec0;line-height:1.6}}
-        .card-footer a{{color:#667eea;text-decoration:none}}
-        @media(max-width:480px){{body{{padding:1rem}}.card-body{{padding:1.4rem}}.name{{font-size:1.45rem}}.amount{{font-size:1.35rem}}}}
-    </style>
-</head>
-<body>
-    <div class="bg-glow"></div>
-    <div class="card">
-        <div class="card-header">
-            <div class="hdr-org">An IntelliForge AI Initiative</div>
-            <div class="hdr-brand">IntelliForge Events</div>
-            <div class="hdr-badge">Event Entry Ticket</div>
-        </div>
-        <div class="card-body">
-            <div class="verified">&#10003; Entry Confirmed</div>
-            <div class="label">Ticket Holder</div>
-            <div class="name">{payer_name}</div>
-            <div class="amount">{amount_display}</div>
-            <div class="payment-meta">{payment_meta}</div>
-
-            <div class="event-box">
-                <h2>Event Details</h2>
-                <div class="event-title">{event_name}</div>
-                <div class="event-when">{event_datetime}</div>
-                {venue_html}
-                {address_html}
-            </div>
-
-            {description_html}
-
-            <div class="meta">
-                <div class="meta-item"><div class="meta-val">{transaction_id}</div><div class="meta-lbl">Booking Ref</div></div>
-                <div class="meta-item"><div class="meta-val">{receipt_id}</div><div class="meta-lbl">Ticket No</div></div>
-            </div>
-
-            {maps_html}
-
-            <div class="actions">
-                <a class="btn-download" href="{download_url}">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    Download Entry Ticket PDF
-                </a>
-            </div>
-
-            <div class="qr-section">
-                <img src="{qr_data_uri}" alt="QR Code" width="80" height="80" />
-                <div class="qr-text"><strong>Scan at Venue Gate</strong>Show this QR code for quick entry verification.</div>
-            </div>
-        </div>
-        <div class="card-footer">
-            <p>Issued by <a href="https://learning.intelliforge.tech/" target="_blank" rel="noopener">IntelliForge Events</a> &nbsp;&middot;&nbsp; <a href="mailto:support@intelliforge.tech">support@intelliforge.tech</a></p>
-        </div>
-    </div>
-</body>
-</html>"""
-
-
-def _receipt_payment_meta(data: dict) -> str:
-    parts = [f"Paid on {data.get('pd', '')}"]
-    if data.get("pm"):
-        parts.append(f"via {data['pm']}")
-    return " · ".join(parts)
-
-
-def _receipt_optional_blocks(data: dict) -> dict[str, str]:
-    venue_block = ""
-    if data.get("v"):
-        venue_block = (
-            f'<tr><td style="font-size: 11pt; font-weight: bold; color: #2d3748; padding-bottom: 4pt;">'
-            f'{_escape(data["v"])}</td></tr>'
-        )
-    address_block = ""
-    if data.get("a"):
-        address_block = (
-            f'<tr><td style="font-size: 10pt; color: #4a5568; line-height: 1.5;">'
-            f'{_escape(data["a"])}</td></tr>'
-        )
-    description_block = ""
-    if data.get("desc"):
-        description_block = (
-            f'<table width="100%" cellspacing="0" cellpadding="0" style="margin-top: 12pt;">'
-            f'<tr><td style="font-size: 7pt; letter-spacing: 2pt; color: #a0aec0; padding-bottom: 4pt;">DESCRIPTION</td></tr>'
-            f'<tr><td style="font-size: 10pt; color: #4a5568; line-height: 1.5;">{_escape(data["desc"])}</td></tr>'
-            f'</table>'
-        )
-    maps_block = ""
-    maps_open = _maps_open_url(data)
-    if maps_open:
-        maps_block = (
-            f'<table width="100%" cellspacing="0" cellpadding="0" style="margin-top: 14pt;">'
-            f'<tr><td align="center" style="text-align: center; font-size: 7pt; letter-spacing: 2pt; color: #a0aec0; padding-bottom: 6pt;">LOCATION</td></tr>'
-            f'<tr><td align="center" style="text-align: center; font-size: 9pt; color: #667eea;">{_escape(maps_open)}</td></tr>'
-            f'</table>'
-        )
-    return {
-        "venue_block": venue_block,
-        "address_block": address_block,
-        "description_block": description_block,
-        "maps_block": maps_block,
-    }
-
-
-def _build_receipt_pdf(data: dict, page_url: str = "") -> bytes:
-    blocks = _receipt_optional_blocks(data)
-    qr_data_uri = _generate_qr_data_uri(page_url) if page_url else ""
-    full_html = RECEIPT_PDF_TEMPLATE.format(
-        payer_name=_escape(data["n"]),
-        amount_display=_escape(_receipt_amount_display(data)),
-        payment_meta=_escape(_receipt_payment_meta(data)),
-        event_name=_escape(data["e"]),
-        event_datetime=_escape(_format_event_datetime(data)),
-        transaction_id=_escape(data["tx"]),
-        receipt_id=_escape(_receipt_id(data)),
-        qr_data_uri=qr_data_uri,
-        **blocks,
-    )
-    pdf_buffer = BytesIO()
-    pisa_status = pisa.CreatePDF(src=full_html, dest=pdf_buffer, encoding="UTF-8")
-    if pisa_status.err:
-        logging.error("Receipt PDF generation failed: %s", pisa_status.log)
-        raise Exception("Error generating receipt PDF")
-    pdf_buffer.seek(0)
-    return pdf_buffer.getvalue()
-
-
-def _resolve_receipt(token: str) -> dict:
-    data = _decode_cert(token)
-    if data is None or data.get("k") != "r":
-        raise HTTPException(status_code=404, detail="Invalid or tampered receipt")
-    return data
-
-
-@app.post("/api/receipt", tags=["Receipts"])
-async def generate_receipt(request: ReceiptRequest, req: Request):
-    """
-    Generate a signed payment acknowledgement receipt with event details.
-
-    Include `address` and/or `maps_url` for venue location. Pass `participant_phone`
-    to WhatsApp an event entry ticket (requires WhatsApp Cloud API env vars).
-    Pass `participant_email` to email the entry ticket (requires AgentMail env vars).
-    The public receipt page embeds Google Maps when location data is provided.
-    """
-    try:
-        if request.idempotency_key:
-            cached = _check_idempotency(f"receipt:{request.idempotency_key}")
-            if cached:
-                return JSONResponse(cached)
-
-        if CERT_API_KEYS:
-            api_key = req.headers.get("X-API-Key", "")
-            origin = req.headers.get("origin", "")
-            base = str(req.base_url).rstrip("/")
-            is_same_origin = origin and base.startswith(origin)
-            if not is_same_origin and api_key not in CERT_API_KEYS:
-                raise HTTPException(status_code=401, detail="Invalid or missing API key")
-
-        client_ip = req.client.host if req.client else "unknown"
-        allowed, rate_headers = _check_rate_limit(client_ip)
-        if not allowed:
-            raise HTTPException(
-                status_code=429,
-                detail="Rate limit exceeded. Try again later.",
-                headers=rate_headers,
-            )
-
-        payer = request.payer_name.strip()
-        if not payer:
-            raise HTTPException(status_code=400, detail="Payer name is required")
-        if not request.transaction_id.strip():
-            raise HTTPException(status_code=400, detail="Transaction ID is required")
-
-        receipt_data = {
-            "k": "r",
-            "n": payer,
-            "e": request.event_name.strip(),
-            "ed": request.event_date.strip(),
-            "et": request.event_time.strip(),
-            "v": request.venue_name.strip(),
-            "a": request.address.strip(),
-            "m": request.maps_url.strip(),
-            "amt": request.amount.strip(),
-            "cur": request.currency.strip(),
-            "pd": request.payment_date.strip(),
-            "tx": request.transaction_id.strip(),
-            "pm": request.payment_method.strip(),
-            "desc": request.description.strip(),
-        }
-        token = _encode_cert(receipt_data)
-        receipt_id = _receipt_id(receipt_data)
-
-        base_url = str(req.base_url).rstrip("/")
-        shareable_url = f"{base_url}/receipt/{token}"
-        download_url = f"{shareable_url}/download"
-
-        participant_phone = request.participant_phone.strip()
-        whatsapp_sent = False
-        whatsapp_error = ""
-        if participant_phone:
-            if not _whatsapp_configured():
-                whatsapp_error = "WhatsApp is not configured on this server."
-            elif _send_receipt_whatsapp(
-                participant_phone, receipt_data, receipt_id, shareable_url
-            ):
-                whatsapp_sent = True
-            else:
-                whatsapp_error = "Could not deliver WhatsApp message. Share the ticket link instead."
-
-        participant_email = request.participant_email.strip()
-        email_sent = False
-        email_error = ""
-        if participant_email:
-            if not _agentmail_client:
-                email_error = "Email service is not configured on this server."
-            elif _send_receipt_email(
-                to_email=participant_email,
-                data=receipt_data,
-                receipt_id=receipt_id,
-                view_url=shareable_url,
-                download_url=download_url,
-            ):
-                email_sent = True
-            else:
-                email_error = "Could not deliver email. Share the ticket link instead."
-
-        logger.info(f"Receipt issued for {payer} – {request.event_name}")
-
-        response_data = {
-            "receipt_id": receipt_id,
-            "token": token,
-            "url": shareable_url,
-            "download_url": download_url,
-            "payer_name": payer,
-            "event_name": receipt_data["e"],
-            "amount": _receipt_amount_display(receipt_data),
-            "whatsapp_sent": whatsapp_sent,
-            "whatsapp_error": whatsapp_error,
-            "email_sent": email_sent,
-            "email_error": email_error,
-            "request_id": str(uuid_mod.uuid4()),
-        }
-
-        if request.idempotency_key:
-            _store_idempotency(f"receipt:{request.idempotency_key}", response_data)
-
-        if request.callback_url:
-            _fire_webhook(request.callback_url, {
-                "event": "receipt.created",
-                "data": response_data,
-            })
-
-        return JSONResponse(response_data, headers=rate_headers)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error generating receipt: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate receipt: {e}")
-
-
-@app.get("/receipt/{token}", tags=["Receipts"], include_in_schema=False)
-async def view_receipt(token: str, req: Request):
-    """Public payment receipt viewer with event details and optional Google Maps embed."""
-    data = _resolve_receipt(token)
-
-    base_url = str(req.base_url).rstrip("/")
-    page_url = f"{base_url}/receipt/{token}"
-    download_url = f"{page_url}/download"
-
-    venue_html = ""
-    if data.get("v"):
-        venue_html = f'<div class="event-venue">{_escape(data["v"])}</div>'
-    address_html = ""
-    if data.get("a"):
-        address_html = f'<div class="event-address">{_escape(data["a"])}</div>'
-
-    description_html = ""
-    if data.get("desc"):
-        description_html = f'<div class="description">{_escape(data["desc"])}</div>'
-
-    maps_html = ""
-    map_preview = _map_preview_from_receipt(data)
-    embed_url = map_preview.get("embed_url", "")
-    static_image_url = map_preview.get("static_image_url", "")
-    maps_open = map_preview.get("open_url") or _maps_open_url(data)
-    if embed_url or static_image_url or maps_open:
-        iframe_html = ""
-        if embed_url:
-            iframe_html = (
-                f'<iframe class="map-frame" loading="lazy" referrerpolicy="no-referrer-when-downgrade" '
-                f'src="{_escape(embed_url)}" allowfullscreen title="Event location map"></iframe>'
-            )
-        elif static_image_url:
-            iframe_html = (
-                f'<a href="{_escape(maps_open)}" target="_blank" rel="noopener noreferrer">'
-                f'<img class="map-static" src="{_escape(static_image_url)}" alt="Event location map" />'
-                f'</a>'
-            )
-        maps_html = (
-            f'<div class="map-wrap">'
-            f'<h3>Location</h3>'
-            f'{iframe_html}'
-            f'<div style="text-align:center;">'
-            f'<a class="map-link" href="{_escape(maps_open)}" target="_blank" rel="noopener noreferrer">Open in Google Maps</a>'
-            f'</div></div>'
-        )
-
-    html = RECEIPT_VIEWER_HTML.format(
-        payer_name=_escape(data["n"]),
-        amount_display=_escape(_receipt_amount_display(data)),
-        payment_meta=_escape(_receipt_payment_meta(data)),
-        event_name=_escape(data["e"]),
-        event_datetime=_escape(_format_event_datetime(data)),
-        transaction_id=_escape(data["tx"]),
-        receipt_id=_escape(_receipt_id(data)),
-        page_url=page_url,
-        download_url=download_url,
-        qr_data_uri=_generate_qr_data_uri(page_url),
-        venue_html=venue_html,
-        address_html=address_html,
-        description_html=description_html,
-        maps_html=maps_html,
-    )
-    return HTMLResponse(content=html)
-
-
-@app.get("/receipt/{token}/download", tags=["Receipts"])
-async def download_receipt(token: str, req: Request):
-    """Download a payment acknowledgement receipt as PDF."""
-    data = _resolve_receipt(token)
-    base_url = str(req.base_url).rstrip("/")
-    page_url = f"{base_url}/receipt/{token}"
-    pdf_bytes = _build_receipt_pdf(data, page_url=page_url)
-    safe_name = data["n"].replace(" ", "_")
-
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'attachment; filename="Entry_Ticket_{safe_name}.pdf"',
-            "Content-Length": str(len(pdf_bytes)),
-        },
-    )
-
-
-@app.get("/receipt/{token}/verify", tags=["Receipts"])
-async def verify_receipt(token: str):
-    """Verify a payment receipt token and return decoded receipt data if valid."""
-    data = _decode_cert(token)
-    if data is None or data.get("k") != "r":
-        return JSONResponse({"valid": False, "message": "Invalid or tampered receipt"}, status_code=400)
-    return {
-        "valid": True,
-        "receipt_id": _receipt_id(data),
-        "payer_name": data["n"],
-        "event_name": data["e"],
-        "event_date": data.get("ed", ""),
-        "event_time": data.get("et", ""),
-        "venue_name": data.get("v", ""),
-        "address": data.get("a", ""),
-        "amount": _receipt_amount_display(data),
-        "payment_date": data.get("pd", ""),
-        "transaction_id": data.get("tx", ""),
-        "payment_method": data.get("pm", ""),
-    }
 
 
 def _certificate_verify_public(data: dict) -> dict:
@@ -2346,12 +1174,12 @@ async def batch_verify_certificates(request: BatchVerifyRequest):
 # ---------------------------------------------------------------------------
 # Agent / LLM discovery
 # ---------------------------------------------------------------------------
-LLMS_TXT = """# IntelliForge Certificate API
+LLMS_TXT = """# PDF Cert Generator API
 
-> API-first verifiable credentials. Generate tamper-proof certificates with shareable URLs.
+> API-first PDF certificate generation. Create tamper-proof certificates with shareable URLs and PDF download.
 
 ## Base URL
-https://certs.intelliforge.tech
+https://your-deployment.example.com
 
 ## Authentication
 - Certificate creation: `X-API-Key: <key>` header
@@ -2369,7 +1197,7 @@ X-API-Key: <key>
   "participant_name": "Jane Doe",
   "course_name": "AI Product Development Fundamentals",
   "completion_date": "2026-04-15",
-  "instructor_name": "IntelliForge AI Team",
+  "instructor_name": "Certificate Team",
   "participant_email": "jane@example.com",
   "callback_url": "https://your-server.com/webhook",
   "idempotency_key": "unique-request-id"
@@ -2438,9 +1266,9 @@ async def ai_plugin():
     """OpenAI-compatible plugin manifest for agent discovery."""
     return JSONResponse({
         "schema_version": "v1",
-        "name_for_human": "IntelliForge Certificates",
-        "name_for_model": "intelliforge_certificates",
-        "description_for_human": "Generate and verify tamper-proof course and internship (VTU-ready) certificates with shareable URLs.",
+        "name_for_human": "PDF Cert Generator",
+        "name_for_model": "pdf_cert_generator",
+        "description_for_human": "Generate and verify tamper-proof course and VTU internship certificates with shareable URLs.",
         "description_for_model": (
             "API for generating HMAC-signed verifiable certificates (participation and internship with USN, hours, mentor). "
             "Use POST /api/certificate to create, GET /certificate/{token}/verify to verify, "
@@ -2448,10 +1276,10 @@ async def ai_plugin():
             "Supports idempotency_key, callback_url webhooks, and email delivery."
         ),
         "auth": {"type": "service_http", "authorization_type": "bearer", "verification_tokens": {}},
-        "api": {"type": "openapi", "url": "https://certs.intelliforge.tech/openapi.json"},
-        "logo_url": "https://www.intelliforge.tech/favicon.ico",
-        "contact_email": "support@intelliforge.tech",
-        "legal_info_url": "https://www.intelliforge.tech/",
+        "api": {"type": "openapi", "url": "/openapi.json"},
+        "logo_url": "/favicon.svg",
+        "contact_email": "support@example.com",
+        "legal_info_url": "/",
     })
 
 
@@ -2503,7 +1331,7 @@ class BulkCertificateEntry(BaseModel):
     participant_name: str
     course_name: str
     completion_date: str
-    instructor_name: str = "IntelliForge AI Team"
+    instructor_name: str = "Certificate Team"
     participant_email: str = ""
     certificate_kind: Literal["participation", "internship"] = "participation"
     usn: str = ""

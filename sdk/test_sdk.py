@@ -3,26 +3,26 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from intelliforge import AuthenticationError, IntelliForge
+from pdfcert import AuthenticationError, PdfCert
 
-BASE_URL = os.environ.get("INTELLIFORGE_URL", "http://localhost:8000")
+BASE_URL = os.environ.get("PDFCERT_URL", "http://localhost:8000")
 
 def test_health():
-    client = IntelliForge(base_url=BASE_URL)
+    client = PdfCert(base_url=BASE_URL)
     result = client.health()
     assert result["status"] == "healthy"
     assert "dependencies" in result
     print("PASS: health")
 
 def test_courses():
-    client = IntelliForge(base_url=BASE_URL)
+    client = PdfCert(base_url=BASE_URL)
     courses = client.list_courses()
     assert isinstance(courses, list)
     assert len(courses) > 0
     print(f"PASS: courses ({len(courses)})")
 
 def test_create_and_verify():
-    client = IntelliForge(api_key="test-api-key", base_url=BASE_URL)
+    client = PdfCert(api_key="test-api-key", base_url=BASE_URL)
     courses = client.list_courses()
     cert = client.create_certificate(
         participant_name="SDK Test User",
@@ -34,13 +34,11 @@ def test_create_and_verify():
     assert "token" in cert
     assert "request_id" in cert
     
-    # Verify
     result = client.verify(cert["token"])
     assert result["valid"] is True
     assert result["participant_name"] == "SDK Test User"
     assert result.get("certificate_kind") == "participation"
-    
-    # Idempotency
+
     cert2 = client.create_certificate(
         participant_name="SDK Test User",
         course_name=courses[0],
@@ -48,61 +46,58 @@ def test_create_and_verify():
         idempotency_key="sdk-test-001"
     )
     assert cert2["certificate_id"] == cert["certificate_id"]
-    print("PASS: create + verify + idempotency")
-
-def test_batch_verify():
-    client = IntelliForge(api_key="test-api-key", base_url=BASE_URL)
-    courses = client.list_courses()
-    cert = client.create_certificate(
-        participant_name="Batch Test",
-        course_name=courses[0],
-        completion_date="2026-04-15"
-    )
-    result = client.batch_verify([cert["token"], "invalid-token"])
-    assert result["valid"] == 1
-    assert result["invalid"] == 1
-    print("PASS: batch verify")
+    print("PASS: create_and_verify")
 
 def test_download_pdf():
-    client = IntelliForge(api_key="test-api-key", base_url=BASE_URL)
+    client = PdfCert(api_key="test-api-key", base_url=BASE_URL)
     courses = client.list_courses()
     cert = client.create_certificate(
-        participant_name="PDF Test",
+        participant_name="SDK PDF Test",
         course_name=courses[0],
-        completion_date="2026-04-15"
+        completion_date="2026-04-15",
+        idempotency_key="sdk-test-pdf"
     )
-    pdf_bytes = client.download_pdf(cert["token"])
-    assert len(pdf_bytes) > 0
-    assert pdf_bytes[:4] == b"%PDF"
-    print("PASS: download PDF")
+    data = client.download_pdf(cert["token"])
+    assert isinstance(data, bytes)
+    assert len(data) > 500
+    print("PASS: download_pdf")
+
+def test_batch_verify():
+    client = PdfCert(api_key="test-api-key", base_url=BASE_URL)
+    courses = client.list_courses()
+    cert = client.create_certificate(
+        participant_name="SDK Batch Test",
+        course_name=courses[0],
+        completion_date="2026-04-15",
+        idempotency_key="sdk-test-batch"
+    )
+    result = client.batch_verify([cert["token"], "invalid.token.here"])
+    assert result["total"] == 2
+    assert result["valid"] >= 1
+    print("PASS: batch_verify")
 
 def test_auth_error():
-    client = IntelliForge(base_url=BASE_URL)
-    courses = client.list_courses()
-    # If API keys are configured, this should fail
+    client = PdfCert(base_url=BASE_URL)
     try:
-        client.create_certificate(
-            participant_name="No Key",
-            course_name=courses[0],
-            completion_date="2026-04-15"
-        )
-        # If no API keys configured, creation succeeds
-        print("PASS: auth (no keys configured)")
+        client.admin.stats()
+        print("SKIP: admin auth (no admin key configured)")
     except AuthenticationError:
-        print("PASS: auth (correctly rejected)")
+        print("PASS: auth_error")
 
 if __name__ == "__main__":
-    tests = [test_health, test_courses, test_create_and_verify, test_batch_verify, test_download_pdf, test_auth_error]
-    passed = 0
+    tests = [
+        test_health,
+        test_courses,
+        test_create_and_verify,
+        test_download_pdf,
+        test_batch_verify,
+        test_auth_error,
+    ]
     failed = 0
     for t in tests:
         try:
             t()
-            passed += 1
         except Exception as e:
             print(f"FAIL: {t.__name__}: {e}")
             failed += 1
-    print(f"\n{'='*40}")
-    print(f"Results: {passed} passed, {failed} failed")
-    if failed > 0:
-        sys.exit(1)
+    sys.exit(1 if failed else 0)

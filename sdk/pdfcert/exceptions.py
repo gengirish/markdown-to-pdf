@@ -1,8 +1,8 @@
-"""Exceptions raised by the IntelliForge SDK."""
+"""Exceptions raised by the PDF Cert Generator SDK."""
 
 
-class IntelliForgeError(Exception):
-    """Base exception for all IntelliForge API errors."""
+class PdfCertError(Exception):
+    """Base exception for all PDF Cert Generator API errors."""
 
     def __init__(
         self,
@@ -16,13 +16,13 @@ class IntelliForgeError(Exception):
         self.response_body = response_body
 
 
-class AuthenticationError(IntelliForgeError):
+class AuthenticationError(PdfCertError):
     """Raised when the API rejects credentials (401 / 403)."""
 
 
-class RateLimitError(IntelliForgeError):
+class RateLimitError(PdfCertError):
     """Raised when the API rate limit is exceeded (429)."""
 
 
-class ValidationError(IntelliForgeError):
+class ValidationError(PdfCertError):
     """Raised when the request payload or parameters are invalid (400 / 422)."""

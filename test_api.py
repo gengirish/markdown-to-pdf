@@ -1,5 +1,5 @@
 """
-Comprehensive test suite for the IntelliForge Certificate & PDF API.
+Comprehensive test suite for the PDF Cert Generator API.
 Run with: python test_api.py
 Requires: pip install requests
 """
@@ -62,7 +62,7 @@ def _create_cert(**overrides) -> requests.Response:
         "participant_name": "Test User",
         "course_name": "AI Code Reviewer Course",
         "completion_date": "2026-04-15",
-        "instructor_name": "IntelliForge AI Team",
+        "instructor_name": "Certificate Team",
         **overrides,
     }
     return requests.post(f"{BASE_URL}/api/certificate", json=body)
@@ -75,7 +75,7 @@ def test_certificate_creation():
     record("Response has token", bool(data.get("token")))
     record("Response has url", bool(data.get("url")))
     record("Response has download_url", bool(data.get("download_url")))
-    record("Response has certificate_id starting with IF-", data.get("certificate_id", "").startswith("IF-"))
+    record("Response has certificate_id starting with CERT-", data.get("certificate_id", "").startswith("CERT-"))
     record("Participant name echoed back", data.get("participant_name") == "Test User")
     return data
 
@@ -196,7 +196,7 @@ def test_rate_limiting():
 
 def run_all():
     print("=" * 60)
-    print("  IntelliForge Certificate & PDF API — Test Suite")
+    print("  PDF Cert Generator API — Test Suite")
     print("=" * 60)
 
     print("\n[Core Endpoints]")
