@@ -58,8 +58,19 @@ if DB_AVAILABLE:
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+
+def _sanitize_env(value: str) -> str:
+    """Strip whitespace and accidental literal \\r\\n suffixes from env copy-paste."""
+    if not value:
+        return ""
+    v = value.strip()
+    while v.endswith("\\r\\n"):
+        v = v[:-4].rstrip()
+    return v
+
+
 IS_PROD = os.environ.get("VERCEL_ENV") == "production" or os.environ.get("ENV") == "production"
-CERT_SECRET = os.environ.get("CERT_SECRET_KEY", "").strip()
+CERT_SECRET = _sanitize_env(os.environ.get("CERT_SECRET_KEY", ""))
 if not CERT_SECRET:
     if IS_PROD:
         raise RuntimeError("CERT_SECRET_KEY environment variable is required in production")
@@ -67,22 +78,32 @@ if not CERT_SECRET:
     logger.warning("CERT_SECRET_KEY not set — using insecure dev default. Set it before deploying.")
 
 CERT_API_KEYS: set[str] = set()
-_raw_keys = os.environ.get("CERT_API_KEYS", "")
+_raw_keys = _sanitize_env(os.environ.get("CERT_API_KEYS", ""))
 if _raw_keys:
-    CERT_API_KEYS = {k.strip() for k in _raw_keys.split(",") if k.strip()}
+    CERT_API_KEYS = {_sanitize_env(k) for k in _raw_keys.split(",") if _sanitize_env(k)}
 
-ADMIN_KEY = os.environ.get("ADMIN_KEY", "").strip()
+ADMIN_KEY = _sanitize_env(os.environ.get("ADMIN_KEY", ""))
 if not ADMIN_KEY and not IS_PROD:
     ADMIN_KEY = "admin-dev-key"
 
-AGENTMAIL_API_KEY = os.environ.get("AGENTMAIL_API_KEY", "").strip()
-AGENTMAIL_INBOX_ID = os.environ.get("AGENTMAIL_INBOX_ID", "support@example.com").strip()
+AGENTMAIL_API_KEY = _sanitize_env(os.environ.get("AGENTMAIL_API_KEY", ""))
+AGENTMAIL_INBOX_ID = _sanitize_env(
+    os.environ.get("AGENTMAIL_INBOX_ID", "support@intelliforge.tech")
+) or "support@intelliforge.tech"
 _agentmail_client = None
+_agentmail_ready = False
 if AGENTMAIL_API_KEY:
     try:
         from agentmail import AgentMail as AgentMailClient
+        from agentmail.core.api_error import ApiError as AgentMailApiError
+
         _agentmail_client = AgentMailClient(api_key=AGENTMAIL_API_KEY)
-        logger.info(f"AgentMail configured with inbox {AGENTMAIL_INBOX_ID}")
+        try:
+            _agentmail_client.inboxes.list(limit=1)
+            _agentmail_ready = True
+            logger.info(f"AgentMail ready (inbox {AGENTMAIL_INBOX_ID})")
+        except AgentMailApiError as e:
+            logger.warning(f"AgentMail auth/check failed: {e.status_code} {e.body}")
     except Exception as e:
         logger.warning(f"AgentMail initialization failed: {e}")
 
@@ -437,7 +458,7 @@ async def health_check():
         "version": "2.0.0",
         "dependencies": {
             "database": "connected" if DB_AVAILABLE else "not_configured",
-            "email": "configured" if _agentmail_client else "not_configured",
+            "email": "ready" if _agentmail_ready else ("configured" if _agentmail_client else "not_configured"),
         },
     }
 
@@ -594,6 +615,93 @@ CERT_EMAIL_HTML = """
 """
 
 
+def _agentmail_error_message(exc: Exception) -> str:
+    """Turn AgentMail failures into a short UI-safe message."""
+    try:
+        from agentmail.core.api_error import ApiError as AgentMailApiError
+
+        if isinstance(exc, AgentMailApiError):
+            body = exc.body
+            if isinstance(body, dict):
+                msg = body.get("message") or body.get("name")
+                if msg:
+                    return str(msg)
+            if exc.status_code == 403:
+                return (
+                    "AgentMail rejected the request (403). Check AGENTMAIL_API_KEY on the server — "
+                    "remove any trailing \\r\\n from the value in Vercel env settings."
+                )
+            if exc.status_code == 404:
+                return (
+                    f"AgentMail inbox not found ({AGENTMAIL_INBOX_ID!r}). "
+                    "Set AGENTMAIL_INBOX_ID to your inbox id from the AgentMail console."
+                )
+    except Exception:
+        pass
+    if isinstance(exc, KeyError):
+        return "Email template error — contact support@intelliforge.tech."
+    text = str(exc).strip()
+    return text[:240] if text else "Could not deliver email."
+
+
+def _resolve_agentmail_inbox_id() -> str:
+    """Resolve inbox id; AgentMail may use the email address as inbox_id."""
+    if not _agentmail_client:
+        return ""
+    configured = AGENTMAIL_INBOX_ID
+    try:
+        from agentmail.core.api_error import ApiError as AgentMailApiError
+
+        page = _agentmail_client.inboxes.list(limit=50)
+        inboxes = page.inboxes or []
+        if not inboxes:
+            return configured
+        by_email = {ib.email.strip().lower(): ib.inbox_id for ib in inboxes if getattr(ib, "email", None)}
+        by_id = {ib.inbox_id: ib.inbox_id for ib in inboxes}
+        key = configured.strip().lower()
+        if key in by_email:
+            return by_email[key]
+        if configured in by_id:
+            return configured
+        if len(inboxes) == 1:
+            return inboxes[0].inbox_id
+    except AgentMailApiError:
+        pass
+    except Exception as e:
+        logger.warning(f"AgentMail inbox lookup failed: {e}")
+    return configured
+
+
+def _agentmail_deliver(
+    *, to_email: str, subject: str, text: str, html: str, link_hint: str = "certificate"
+) -> tuple[bool, str]:
+    if not _agentmail_client:
+        return False, "Email service is not configured on this server."
+    recipient = to_email.strip()
+    if not recipient:
+        return False, "Recipient email is required."
+    inbox_id = _resolve_agentmail_inbox_id()
+    if not inbox_id:
+        return False, "AgentMail inbox is not configured. Set AGENTMAIL_INBOX_ID."
+    fallback = f"Could not deliver email. Share the {link_hint} link instead."
+    try:
+        _agentmail_client.inboxes.messages.send(
+            inbox_id,
+            to=recipient,
+            subject=subject,
+            text=text,
+            html=html,
+        )
+        logger.info(f"AgentMail sent to {recipient} from inbox {inbox_id}")
+        return True, ""
+    except Exception as e:
+        err = _agentmail_error_message(e)
+        logger.warning(f"AgentMail send to {recipient} failed: {e}")
+        if err and "Could not deliver" not in err:
+            return False, f"{err} Share the {link_hint} link instead."
+        return False, fallback
+
+
 def _send_certificate_email(
     to_email: str,
     participant_name: str,
@@ -603,41 +711,32 @@ def _send_certificate_email(
     certificate_id: str,
     view_url: str,
     download_url: str,
-) -> bool:
-    """Send certificate notification email via AgentMail. Returns True on success."""
-    if not _agentmail_client or not to_email:
-        return False
-    try:
-        html = CERT_EMAIL_HTML.format(
-            participant_name=participant_name,
-            course_name=course_name,
-            completion_date=completion_date,
-            instructor_name=instructor_name,
-            certificate_id=certificate_id,
-            view_url=view_url,
-            download_url=download_url,
-        )
-        _agentmail_client.inboxes.messages.send(
-            AGENTMAIL_INBOX_ID,
-            to=to_email,
-            subject=f"Your Certificate – {course_name}",
-            text=(
-                f"Congratulations {participant_name}!\n\n"
-                f"You have been awarded a Certificate of Participation for completing "
-                f"{course_name} at PDF Cert Generator.\n\n"
-                f"Certificate ID: {certificate_id}\n"
-                f"View your certificate: {view_url}\n"
-                f"Download PDF: {download_url}\n\n"
-                f"Share this achievement on LinkedIn or X!\n\n"
-                f"– PDF Cert Generator Team"
-            ),
-            html=html,
-        )
-        logger.info(f"Certificate email sent to {to_email}")
-        return True
-    except Exception as e:
-        logger.warning(f"Failed to send certificate email to {to_email}: {e}")
-        return False
+) -> tuple[bool, str]:
+    """Send certificate notification email via AgentMail."""
+    html = CERT_EMAIL_HTML.format(
+        participant_name=participant_name,
+        course_name=course_name,
+        completion_date=completion_date,
+        instructor_name=instructor_name,
+        certificate_id=certificate_id,
+        view_url=view_url,
+        download_url=download_url,
+    )
+    return _agentmail_deliver(
+        to_email=to_email,
+        subject=f"Your Certificate – {course_name}",
+        text=(
+            f"Congratulations {participant_name}!\n\n"
+            f"You have been awarded a Certificate of Participation for completing "
+            f"{course_name} at PDF Cert Generator.\n\n"
+            f"Certificate ID: {certificate_id}\n"
+            f"View your certificate: {view_url}\n"
+            f"Download PDF: {download_url}\n\n"
+            f"Share this achievement on LinkedIn or X!\n\n"
+            f"– PDF Cert Generator Team"
+        ),
+        html=html,
+    )
 
 
 def _send_internship_certificate_email(
@@ -653,45 +752,36 @@ def _send_internship_certificate_email(
     certificate_id: str,
     view_url: str,
     download_url: str,
-) -> bool:
+) -> tuple[bool, str]:
     """Send VTU-style internship certificate email via AgentMail."""
-    if not _agentmail_client or not to_email:
-        return False
-    try:
-        html = CERT_EMAIL_INTERNSHIP_HTML.format(
-            participant_name=participant_name,
-            course_name=course_name,
-            completion_date=completion_date,
-            instructor_name=instructor_name,
-            mentor_name=mentor_name,
-            usn=usn,
-            duration_text=duration_text,
-            hours_text=hours_text,
-            certificate_id=certificate_id,
-            view_url=view_url,
-            download_url=download_url,
-        )
-        _agentmail_client.inboxes.messages.send(
-            AGENTMAIL_INBOX_ID,
-            to=to_email,
-            subject=f"Your internship certificate – {course_name}",
-            text=(
-                f"Congratulations {participant_name} (USN {usn})!\n\n"
-                f"Your industry internship completion certificate for {course_name} is ready.\n"
-                f"Duration: {duration_text} · Contact hours: {hours_text}\n"
-                f"Mentor: {mentor_name} · Program lead: {instructor_name}\n\n"
-                f"Certificate ID: {certificate_id}\n"
-                f"View: {view_url}\n"
-                f"Download PDF: {download_url}\n\n"
-                f"– PDF Cert Generator"
-            ),
-            html=html,
-        )
-        logger.info(f"Internship certificate email sent to {to_email}")
-        return True
-    except Exception as e:
-        logger.warning(f"Failed to send internship certificate email to {to_email}: {e}")
-        return False
+    html = CERT_EMAIL_INTERNSHIP_HTML.format(
+        participant_name=participant_name,
+        course_name=course_name,
+        completion_date=completion_date,
+        instructor_name=instructor_name,
+        mentor_name=mentor_name,
+        usn=usn,
+        duration_text=duration_text,
+        hours_text=hours_text,
+        certificate_id=certificate_id,
+        view_url=view_url,
+        download_url=download_url,
+    )
+    return _agentmail_deliver(
+        to_email=to_email,
+        subject=f"Your internship certificate – {course_name}",
+        text=(
+            f"Congratulations {participant_name} (USN {usn})!\n\n"
+            f"Your industry internship completion certificate for {course_name} is ready.\n"
+            f"Duration: {duration_text} · Contact hours: {hours_text}\n"
+            f"Mentor: {mentor_name} · Program lead: {instructor_name}\n\n"
+            f"Certificate ID: {certificate_id}\n"
+            f"View: {view_url}\n"
+            f"Download PDF: {download_url}\n\n"
+            f"– PDF Cert Generator"
+        ),
+        html=html,
+    )
 
 
 @app.post("/api/certificate", tags=["Certificates"])
@@ -785,10 +875,8 @@ async def generate_certificate(request: CertificateRequest, req: Request):
         email_sent = False
         email_error = ""
         if participant_email:
-            if not _agentmail_client:
-                email_error = "Email service is not configured on this server."
-            elif request.certificate_kind == "internship":
-                if _send_internship_certificate_email(
+            if request.certificate_kind == "internship":
+                email_sent, email_error = _send_internship_certificate_email(
                     to_email=participant_email,
                     participant_name=name,
                     course_name=request.course_name,
@@ -801,23 +889,18 @@ async def generate_certificate(request: CertificateRequest, req: Request):
                     certificate_id=cert_id,
                     view_url=shareable_url,
                     download_url=download_url,
-                ):
-                    email_sent = True
-                else:
-                    email_error = "Could not deliver email. Share the certificate link instead."
-            elif _send_certificate_email(
-                to_email=participant_email,
-                participant_name=name,
-                course_name=request.course_name,
-                completion_date=request.completion_date,
-                instructor_name=lead,
-                certificate_id=cert_id,
-                view_url=shareable_url,
-                download_url=download_url,
-            ):
-                email_sent = True
+                )
             else:
-                email_error = "Could not deliver email. Share the certificate link instead."
+                email_sent, email_error = _send_certificate_email(
+                    to_email=participant_email,
+                    participant_name=name,
+                    course_name=request.course_name,
+                    completion_date=request.completion_date,
+                    instructor_name=lead,
+                    certificate_id=cert_id,
+                    view_url=shareable_url,
+                    download_url=download_url,
+                )
 
         logger.info(f"Certificate issued for {name} – {request.course_name}")
 
@@ -1426,9 +1509,10 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
             download_url = f"{shareable_url}/download"
 
             email_sent = False
+            email_error = ""
             if p_email:
                 if entry.certificate_kind == "internship":
-                    email_sent = _send_internship_certificate_email(
+                    email_sent, email_error = _send_internship_certificate_email(
                         to_email=p_email,
                         participant_name=name,
                         course_name=entry.course_name,
@@ -1443,7 +1527,7 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
                         download_url=download_url,
                     )
                 else:
-                    email_sent = _send_certificate_email(
+                    email_sent, email_error = _send_certificate_email(
                         to_email=p_email,
                         participant_name=name,
                         course_name=entry.course_name,
@@ -1464,6 +1548,7 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
                 "url": shareable_url,
                 "download_url": download_url,
                 "email_sent": email_sent,
+                "email_error": email_error,
             }
             if entry.certificate_kind == "internship":
                 row["usn"] = entry.usn.strip()
