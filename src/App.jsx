@@ -104,6 +104,15 @@ function useBranding(getApiUrl) {
   return branding
 }
 
+function normSignatory(name) {
+  return (name || '').trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+function sameSignatory(a, b) {
+  const key = normSignatory(a)
+  return Boolean(key) && key === normSignatory(b)
+}
+
 function PreviewQrBlock({ getApiUrl, url, title, subtitle }) {
   const [qrDataUri, setQrDataUri] = useState('')
 
@@ -678,6 +687,9 @@ function App() {
   const [certError, setCertError] = useState(null)
   const [certResult, setCertResult] = useState(null)
 
+  const previewInstructorName = certForm.instructor_name || 'Certificate Team'
+  const previewInstructorIsFounder = sameSignatory(previewInstructorName, branding.founder_name)
+
   const generateCertificate = async (e) => {
     e.preventDefault()
     setIsGenerating(true)
@@ -1131,40 +1143,56 @@ function App() {
                       <span className="cert-meta-value">{certForm.completion_date || '\u2014'}</span>
                       <span className="cert-meta-label">Date</span>
                     </div>
-                    <div className="cert-meta-item cert-meta-bordered">
-                      <span className="cert-meta-value">{certForm.instructor_name || 'Certificate Team'}</span>
-                      <span className="cert-meta-label">Instructor</span>
-                    </div>
+                    {!previewInstructorIsFounder && (
+                      <div className="cert-meta-item cert-meta-bordered">
+                        <span className="cert-meta-value">{previewInstructorName}</span>
+                        <span className="cert-meta-label">Instructor</span>
+                      </div>
+                    )}
                     <div className="cert-meta-item">
                       <span className="cert-meta-value cert-meta-id">CERT-XXXXXXXXXXXX</span>
                       <span className="cert-meta-label">Certificate ID</span>
                     </div>
                   </div>
                   <div className="cert-signatures">
-                    <div className="cert-sig-block">
-                      {branding.founder_signature_data_uri ? (
-                        <img
-                          src={branding.founder_signature_data_uri}
-                          alt={`Signature of ${branding.founder_name}`}
-                          className="cert-sig-image"
-                        />
-                      ) : (
-                        <span className="cert-sig-hand">{branding.founder_name}</span>
-                      )}
-                      <span className="cert-sig-line" />
-                      <span className="cert-sig-name">{branding.founder_name}</span>
-                      <span className="cert-sig-role">{branding.founder_title}</span>
-                    </div>
-                    <div className="cert-sig-block">
-                      <span className="cert-sig-hand">
-                        {certForm.instructor_name || 'Certificate Team'}
-                      </span>
-                      <span className="cert-sig-line" />
-                      <span className="cert-sig-name">
-                        {certForm.instructor_name || 'Certificate Team'}
-                      </span>
-                      <span className="cert-sig-role">Course Instructor</span>
-                    </div>
+                    {previewInstructorIsFounder ? (
+                      <div className="cert-sig-block">
+                        {branding.founder_signature_data_uri ? (
+                          <img
+                            src={branding.founder_signature_data_uri}
+                            alt={`Signature of ${branding.founder_name}`}
+                            className="cert-sig-image"
+                          />
+                        ) : (
+                          <span className="cert-sig-hand">{branding.founder_name}</span>
+                        )}
+                        <span className="cert-sig-line" />
+                        <span className="cert-sig-role">{branding.founder_title} / Course Instructor</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="cert-sig-block">
+                          {branding.founder_signature_data_uri ? (
+                            <img
+                              src={branding.founder_signature_data_uri}
+                              alt={`Signature of ${branding.founder_name}`}
+                              className="cert-sig-image"
+                            />
+                          ) : (
+                            <span className="cert-sig-hand">{branding.founder_name}</span>
+                          )}
+                          <span className="cert-sig-line" />
+                          <span className="cert-sig-name">{branding.founder_name}</span>
+                          <span className="cert-sig-role">{branding.founder_title}</span>
+                        </div>
+                        <div className="cert-sig-block">
+                          <span className="cert-sig-hand">{previewInstructorName}</span>
+                          <span className="cert-sig-line" />
+                          <span className="cert-sig-name">{previewInstructorName}</span>
+                          <span className="cert-sig-role">Course Instructor</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                   <PreviewQrBlock
                     getApiUrl={getApiUrl}

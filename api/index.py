@@ -415,7 +415,75 @@ def _unique_signatory_roles(entries: list[tuple[str, str]]) -> list[tuple[str, s
         r = (role or "").strip()
         if r and r not in roles_by_key[key]:
             roles_by_key[key].append(r)
-    return [(display[k], " · ".join(roles_by_key[k])) for k in order]
+    return [(display[k], " / ".join(roles_by_key[k])) for k in order]
+
+
+def _same_signatory(a: str, b: str) -> bool:
+    key = _norm_signatory(a)
+    return bool(key) and key == _norm_signatory(b)
+
+
+def _participation_viewer_meta_html(completion_date: str, instructor_name: str, cert_id: str) -> str:
+    items = [
+        (
+            f'<div class="meta-item"><div class="meta-val">{html_mod.escape(completion_date)}</div>'
+            f'<div class="meta-lbl">Date</div></div>'
+        ),
+    ]
+    if not _same_signatory(instructor_name, FOUNDER_NAME):
+        items.append(
+            f'<div class="meta-item"><div class="meta-val">{html_mod.escape(instructor_name)}</div>'
+            f'<div class="meta-lbl">Instructor</div></div>'
+        )
+    items.append(
+        f'<div class="meta-item"><div class="meta-val">{html_mod.escape(cert_id)}</div>'
+        f'<div class="meta-lbl">Certificate ID</div></div>'
+    )
+    return f'<div class="meta">{"".join(items)}</div>'
+
+
+def _participation_pdf_meta_block(completion_date: str, instructor_name: str, certificate_id: str) -> str:
+    if _same_signatory(instructor_name, FOUNDER_NAME):
+        return f"""
+        <table width="85%" align="center" cellspacing="0" cellpadding="0" style="border-top: 1px solid #edf2f7; border-bottom: 1px solid #edf2f7;">
+            <tr>
+                <td width="50%" align="center" style="text-align: center; padding: 12pt 8pt;">
+                    <table width="100%" cellspacing="0" cellpadding="0">
+                        <tr><td align="center" style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{html_mod.escape(completion_date)}</td></tr>
+                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">DATE</td></tr>
+                    </table>
+                </td>
+                <td width="50%" align="center" style="text-align: center; padding: 12pt 8pt; border-left: 1px solid #edf2f7;">
+                    <table width="100%" cellspacing="0" cellpadding="0">
+                        <tr><td align="center" style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{html_mod.escape(certificate_id)}</td></tr>
+                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">CERTIFICATE ID</td></tr>
+                    </table>
+                </td>
+            </tr>
+        </table>"""
+    return f"""
+        <table width="85%" align="center" cellspacing="0" cellpadding="0" style="border-top: 1px solid #edf2f7; border-bottom: 1px solid #edf2f7;">
+            <tr>
+                <td width="33%" align="center" style="text-align: center; padding: 12pt 8pt;">
+                    <table width="100%" cellspacing="0" cellpadding="0">
+                        <tr><td align="center" style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{html_mod.escape(completion_date)}</td></tr>
+                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">DATE</td></tr>
+                    </table>
+                </td>
+                <td width="34%" align="center" style="text-align: center; padding: 12pt 8pt; border-left: 1px solid #edf2f7; border-right: 1px solid #edf2f7;">
+                    <table width="100%" cellspacing="0" cellpadding="0">
+                        <tr><td align="center" style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{html_mod.escape(instructor_name)}</td></tr>
+                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">INSTRUCTOR</td></tr>
+                    </table>
+                </td>
+                <td width="33%" align="center" style="text-align: center; padding: 12pt 8pt;">
+                    <table width="100%" cellspacing="0" cellpadding="0">
+                        <tr><td align="center" style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{html_mod.escape(certificate_id)}</td></tr>
+                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">CERTIFICATE ID</td></tr>
+                    </table>
+                </td>
+            </tr>
+        </table>"""
 
 
 def _viewer_signatures_html(signatories: list[tuple[str, str]]) -> str:
@@ -667,6 +735,7 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
             completion_date=data["d"],
             instructor_name=data["i"],
             certificate_id=cert_id,
+            meta_block=_participation_pdf_meta_block(data["d"], data["i"], cert_id),
             qr_data_uri=qr_data_uri,
             signatures_block=_participation_pdf_signatures_block(
                 FOUNDER_NAME,
@@ -1153,11 +1222,7 @@ VIEWER_HTML = """<!DOCTYPE html>
             <div class="name">{participant_name}</div>
             <div class="divider"></div>
             <div class="course">{course_name}</div>
-            <div class="meta">
-                <div class="meta-item"><div class="meta-val">{completion_date}</div><div class="meta-lbl">Date</div></div>
-                <div class="meta-item"><div class="meta-val">{instructor_name}</div><div class="meta-lbl">Instructor</div></div>
-                <div class="meta-item"><div class="meta-val">{cert_id}</div><div class="meta-lbl">Certificate ID</div></div>
-            </div>
+            {meta_html}
             {signatures_html}
             <div class="actions">
                 <a class="btn-download" href="{download_url}">
@@ -1252,6 +1317,7 @@ async def view_certificate(token: str, req: Request):
             completion_date=data["d"],
             instructor_name=data["i"],
             cert_id=_cert_id(data),
+            meta_html=_participation_viewer_meta_html(data["d"], data["i"], _cert_id(data)),
             page_url=page_url,
             download_url=download_url,
             linkedin_url=linkedin_url,

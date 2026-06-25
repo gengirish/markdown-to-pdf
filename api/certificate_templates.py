@@ -90,28 +90,7 @@ CERTIFICATE_PARTICIPATION_HTML = """
             </td></tr>
         </table>
 
-        <table width="85%" align="center" cellspacing="0" cellpadding="0" style="border-top: 1px solid #edf2f7; border-bottom: 1px solid #edf2f7;">
-            <tr>
-                <td width="33%" align="center" style="text-align: center; padding: 12pt 8pt;">
-                    <table width="100%" cellspacing="0" cellpadding="0">
-                        <tr><td align="center" style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{completion_date}</td></tr>
-                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">DATE</td></tr>
-                    </table>
-                </td>
-                <td width="34%" align="center" style="text-align: center; padding: 12pt 8pt; border-left: 1px solid #edf2f7; border-right: 1px solid #edf2f7;">
-                    <table width="100%" cellspacing="0" cellpadding="0">
-                        <tr><td align="center" style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{instructor_name}</td></tr>
-                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">INSTRUCTOR</td></tr>
-                    </table>
-                </td>
-                <td width="33%" align="center" style="text-align: center; padding: 12pt 8pt;">
-                    <table width="100%" cellspacing="0" cellpadding="0">
-                        <tr><td align="center" style="text-align: center; font-size: 11pt; color: #2d3748; font-weight: bold; padding-bottom: 3pt;">{certificate_id}</td></tr>
-                        <tr><td align="center" style="text-align: center; font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">CERTIFICATE ID</td></tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
+        {meta_block}
 
         <table width="100%"><tr><td style="font-size: 8pt;">&nbsp;</td></tr></table>
 
