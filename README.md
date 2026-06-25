@@ -148,7 +148,7 @@ See [`sdk/README.md`](sdk/README.md) for full SDK documentation.
 | `AGENTMAIL_API_KEY` | No | AgentMail API key for email delivery |
 | `AGENTMAIL_INBOX_ID` | No | AgentMail inbox address |
 | `FOUNDER_NAME` | No | Signature name on certificates |
-| `FOUNDER_TITLE` | No | Signature title under the founder signature (default: `Founder of Intelliforge`) |
+| `FOUNDER_TITLE` | No | Signature title under the founder signature (default: `Founder, Intelliforge AI`) |
 | `CERT_ORG_TAGLINE` | No | Small org line on certificate header (default: `AN INTELLIFORGE AI INITIATIVE`) |
 | `CERT_BRAND_NAME` | No | Main brand on certificates and UI (default: `IntelliForge Learning`) |
 | `CERT_PARTICIPATION_TITLE` | No | Certificate type badge (default: `Certificate of Participation`) |

@@ -96,7 +96,7 @@ function useBranding(getApiUrl) {
     internship_brand_prefix: 'IntelliForge',
     internship_brand_accent: 'Forge',
     founder_name: 'Girish Hiremath',
-    founder_title: 'Founder of Intelliforge',
+    founder_title: 'Founder, Intelliforge AI',
     founder_signature_data_uri: '',
   })
 
