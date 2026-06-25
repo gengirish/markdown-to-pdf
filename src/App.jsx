@@ -92,6 +92,9 @@ function useBranding(getApiUrl) {
     participation_title: 'Certificate of Participation',
     issued_by: 'IntelliForge Learning',
     website: 'learning.intelliforge.tech',
+    internship_org: 'Intelliforge Digital Services',
+    internship_brand_prefix: 'IntelliForge',
+    internship_brand_accent: 'Forge',
     founder_name: 'Girish Hiremath',
     founder_title: 'PDF Cert Generator',
     founder_signature_data_uri: '',
@@ -116,6 +119,184 @@ function normSignatory(name) {
 function sameSignatory(a, b) {
   const key = normSignatory(a)
   return Boolean(key) && key === normSignatory(b)
+}
+
+function uniqueSignatoryRoles(entries) {
+  const order = []
+  const rolesByKey = {}
+  const display = {}
+  for (const [name, role] of entries) {
+    const n = (name || '').trim()
+    if (!n) continue
+    const key = normSignatory(n)
+    if (!rolesByKey[key]) {
+      order.push(key)
+      display[key] = n
+      rolesByKey[key] = []
+    }
+    const r = (role || '').trim()
+    if (r && !rolesByKey[key].includes(r)) rolesByKey[key].push(r)
+  }
+  return order.map((k) => [display[k], rolesByKey[k].join(' / ')])
+}
+
+const VerifiedBadge = () => (
+  <div className="cert-verified">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    Verified &amp; Authentic
+  </div>
+)
+
+function PreviewSignatureBlocks({ signatories }) {
+  const blocks = uniqueSignatoryRoles(signatories)
+  if (blocks.length === 0) return null
+  return (
+    <div className="cert-signatures">
+      {blocks.map(([name, role]) => (
+        <div className="cert-sig-block" key={`${name}-${role}`}>
+          <span className="cert-sig-hand">{name}</span>
+          <span className="cert-sig-line" />
+          <span className="cert-sig-role">{role}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function CertificatePreviewCard({
+  kind,
+  certForm,
+  branding,
+  certResult,
+  getApiUrl,
+  previewInstructorName,
+}) {
+  const previewUrl = certResult?.url || PREVIEW_CERT_URL
+  const certId = certResult?.certificate_id || 'CERT-XXXXXXXXXXXX'
+  const participantName = certForm.participant_name || 'Participant Name'
+  const courseName = certForm.course_name || (kind === 'internship' ? 'Internship programme' : 'Select a course')
+  const completionDate = certForm.completion_date || '\u2014'
+  const qrSubtitle = certResult?.url
+    ? 'QR code links to the permanent verification page.'
+    : 'Sample QR — your certificate link appears after generation.'
+
+  if (kind === 'internship') {
+    const mentorName = certForm.mentor_name || 'Industry mentor'
+    const duration = certForm.internship_duration || '\u2014'
+    const hours = certForm.internship_hours || '\u2014'
+    const usn = certForm.usn || 'XXXXXXXX'
+    const institution = certForm.institution_name?.trim()
+
+    return (
+      <div className="cert-card cert-card-internship">
+        <div className="cert-forge-bar" aria-hidden="true" />
+        <div className="cert-header cert-header-internship">
+          <span className="cert-header-badge-float">Internship</span>
+          <span className="cert-header-org cert-header-org-internship">{branding.internship_org}</span>
+          <span className="cert-header-brand-internship">
+            {branding.internship_brand_prefix}{' '}
+            <span className="cert-brand-accent">{branding.internship_brand_accent}</span>
+          </span>
+          <span className="cert-header-sub">
+            VTU internship framework &middot; Verifiable credentials &middot; {branding.website}
+          </span>
+        </div>
+        <div className="cert-body">
+          <VerifiedBadge />
+          <p className="cert-award-label">Certificate of internship completion</p>
+          <p className="cert-name">{participantName}</p>
+          <p className="cert-usn">USN <strong>{usn}</strong></p>
+          {institution ? <p className="cert-institution">{institution}</p> : null}
+          <div className="cert-gold-divider" />
+          <p className="cert-course">{courseName}</p>
+          <div className="cert-meta-row cert-meta-row-internship">
+            <div className="cert-meta-item">
+              <span className="cert-meta-value">{completionDate}</span>
+              <span className="cert-meta-label">Completion</span>
+            </div>
+            <div className="cert-meta-item">
+              <span className="cert-meta-value">{duration}</span>
+              <span className="cert-meta-label">Duration</span>
+            </div>
+            <div className="cert-meta-item">
+              <span className="cert-meta-value">{hours}</span>
+              <span className="cert-meta-label">Hours</span>
+            </div>
+            <div className="cert-meta-item">
+              <span className="cert-meta-value cert-meta-id">{certId}</span>
+              <span className="cert-meta-label">Certificate ID</span>
+            </div>
+          </div>
+          <PreviewSignatureBlocks
+            signatories={[
+              [branding.founder_name, 'Authorised signatory'],
+              [mentorName, 'Industry mentor'],
+              [previewInstructorName, 'Program lead'],
+            ]}
+          />
+          <PreviewQrBlock
+            getApiUrl={getApiUrl}
+            url={previewUrl}
+            title="Scan to verify"
+            subtitle={qrSubtitle}
+          />
+        </div>
+        <div className="cert-footer-bar">
+          Issued by {branding.issued_by} &middot; {branding.website}
+        </div>
+      </div>
+    )
+  }
+
+  const showInstructorMeta = !sameSignatory(previewInstructorName, branding.founder_name)
+
+  return (
+    <div className="cert-card">
+      <div className="cert-header">
+        <span className="cert-header-org">{branding.org_tagline}</span>
+        <span className="cert-header-brand">{branding.brand_name}</span>
+        <span className="cert-header-badge">{branding.participation_title}</span>
+      </div>
+      <div className="cert-body">
+        <VerifiedBadge />
+        <p className="cert-award-label">This certificate is awarded to</p>
+        <p className="cert-name">{participantName}</p>
+        <div className="cert-gold-divider" />
+        <p className="cert-course">{courseName}</p>
+        <div className="cert-meta-row">
+          <div className="cert-meta-item">
+            <span className="cert-meta-value">{completionDate}</span>
+            <span className="cert-meta-label">Date</span>
+          </div>
+          {showInstructorMeta && (
+            <div className="cert-meta-item cert-meta-bordered">
+              <span className="cert-meta-value">{previewInstructorName}</span>
+              <span className="cert-meta-label">Instructor</span>
+            </div>
+          )}
+          <div className="cert-meta-item">
+            <span className="cert-meta-value cert-meta-id">{certId}</span>
+            <span className="cert-meta-label">Certificate ID</span>
+          </div>
+        </div>
+        <PreviewSignatureBlocks
+          signatories={[
+            [branding.founder_name, branding.founder_title],
+            [previewInstructorName, 'Course Instructor'],
+          ]}
+        />
+        <PreviewQrBlock
+          getApiUrl={getApiUrl}
+          url={previewUrl}
+          title="Scan to Verify"
+          subtitle={qrSubtitle}
+        />
+      </div>
+      <div className="cert-footer-bar">
+        Issued by {branding.issued_by} &middot; {branding.website}
+      </div>
+    </div>
+  )
 }
 
 function PreviewQrBlock({ getApiUrl, url, title, subtitle }) {
@@ -693,7 +874,6 @@ function App() {
   const [certResult, setCertResult] = useState(null)
 
   const previewInstructorName = certForm.instructor_name || 'Certificate Team'
-  const previewInstructorIsFounder = sameSignatory(previewInstructorName, branding.founder_name)
 
   const generateCertificate = async (e) => {
     e.preventDefault()
@@ -1124,96 +1304,14 @@ function App() {
               <h2>Certificate Preview</h2>
             </div>
             <div className="cert-preview">
-              <div className="cert-card">
-                <div className="cert-header">
-                  <span className="cert-header-org">{branding.org_tagline}</span>
-                  <span className="cert-header-brand">{branding.brand_name}</span>
-                  <span className="cert-header-badge">{branding.participation_title}</span>
-                </div>
-                <div className="cert-body">
-                  <div className="cert-verified">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" width="14" height="14"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                    Verified &amp; Authentic
-                  </div>
-                  <p className="cert-award-label">This Certificate is Awarded To</p>
-                  <p className="cert-name">
-                    {certForm.participant_name || 'Participant Name'}
-                  </p>
-                  <div className="cert-gold-divider" />
-                  <p className="cert-course">
-                    {certForm.course_name || 'Select a course'}
-                  </p>
-                  <div className="cert-meta-row">
-                    <div className="cert-meta-item">
-                      <span className="cert-meta-value">{certForm.completion_date || '\u2014'}</span>
-                      <span className="cert-meta-label">Date</span>
-                    </div>
-                    {!previewInstructorIsFounder && (
-                      <div className="cert-meta-item cert-meta-bordered">
-                        <span className="cert-meta-value">{previewInstructorName}</span>
-                        <span className="cert-meta-label">Instructor</span>
-                      </div>
-                    )}
-                    <div className="cert-meta-item">
-                      <span className="cert-meta-value cert-meta-id">CERT-XXXXXXXXXXXX</span>
-                      <span className="cert-meta-label">Certificate ID</span>
-                    </div>
-                  </div>
-                  <div className="cert-signatures">
-                    {previewInstructorIsFounder ? (
-                      <div className="cert-sig-block">
-                        {branding.founder_signature_data_uri ? (
-                          <img
-                            src={branding.founder_signature_data_uri}
-                            alt={`Signature of ${branding.founder_name}`}
-                            className="cert-sig-image"
-                          />
-                        ) : (
-                          <span className="cert-sig-hand">{branding.founder_name}</span>
-                        )}
-                        <span className="cert-sig-line" />
-                        <span className="cert-sig-role">{branding.founder_title} / Course Instructor</span>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="cert-sig-block">
-                          {branding.founder_signature_data_uri ? (
-                            <img
-                              src={branding.founder_signature_data_uri}
-                              alt={`Signature of ${branding.founder_name}`}
-                              className="cert-sig-image"
-                            />
-                          ) : (
-                            <span className="cert-sig-hand">{branding.founder_name}</span>
-                          )}
-                          <span className="cert-sig-line" />
-                          <span className="cert-sig-name">{branding.founder_name}</span>
-                          <span className="cert-sig-role">{branding.founder_title}</span>
-                        </div>
-                        <div className="cert-sig-block">
-                          <span className="cert-sig-hand">{previewInstructorName}</span>
-                          <span className="cert-sig-line" />
-                          <span className="cert-sig-name">{previewInstructorName}</span>
-                          <span className="cert-sig-role">Course Instructor</span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  <PreviewQrBlock
-                    getApiUrl={getApiUrl}
-                    url={certResult?.url || PREVIEW_CERT_URL}
-                    title="Scan to Verify"
-                    subtitle={
-                      certResult?.url
-                        ? 'QR code links to the permanent verification page.'
-                        : 'Sample QR — your certificate link appears after generation.'
-                    }
-                  />
-                </div>
-                <div className="cert-footer-bar">
-                  Issued by {branding.issued_by} &middot; {branding.website}
-                </div>
-              </div>
+              <CertificatePreviewCard
+                kind={certForm.certificate_kind}
+                certForm={certForm}
+                branding={branding}
+                certResult={certResult}
+                getApiUrl={getApiUrl}
+                previewInstructorName={previewInstructorName}
+              />
             </div>
           </div>
         </div>

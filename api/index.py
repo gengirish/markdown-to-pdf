@@ -362,6 +362,12 @@ CERT_WEBSITE = _sanitize_env(os.environ.get("CERT_WEBSITE", "learning.intellifor
 CERT_INTERNSHIP_ORG = _sanitize_env(
     os.environ.get("CERT_INTERNSHIP_ORG", "Intelliforge Digital Services")
 ) or "Intelliforge Digital Services"
+CERT_INTERNSHIP_BRAND_PREFIX = _sanitize_env(
+    os.environ.get("CERT_INTERNSHIP_BRAND_PREFIX", "IntelliForge")
+) or "IntelliForge"
+CERT_INTERNSHIP_BRAND_ACCENT = _sanitize_env(
+    os.environ.get("CERT_INTERNSHIP_BRAND_ACCENT", "Forge")
+) or "Forge"
 _signature_cache: dict[str, str] = {}
 
 
@@ -415,6 +421,8 @@ def certificate_branding() -> dict:
         "issued_by": CERT_ISSUED_BY,
         "website": CERT_WEBSITE,
         "internship_org": CERT_INTERNSHIP_ORG,
+        "internship_brand_prefix": CERT_INTERNSHIP_BRAND_PREFIX,
+        "internship_brand_accent": CERT_INTERNSHIP_BRAND_ACCENT,
         "founder_name": FOUNDER_NAME,
         "founder_title": FOUNDER_TITLE,
         "founder_signature_data_uri": _generate_signature_data_uri(FOUNDER_NAME),
@@ -429,6 +437,17 @@ def _participation_branding_html() -> dict[str, str]:
         "brand_name": html_mod.escape(b["brand_name"]),
         "participation_title": html_mod.escape(b["participation_title"]),
         "participation_title_upper": html_mod.escape(b["participation_title"].upper()),
+        "issued_by": html_mod.escape(b["issued_by"]),
+        "website": html_mod.escape(b["website"]),
+    }
+
+
+def _internship_branding_html() -> dict[str, str]:
+    b = certificate_branding()
+    return {
+        "internship_org": html_mod.escape(b["internship_org"]),
+        "internship_brand_prefix": html_mod.escape(b["internship_brand_prefix"]),
+        "internship_brand_accent": html_mod.escape(b["internship_brand_accent"]),
         "issued_by": html_mod.escape(b["issued_by"]),
         "website": html_mod.escape(b["website"]),
     }
@@ -1347,6 +1366,7 @@ async def view_certificate(token: str, req: Request):
                 (data["m"], "Industry mentor"),
                 (data["i"], "Program lead"),
             ]),
+            **_internship_branding_html(),
         )
     else:
         cert_desc = f"I completed {data['c']} at {CERT_BRAND_NAME}!"

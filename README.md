@@ -155,6 +155,8 @@ See [`sdk/README.md`](sdk/README.md) for full SDK documentation.
 | `CERT_ISSUED_BY` | No | Footer issuer name (defaults to `CERT_BRAND_NAME`) |
 | `CERT_WEBSITE` | No | Footer website (default: `learning.intelliforge.tech`) |
 | `CERT_INTERNSHIP_ORG` | No | Internship letterhead org (default: `Intelliforge Digital Services`) |
+| `CERT_INTERNSHIP_BRAND_PREFIX` | No | Internship brand prefix (default: `IntelliForge`) |
+| `CERT_INTERNSHIP_BRAND_ACCENT` | No | Internship brand accent word (default: `Forge`) |
 
 ---
 

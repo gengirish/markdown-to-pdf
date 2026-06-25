@@ -521,6 +521,94 @@
   box-shadow: var(--shadow-lg), 0 0 40px rgba(0, 0, 0, 0.25);
 }
 
+.cert-card-internship {
+  position: relative;
+  background: #0a0a18;
+  border: 1px solid rgba(201, 162, 39, 0.35);
+  border-radius: 8px;
+  padding: 1rem 1.2rem 1.2rem 1.4rem;
+}
+
+.cert-forge-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: #d4af37;
+  border-radius: 8px 0 0 8px;
+}
+
+.cert-header-internship {
+  background: #15155e;
+  padding: 1.4rem 1.6rem 1.2rem 1.8rem;
+  text-align: left;
+  align-items: flex-start;
+  position: relative;
+}
+
+.cert-header-badge-float {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: inline-block;
+  font-size: 0.5rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #d4af37;
+  font-weight: 600;
+  border: 1px solid #d4af37;
+  padding: 0.3rem 0.65rem;
+}
+
+.cert-header-org-internship {
+  color: #e8d48b;
+  letter-spacing: 3px;
+  text-align: left;
+}
+
+.cert-header-brand-internship {
+  font-family: var(--font-heading);
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0.15rem 0 0.35rem;
+  text-align: left;
+}
+
+.cert-brand-accent {
+  color: #d4af37;
+}
+
+.cert-header-sub {
+  font-size: 0.62rem;
+  color: #a0aec0;
+  letter-spacing: 0.5px;
+  text-align: left;
+  line-height: 1.45;
+  padding-right: 4rem;
+}
+
+.cert-usn {
+  font-size: 0.82rem;
+  color: #4a5568;
+  margin: 0.2rem 0 0.1rem;
+}
+
+.cert-institution {
+  font-size: 0.72rem;
+  color: #718096;
+  margin: 0 0 0.5rem;
+}
+
+.cert-meta-row-internship {
+  gap: 0.9rem;
+}
+
+.cert-meta-row-internship .cert-meta-item {
+  min-width: 64px;
+}
+
 .cert-header {
   background: linear-gradient(135deg, #12124a 0%, #1e1e6e 50%, #2a1a5e 100%);
   padding: 1.5rem 2rem 1.3rem;

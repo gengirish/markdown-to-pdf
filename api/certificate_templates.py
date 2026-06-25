@@ -352,9 +352,9 @@ VIEWER_INTERNSHIP_HTML = """<!DOCTYPE html>
         <div class="forge-bar"></div>
         <div class="card-header">
             <div class="hdr-badge">Internship</div>
-            <div class="hdr-org">Intelliforge Digital Services</div>
-            <div class="hdr-brand">IntelliForge <span>Forge</span></div>
-            <div class="hdr-sub">VTU internship framework &middot; Verifiable credentials &middot; learning.intelliforge.tech</div>
+            <div class="hdr-org">{internship_org}</div>
+            <div class="hdr-brand">{internship_brand_prefix} <span>{internship_brand_accent}</span></div>
+            <div class="hdr-sub">VTU internship framework &middot; Verifiable credentials &middot; {website}</div>
         </div>
         <div class="card-body">
             <div class="verified">
@@ -397,8 +397,8 @@ VIEWER_INTERNSHIP_HTML = """<!DOCTYPE html>
         </div>
         <div class="card-footer">
             <p>
-                Issued by <a href="https://learning.intelliforge.tech/" target="_blank" rel="noopener">Intelliforge Digital Services</a>
-                &nbsp;&middot;&nbsp; learning.intelliforge.tech
+                Issued by <a href="https://learning.intelliforge.tech/" target="_blank" rel="noopener">{issued_by}</a>
+                &nbsp;&middot;&nbsp; {website}
             </p>
         </div>
     </div>
