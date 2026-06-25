@@ -349,7 +349,7 @@ def _generate_qr_data_uri(url: str) -> str:
 
 
 FOUNDER_NAME = os.environ.get("FOUNDER_NAME", "Girish Hiremath").strip()
-FOUNDER_TITLE = os.environ.get("FOUNDER_TITLE", "PDF Cert Generator").strip()
+FOUNDER_TITLE = os.environ.get("FOUNDER_TITLE", "Founder of Intelliforge").strip()
 CERT_ORG_TAGLINE = _sanitize_env(
     os.environ.get("CERT_ORG_TAGLINE", "AN INTELLIFORGE AI INITIATIVE")
 ) or "AN INTELLIFORGE AI INITIATIVE"
