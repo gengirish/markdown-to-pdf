@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test'
 test.describe('PDF Cert Generator', () => {
   test('generates certificate via UI and shows shareable link', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'PDF Cert Generator' })).toBeVisible()
+    await expect(page.locator('h1')).toBeVisible()
 
     await page.locator('#participant_name').fill('E2E Test User')
     await page.locator('#course_name').selectOption({ index: 1 })

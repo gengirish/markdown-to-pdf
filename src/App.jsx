@@ -87,6 +87,11 @@ const PREVIEW_CERT_URL = '/certificate/preview'
 
 function useBranding(getApiUrl) {
   const [branding, setBranding] = useState({
+    org_tagline: 'AN INTELLIFORGE AI INITIATIVE',
+    brand_name: 'IntelliForge Learning',
+    participation_title: 'Certificate of Participation',
+    issued_by: 'IntelliForge Learning',
+    website: 'learning.intelliforge.tech',
     founder_name: 'Girish Hiremath',
     founder_title: 'PDF Cert Generator',
     founder_signature_data_uri: '',
@@ -805,13 +810,13 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <div className="brand-link" aria-label="PDF Cert Generator">
+        <div className="brand-link" aria-label={branding.brand_name}>
           <div className="header-icon">
             <CertIcon size={32} />
           </div>
-          <span className="brand-wordmark">PDF Cert Generator</span>
+          <span className="brand-wordmark">{branding.brand_name}</span>
         </div>
-        <h1>PDF Cert Generator</h1>
+        <h1>{branding.brand_name}</h1>
         <p className="header-subtitle">
           {activeTab === 'admin'
             ? 'Manage courses, bulk certificates, and platform analytics'
@@ -1102,7 +1107,7 @@ function App() {
                   </a>
                   <a
                     className="cert-share-btn cert-share-twitter"
-                    href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`I completed ${certResult.course_name} — PDF Cert Generator!`)}&url=${encodeURIComponent(certResult.url)}`}
+                    href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`I completed ${certResult.course_name} — ${branding.brand_name}!`)}&url=${encodeURIComponent(certResult.url)}`}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -1121,9 +1126,9 @@ function App() {
             <div className="cert-preview">
               <div className="cert-card">
                 <div className="cert-header">
-                  <span className="cert-header-org">PDF Cert Generator</span>
-                  <span className="cert-header-brand">Certificate of Completion</span>
-                  <span className="cert-header-badge">Certificate of Participation</span>
+                  <span className="cert-header-org">{branding.org_tagline}</span>
+                  <span className="cert-header-brand">{branding.brand_name}</span>
+                  <span className="cert-header-badge">{branding.participation_title}</span>
                 </div>
                 <div className="cert-body">
                   <div className="cert-verified">
@@ -1206,7 +1211,7 @@ function App() {
                   />
                 </div>
                 <div className="cert-footer-bar">
-                  Issued by PDF Cert Generator
+                  Issued by {branding.issued_by} &middot; {branding.website}
                 </div>
               </div>
             </div>
@@ -1223,7 +1228,7 @@ function App() {
       <footer className="footer">
         <div className="footer-brand">
           <CertIcon size={22} />
-          <span className="footer-brand-name">PDF Cert Generator</span>
+          <span className="footer-brand-name">{branding.brand_name}</span>
         </div>
         <p className="footer-tagline">
           API-first PDF certificate generation

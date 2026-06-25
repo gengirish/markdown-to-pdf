@@ -350,6 +350,18 @@ def _generate_qr_data_uri(url: str) -> str:
 
 FOUNDER_NAME = os.environ.get("FOUNDER_NAME", "Girish Hiremath").strip()
 FOUNDER_TITLE = os.environ.get("FOUNDER_TITLE", "PDF Cert Generator").strip()
+CERT_ORG_TAGLINE = _sanitize_env(
+    os.environ.get("CERT_ORG_TAGLINE", "AN INTELLIFORGE AI INITIATIVE")
+) or "AN INTELLIFORGE AI INITIATIVE"
+CERT_BRAND_NAME = _sanitize_env(os.environ.get("CERT_BRAND_NAME", "IntelliForge Learning")) or "IntelliForge Learning"
+CERT_PARTICIPATION_TITLE = _sanitize_env(
+    os.environ.get("CERT_PARTICIPATION_TITLE", "Certificate of Participation")
+) or "Certificate of Participation"
+CERT_ISSUED_BY = _sanitize_env(os.environ.get("CERT_ISSUED_BY", "")) or CERT_BRAND_NAME
+CERT_WEBSITE = _sanitize_env(os.environ.get("CERT_WEBSITE", "learning.intelliforge.tech")) or "learning.intelliforge.tech"
+CERT_INTERNSHIP_ORG = _sanitize_env(
+    os.environ.get("CERT_INTERNSHIP_ORG", "Intelliforge Digital Services")
+) or "Intelliforge Digital Services"
 _signature_cache: dict[str, str] = {}
 
 
@@ -392,6 +404,34 @@ def _generate_signature_data_uri(name: str | None = None) -> str:
     data_uri = f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}"
     _signature_cache[signer] = data_uri
     return data_uri
+
+
+def certificate_branding() -> dict:
+    """Branding shown on certificates, viewer pages, and the UI (via /api/info)."""
+    return {
+        "org_tagline": CERT_ORG_TAGLINE,
+        "brand_name": CERT_BRAND_NAME,
+        "participation_title": CERT_PARTICIPATION_TITLE,
+        "issued_by": CERT_ISSUED_BY,
+        "website": CERT_WEBSITE,
+        "internship_org": CERT_INTERNSHIP_ORG,
+        "founder_name": FOUNDER_NAME,
+        "founder_title": FOUNDER_TITLE,
+        "founder_signature_data_uri": _generate_signature_data_uri(FOUNDER_NAME),
+    }
+
+
+def _participation_branding_html() -> dict[str, str]:
+    """Escaped branding fields for participation certificate HTML/PDF templates."""
+    b = certificate_branding()
+    return {
+        "org_tagline": html_mod.escape(b["org_tagline"]),
+        "brand_name": html_mod.escape(b["brand_name"]),
+        "participation_title": html_mod.escape(b["participation_title"]),
+        "participation_title_upper": html_mod.escape(b["participation_title"].upper()),
+        "issued_by": html_mod.escape(b["issued_by"]),
+        "website": html_mod.escape(b["website"]),
+    }
 
 
 def _norm_signatory(name: str) -> str:
@@ -643,11 +683,7 @@ async def get_info():
         "name": "PDF Cert Generator API",
         "version": "2.0.0",
         "description": "Generate and verify tamper-proof PDF certificates with shareable URLs",
-        "branding": {
-            "founder_name": FOUNDER_NAME,
-            "founder_title": FOUNDER_TITLE,
-            "founder_signature_data_uri": _generate_signature_data_uri(FOUNDER_NAME),
-        },
+        "branding": certificate_branding(),
         "features": [
             "HMAC-SHA256 signed certificate tokens",
             "Stateless verification (no database)",
@@ -744,6 +780,7 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
                 _generate_signature_data_uri(),
                 _generate_signature_data_uri(data["i"]),
             ),
+            **_participation_branding_html(),
         )
     pdf_buffer = BytesIO()
     pisa_status = pisa.CreatePDF(src=full_html, dest=pdf_buffer, encoding="UTF-8")
@@ -759,9 +796,9 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
 CERT_EMAIL_HTML = """
 <div style="font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;max-width:600px;margin:0 auto;background:#0f0f23;padding:24px;border-radius:16px;">
   <div style="background:linear-gradient(135deg,#12124a 0%,#1e1e6e 50%,#2a1a5e 100%);padding:28px 32px 24px;text-align:center;border-radius:12px 12px 0 0;">
-    <div style="font-size:11px;letter-spacing:4px;text-transform:uppercase;color:#d4af37;font-weight:600;">PDF Cert Generator</div>
-    <div style="font-size:24px;font-weight:700;color:#fff;margin:8px 0 12px;">PDF Cert Generator</div>
-    <div style="display:inline-block;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#d4af37;font-weight:600;border:1px solid rgba(139,125,60,0.6);padding:6px 18px;border-radius:20px;">Certificate of Participation</div>
+    <div style="font-size:11px;letter-spacing:4px;text-transform:uppercase;color:#d4af37;font-weight:600;">{org_tagline}</div>
+    <div style="font-size:24px;font-weight:700;color:#fff;margin:8px 0 12px;">{brand_name}</div>
+    <div style="display:inline-block;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#d4af37;font-weight:600;border:1px solid rgba(139,125,60,0.6);padding:6px 18px;border-radius:20px;">{participation_title}</div>
   </div>
   <div style="background:#ffffff;padding:32px;text-align:center;">
     <div style="display:inline-block;background:#f0fff4;border:1px solid #68d391;color:#276749;font-size:12px;font-weight:600;padding:5px 14px;border-radius:20px;margin-bottom:20px;">&#10003; Verified &amp; Authentic</div>
@@ -789,7 +826,7 @@ CERT_EMAIL_HTML = """
     <p style="font-size:12px;color:#a0aec0;margin:12px 0 0;">Or download the PDF directly: <a href="{download_url}" style="color:#667eea;text-decoration:none;font-weight:500;">Download PDF</a></p>
   </div>
   <div style="background:#f8fafc;padding:16px 32px;text-align:center;border-radius:0 0 12px 12px;border-top:1px solid #edf2f7;">
-    <p style="font-size:12px;color:#a0aec0;margin:0;">Issued by <a href="/" style="color:#667eea;text-decoration:none;">PDF Cert Generator</a> &middot; <a href="mailto:support@example.com" style="color:#667eea;text-decoration:none;">support@example.com</a></p>
+    <p style="font-size:12px;color:#a0aec0;margin:0;">Issued by <a href="/" style="color:#667eea;text-decoration:none;">{issued_by}</a> &middot; <a href="mailto:support@example.com" style="color:#667eea;text-decoration:none;">support@example.com</a></p>
   </div>
 </div>
 """
@@ -901,19 +938,22 @@ def _send_certificate_email(
         certificate_id=certificate_id,
         view_url=view_url,
         download_url=download_url,
+        **_participation_branding_html(),
     )
+    brand = CERT_BRAND_NAME
+    title = CERT_PARTICIPATION_TITLE
     return _agentmail_deliver(
         to_email=to_email,
         subject=f"Your Certificate – {course_name}",
         text=(
             f"Congratulations {participant_name}!\n\n"
-            f"You have been awarded a Certificate of Participation for completing "
-            f"{course_name} at PDF Cert Generator.\n\n"
+            f"You have been awarded a {title} for completing "
+            f"{course_name} at {brand}.\n\n"
             f"Certificate ID: {certificate_id}\n"
             f"View your certificate: {view_url}\n"
             f"Download PDF: {download_url}\n\n"
             f"Share this achievement on LinkedIn or X!\n\n"
-            f"– PDF Cert Generator Team"
+            f"– {brand} Team"
         ),
         html=html,
     )
@@ -1131,8 +1171,8 @@ VIEWER_HTML = """<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{participant_name} – Certificate</title>
-    <meta property="og:title" content="{participant_name} – Certificate of Participation" />
-    <meta property="og:description" content="{participant_name} successfully completed {course_name} at PDF Cert Generator." />
+    <meta property="og:title" content="{participant_name} – {participation_title}" />
+    <meta property="og:description" content="{participant_name} successfully completed {course_name} at {brand_name}." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="{page_url}" />
     <meta name="twitter:card" content="summary" />
@@ -1209,9 +1249,9 @@ VIEWER_HTML = """<!DOCTYPE html>
     <div class="bg-glow"></div>
     <div class="card">
         <div class="card-header">
-            <div class="hdr-org">PDF Cert Generator</div>
-            <div class="hdr-brand">PDF Cert Generator</div>
-            <div class="hdr-badge">Certificate of Participation</div>
+            <div class="hdr-org">{org_tagline}</div>
+            <div class="hdr-brand">{brand_name}</div>
+            <div class="hdr-badge">{participation_title}</div>
         </div>
         <div class="card-body">
             <div class="verified">
@@ -1247,7 +1287,8 @@ VIEWER_HTML = """<!DOCTYPE html>
         </div>
         <div class="card-footer">
             <p>
-                Issued by <a href="/" target="_blank" rel="noopener">PDF Cert Generator</a>
+                Issued by <a href="/" target="_blank" rel="noopener">{issued_by}</a>
+                &nbsp;&middot;&nbsp; {website}
             </p>
         </div>
     </div>
@@ -1308,9 +1349,10 @@ async def view_certificate(token: str, req: Request):
             ]),
         )
     else:
-        cert_desc = f"I completed {data['c']} at IntelliForge Learning!"
+        cert_desc = f"I completed {data['c']} at {CERT_BRAND_NAME}!"
         twitter_params = urlencode({"text": cert_desc, "url": page_url})
         twitter_url = f"https://twitter.com/intent/tweet?{twitter_params}"
+        brand_html = _participation_branding_html()
         html = VIEWER_HTML.format(
             participant_name=data["n"],
             course_name=data["c"],
@@ -1327,6 +1369,7 @@ async def view_certificate(token: str, req: Request):
                 (FOUNDER_NAME, FOUNDER_TITLE),
                 (data["i"], "Course Instructor"),
             ]),
+            **brand_html,
         )
     return HTMLResponse(content=html)
 

@@ -41,15 +41,15 @@ CERTIFICATE_PARTICIPATION_HTML = """
     <tr><td style="padding: 30pt 40pt 26pt;">
         <table width="100%" cellspacing="0" cellpadding="0">
             <tr><td align="center" style="font-size: 8pt; letter-spacing: 4pt; color: #d4af37; font-weight: bold; padding-bottom: 4pt; text-align: center;">
-                AN INTELLIFORGE AI INITIATIVE
+                {org_tagline}
             </td></tr>
             <tr><td align="center" style="font-size: 24pt; font-weight: bold; color: #ffffff; padding: 6pt 0 12pt; text-align: center;">
-                IntelliForge Learning
+                {brand_name}
             </td></tr>
             <tr><td align="center" style="text-align: center; padding: 0;">
                 <table align="center" cellspacing="0" cellpadding="0" style="border: 2px solid #d4af37;">
                 <tr><td align="center" style="padding: 6pt 30pt; font-size: 9pt; letter-spacing: 3pt; color: #d4af37; font-weight: bold; text-align: center;">
-                    CERTIFICATE OF PARTICIPATION
+                    {participation_title_upper}
                 </td></tr>
                 </table>
             </td></tr>
@@ -119,7 +119,7 @@ CERTIFICATE_PARTICIPATION_HTML = """
 
     <table width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; border-top: 1px solid #edf2f7;">
     <tr><td align="center" style="padding: 10pt 40pt; text-align: center; font-size: 7pt; color: #a0aec0;">
-        Issued by IntelliForge Learning &nbsp;&middot;&nbsp; learning.intelliforge.tech
+        Issued by {issued_by} &nbsp;&middot;&nbsp; {website}
     </td></tr>
     </table>
 
