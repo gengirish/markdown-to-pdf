@@ -115,32 +115,7 @@ CERTIFICATE_PARTICIPATION_HTML = """
 
         <table width="100%"><tr><td style="font-size: 8pt;">&nbsp;</td></tr></table>
 
-        <table width="70%" align="center" cellspacing="0" cellpadding="0">
-            <tr>
-                <td width="50%" align="center" style="text-align: center; padding: 8pt 12pt; vertical-align: bottom;">
-                    <img src="{signature_data_uri}" width="150" height="50" />
-                    <table width="100%" cellspacing="0" cellpadding="0">
-                        <tr><td align="center" style="border-top: 1px solid #c4b5fd; font-size: 8pt; color: #553c9a; font-weight: bold; padding-top: 4pt; text-align: center;">
-                            {founder_name}
-                        </td></tr>
-                        <tr><td align="center" style="font-size: 6pt; color: #a0aec0; text-align: center; letter-spacing: 1pt;">
-                            {founder_title}
-                        </td></tr>
-                    </table>
-                </td>
-                <td width="50%" align="center" style="text-align: center; padding: 8pt 12pt; vertical-align: bottom;">
-                    <img src="{instructor_signature_data_uri}" width="150" height="50" />
-                    <table width="100%" cellspacing="0" cellpadding="0">
-                        <tr><td align="center" style="border-top: 1px solid #c4b5fd; font-size: 8pt; color: #553c9a; font-weight: bold; padding-top: 4pt; text-align: center;">
-                            {instructor_name}
-                        </td></tr>
-                        <tr><td align="center" style="font-size: 6pt; color: #a0aec0; text-align: center; letter-spacing: 1pt;">
-                            COURSE INSTRUCTOR
-                        </td></tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
+        {signatures_block}
 
         <table width="100%"><tr><td style="font-size: 8pt;">&nbsp;</td></tr></table>
 
@@ -165,7 +140,7 @@ CERTIFICATE_PARTICIPATION_HTML = """
 
     <table width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; border-top: 1px solid #edf2f7;">
     <tr><td align="center" style="padding: 10pt 40pt; text-align: center; font-size: 7pt; color: #a0aec0;">
-        Issued by IntelliForge Learning &nbsp;&middot;&nbsp; learning.intelliforge.tech &nbsp;&middot;&nbsp; support@intelliforge.tech
+        Issued by IntelliForge Learning &nbsp;&middot;&nbsp; learning.intelliforge.tech
     </td></tr>
     </table>
 
@@ -291,25 +266,7 @@ CERTIFICATE_INTERNSHIP_VTU_HTML = """
             </tr>
         </table>
 
-        <table width="88%" align="center" cellspacing="0" cellpadding="0">
-            <tr>
-                <td width="33%" align="center" style="vertical-align: bottom; padding: 6pt 8pt;">
-                    <img src="{signature_data_uri}" width="130" height="44" />
-                    <table width="100%"><tr><td style="border-top: 1px solid #cbd5e0; padding-top: 3pt; font-size: 7.5pt; font-weight: bold; color: #553c9a; text-align: center;">{founder_name}</td></tr>
-                    <tr><td style="font-size: 6pt; color: #718096; text-align: center; letter-spacing: 0.5pt;">Authorised Signatory</td></tr></table>
-                </td>
-                <td width="34%" align="center" style="vertical-align: bottom; padding: 6pt 8pt;">
-                    <img src="{mentor_signature_data_uri}" width="130" height="44" />
-                    <table width="100%"><tr><td style="border-top: 1px solid #cbd5e0; padding-top: 3pt; font-size: 7.5pt; font-weight: bold; color: #553c9a; text-align: center;">{mentor_name}</td></tr>
-                    <tr><td style="font-size: 6pt; color: #718096; text-align: center;">Industry Mentor</td></tr></table>
-                </td>
-                <td width="33%" align="center" style="vertical-align: bottom; padding: 6pt 8pt;">
-                    <img src="{instructor_signature_data_uri}" width="130" height="44" />
-                    <table width="100%"><tr><td style="border-top: 1px solid #cbd5e0; padding-top: 3pt; font-size: 7.5pt; font-weight: bold; color: #553c9a; text-align: center;">{instructor_name}</td></tr>
-                    <tr><td style="font-size: 6pt; color: #718096; text-align: center;">Program Lead</td></tr></table>
-                </td>
-            </tr>
-        </table>
+        {signatures_block}
 
         <table width="100%" cellspacing="0" cellpadding="0" style="margin-top: 12pt;">
         <tr><td align="center">
@@ -330,7 +287,7 @@ CERTIFICATE_INTERNSHIP_VTU_HTML = """
 
     <table width="100%" style="background-color: #f8fafc; border-top: 1px solid #e2e8f0;">
     <tr><td align="center" style="padding: 8pt 32pt; font-size: 6.5pt; color: #718096;">
-        Intelliforge Digital Services &middot; Forge credentialing &middot; support@intelliforge.tech
+        Intelliforge Digital Services &middot; Forge credentialing &middot; learning.intelliforge.tech
     </td></tr>
     </table>
 
@@ -437,26 +394,7 @@ VIEWER_INTERNSHIP_HTML = """<!DOCTYPE html>
                 <div class="meta-item"><div class="meta-val">{hours_text}</div><div class="meta-lbl">Hours</div></div>
                 <div class="meta-item"><div class="meta-val">{cert_id}</div><div class="meta-lbl">Certificate ID</div></div>
             </div>
-            <div class="signatures">
-                <div class="sig-block">
-                    <div class="sig-hand">{founder_name}</div>
-                    <div class="sig-line"></div>
-                    <div class="sig-name">{founder_name}</div>
-                    <div class="sig-role">Authorised signatory</div>
-                </div>
-                <div class="sig-block">
-                    <div class="sig-hand">{mentor_name}</div>
-                    <div class="sig-line"></div>
-                    <div class="sig-name">{mentor_name}</div>
-                    <div class="sig-role">Industry mentor</div>
-                </div>
-                <div class="sig-block">
-                    <div class="sig-hand">{instructor_name}</div>
-                    <div class="sig-line"></div>
-                    <div class="sig-name">{instructor_name}</div>
-                    <div class="sig-role">Program lead</div>
-                </div>
-            </div>
+            {signatures_html}
             <div class="actions">
                 <a class="btn-download" href="{download_url}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -481,7 +419,7 @@ VIEWER_INTERNSHIP_HTML = """<!DOCTYPE html>
         <div class="card-footer">
             <p>
                 Issued by <a href="https://learning.intelliforge.tech/" target="_blank" rel="noopener">Intelliforge Digital Services</a>
-                &nbsp;&middot;&nbsp; <a href="mailto:support@intelliforge.tech">support@intelliforge.tech</a>
+                &nbsp;&middot;&nbsp; learning.intelliforge.tech
             </p>
         </div>
     </div>

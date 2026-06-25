@@ -394,6 +394,111 @@ def _generate_signature_data_uri(name: str | None = None) -> str:
     return data_uri
 
 
+def _norm_signatory(name: str) -> str:
+    return " ".join((name or "").split()).casefold()
+
+
+def _unique_signatory_roles(entries: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Merge duplicate names; combine roles for the same signatory."""
+    order: list[str] = []
+    roles_by_key: dict[str, list[str]] = {}
+    display: dict[str, str] = {}
+    for name, role in entries:
+        n = (name or "").strip()
+        if not n:
+            continue
+        key = _norm_signatory(n)
+        if key not in roles_by_key:
+            order.append(key)
+            display[key] = n
+            roles_by_key[key] = []
+        r = (role or "").strip()
+        if r and r not in roles_by_key[key]:
+            roles_by_key[key].append(r)
+    return [(display[k], " · ".join(roles_by_key[k])) for k in order]
+
+
+def _viewer_signatures_html(signatories: list[tuple[str, str]]) -> str:
+    blocks: list[str] = []
+    for name, role in _unique_signatory_roles(signatories):
+        blocks.append(
+            f'<div class="sig-block">'
+            f'<div class="sig-hand">{html_mod.escape(name)}</div>'
+            f'<div class="sig-line"></div>'
+            f'<div class="sig-role">{html_mod.escape(role)}</div>'
+            f'</div>'
+        )
+    return f'<div class="signatures">{"".join(blocks)}</div>'
+
+
+def _pdf_signature_cell(name: str, role: str, signature_uri: str, width_pct: int) -> str:
+    return (
+        f'<td width="{width_pct}%" align="center" style="text-align: center; padding: 8pt 12pt; vertical-align: bottom;">'
+        f'<img src="{signature_uri}" width="150" height="50" />'
+        f'<table width="100%" cellspacing="0" cellpadding="0">'
+        f'<tr><td align="center" style="border-top: 1px solid #c4b5fd; font-size: 8pt; color: #553c9a; font-weight: bold; padding-top: 4pt; text-align: center;">'
+        f'{html_mod.escape(name)}</td></tr>'
+        f'<tr><td align="center" style="font-size: 6pt; color: #a0aec0; text-align: center; letter-spacing: 1pt;">'
+        f'{html_mod.escape(role)}</td></tr>'
+        f'</table></td>'
+    )
+
+
+def _pdf_internship_signature_cell(name: str, role: str, signature_uri: str, width_pct: int) -> str:
+    return (
+        f'<td width="{width_pct}%" align="center" style="vertical-align: bottom; padding: 6pt 8pt;">'
+        f'<img src="{signature_uri}" width="130" height="44" />'
+        f'<table width="100%"><tr><td style="border-top: 1px solid #cbd5e0; padding-top: 3pt; font-size: 7.5pt; font-weight: bold; color: #553c9a; text-align: center;">'
+        f'{html_mod.escape(name)}</td></tr>'
+        f'<tr><td style="font-size: 6pt; color: #718096; text-align: center; letter-spacing: 0.5pt;">'
+        f'{html_mod.escape(role)}</td></tr></table></td>'
+    )
+
+
+def _participation_pdf_signatures_block(
+    founder_name: str, founder_title: str, instructor_name: str, founder_sig: str, instructor_sig: str
+) -> str:
+    sig_by_key = {
+        _norm_signatory(founder_name): founder_sig,
+        _norm_signatory(instructor_name): instructor_sig,
+    }
+    entries = [(founder_name, founder_title), (instructor_name, "COURSE INSTRUCTOR")]
+    unique = _unique_signatory_roles(entries)
+    width = max(1, 100 // len(unique))
+    cells = []
+    for name, role in unique:
+        uri = sig_by_key.get(_norm_signatory(name), founder_sig)
+        cells.append(_pdf_signature_cell(name, role, uri, width))
+    return f'<table width="70%" align="center" cellspacing="0" cellpadding="0"><tr>{"".join(cells)}</tr></table>'
+
+
+def _internship_pdf_signatures_block(
+    founder_name: str,
+    mentor_name: str,
+    instructor_name: str,
+    founder_sig: str,
+    mentor_sig: str,
+    instructor_sig: str,
+) -> str:
+    sig_by_key = {
+        _norm_signatory(founder_name): founder_sig,
+        _norm_signatory(mentor_name): mentor_sig,
+        _norm_signatory(instructor_name): instructor_sig,
+    }
+    entries = [
+        (founder_name, "Authorised Signatory"),
+        (mentor_name, "Industry Mentor"),
+        (instructor_name, "Program Lead"),
+    ]
+    unique = _unique_signatory_roles(entries)
+    width = max(1, 100 // len(unique))
+    cells = []
+    for name, role in unique:
+        uri = sig_by_key.get(_norm_signatory(name), founder_sig)
+        cells.append(_pdf_internship_signature_cell(name, role, uri, width))
+    return f'<table width="88%" align="center" cellspacing="0" cellpadding="0"><tr>{"".join(cells)}</tr></table>'
+
+
 class CertificateRequest(BaseModel):
     participant_name: str
     course_name: str
@@ -546,11 +651,14 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
             certificate_id=html_mod.escape(cert_id),
             institution_clause=institution_clause,
             qr_data_uri=qr_data_uri,
-            signature_data_uri=_generate_signature_data_uri(),
-            mentor_signature_data_uri=_generate_signature_data_uri(data["m"]),
-            instructor_signature_data_uri=_generate_signature_data_uri(data["i"]),
-            founder_name=html_mod.escape(FOUNDER_NAME),
-            founder_title=html_mod.escape(FOUNDER_TITLE),
+            signatures_block=_internship_pdf_signatures_block(
+                FOUNDER_NAME,
+                data["m"],
+                data["i"],
+                _generate_signature_data_uri(),
+                _generate_signature_data_uri(data["m"]),
+                _generate_signature_data_uri(data["i"]),
+            ),
         )
     else:
         full_html = CERTIFICATE_PARTICIPATION_HTML.format(
@@ -560,10 +668,13 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
             instructor_name=data["i"],
             certificate_id=cert_id,
             qr_data_uri=qr_data_uri,
-            signature_data_uri=_generate_signature_data_uri(),
-            instructor_signature_data_uri=_generate_signature_data_uri(data["i"]),
-            founder_name=FOUNDER_NAME,
-            founder_title=FOUNDER_TITLE,
+            signatures_block=_participation_pdf_signatures_block(
+                FOUNDER_NAME,
+                FOUNDER_TITLE,
+                data["i"],
+                _generate_signature_data_uri(),
+                _generate_signature_data_uri(data["i"]),
+            ),
         )
     pdf_buffer = BytesIO()
     pisa_status = pisa.CreatePDF(src=full_html, dest=pdf_buffer, encoding="UTF-8")
@@ -1047,20 +1158,7 @@ VIEWER_HTML = """<!DOCTYPE html>
                 <div class="meta-item"><div class="meta-val">{instructor_name}</div><div class="meta-lbl">Instructor</div></div>
                 <div class="meta-item"><div class="meta-val">{cert_id}</div><div class="meta-lbl">Certificate ID</div></div>
             </div>
-            <div class="signatures">
-                <div class="sig-block">
-                    <div class="sig-hand">{founder_name}</div>
-                    <div class="sig-line"></div>
-                    <div class="sig-name">{founder_name}</div>
-                    <div class="sig-role">{founder_title}</div>
-                </div>
-                <div class="sig-block">
-                    <div class="sig-hand">{instructor_name}</div>
-                    <div class="sig-line"></div>
-                    <div class="sig-name">{instructor_name}</div>
-                    <div class="sig-role">Course Instructor</div>
-                </div>
-            </div>
+            {signatures_html}
             <div class="actions">
                 <a class="btn-download" href="{download_url}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -1085,7 +1183,6 @@ VIEWER_HTML = """<!DOCTYPE html>
         <div class="card-footer">
             <p>
                 Issued by <a href="/" target="_blank" rel="noopener">PDF Cert Generator</a>
-                &nbsp;&middot;&nbsp; <a href="mailto:support@example.com">support@example.com</a>
             </p>
         </div>
     </div>
@@ -1139,8 +1236,11 @@ async def view_certificate(token: str, req: Request):
             linkedin_url=linkedin_url,
             twitter_url=twitter_url,
             qr_data_uri=_generate_qr_data_uri(page_url),
-            founder_name=html_mod.escape(FOUNDER_NAME),
-            founder_title=html_mod.escape(FOUNDER_TITLE),
+            signatures_html=_viewer_signatures_html([
+                (FOUNDER_NAME, "Authorised signatory"),
+                (data["m"], "Industry mentor"),
+                (data["i"], "Program lead"),
+            ]),
         )
     else:
         cert_desc = f"I completed {data['c']} at IntelliForge Learning!"
@@ -1157,8 +1257,10 @@ async def view_certificate(token: str, req: Request):
             linkedin_url=linkedin_url,
             twitter_url=twitter_url,
             qr_data_uri=_generate_qr_data_uri(page_url),
-            founder_name=FOUNDER_NAME,
-            founder_title=FOUNDER_TITLE,
+            signatures_html=_viewer_signatures_html([
+                (FOUNDER_NAME, FOUNDER_TITLE),
+                (data["i"], "Course Instructor"),
+            ]),
         )
     return HTMLResponse(content=html)
 
