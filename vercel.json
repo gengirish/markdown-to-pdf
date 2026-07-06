@@ -47,7 +47,7 @@
       "destination": "/api/index.py"
     },
     {
-      "source": "/((?!assets/).*)",
+      "source": "/((?!assets/|branding/).*)",
       "destination": "/index.html"
     }
   ]

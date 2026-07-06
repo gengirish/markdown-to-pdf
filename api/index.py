@@ -30,8 +30,7 @@ from api.appreciation_assets import (
     APPRECIATION_HEADER_BG,
     APPRECIATION_SECONDARY_COLOR,
     APPRECIATION_SIDEBAR_COLOR,
-    appreciation_logo_urls,
-    appreciation_pdf_header_block,
+    appreciation_header_html_from_branding,
     appreciation_pdf_sports_icons,
     appreciation_pdf_tricolor_footer,
 )
@@ -1060,7 +1059,7 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
             sidebar_color=brand["appreciation_sidebar_color"],
             header_bg=brand["appreciation_header_bg"],
             event_color=brand["appreciation_event_color"],
-            header_block=appreciation_pdf_header_block(),
+            header_block=appreciation_header_html_from_branding(brand),
             sports_icons=appreciation_pdf_sports_icons(),
             tricolor_footer=appreciation_pdf_tricolor_footer(),
             sidebar_block=_appreciation_pdf_sidebar(
@@ -1790,7 +1789,7 @@ async def view_certificate(token: str, req: Request):
                 "identifier": cert_id,
                 "url": page_url,
             }),
-            **appreciation_logo_urls(base_url),
+            header_block=appreciation_header_html_from_branding(appreciation_brand),
             **_appreciation_branding_html(),
         )
     else:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import base64
+import html as html_mod
 from pathlib import Path
 
 BRANDING_DIR = Path(__file__).resolve().parent.parent / "public" / "branding"
@@ -17,36 +17,76 @@ APPRECIATION_GREEN_ACCENT = "#138808"
 APPRECIATION_TRICOLOR = ("#F05B00", "#FFFFFF", "#138808")
 
 
-def branding_image_data_uri(filename: str) -> str:
-    path = BRANDING_DIR / filename
-    if not path.is_file():
-        return ""
-    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-    return f"data:image/png;base64,{encoded}"
+def _split_partner_org(partner_org: str) -> tuple[str, str]:
+    if "." in partner_org:
+        idx = partner_org.index(".")
+        return partner_org[:idx], partner_org[idx:]
+    return partner_org, ""
 
 
-def appreciation_logo_urls(base_url: str) -> dict[str, str]:
-    base = base_url.rstrip("/")
-    return {
-        "logo_left_url": f"{base}/branding/appreciation-header-left.png",
-        "logo_right_url": f"{base}/branding/appreciation-header-right.png",
-        "logo_if_url": f"{base}/branding/intelliforge-ai-logo.png",
-        "logo_maidaan_url": f"{base}/branding/maidaan-academy-logo.png",
-    }
-
-
-def appreciation_pdf_header_block() -> str:
-    left = branding_image_data_uri("appreciation-header-left.png")
-    right = branding_image_data_uri("appreciation-header-right.png")
-    if not left or not right:
-        return ""
+def appreciation_header_html(
+    *,
+    header_bg: str = APPRECIATION_HEADER_BG,
+    accent: str = APPRECIATION_ACCENT_COLOR,
+    secondary: str = APPRECIATION_SECONDARY_COLOR,
+    ai_color: str = APPRECIATION_AI_COLOR,
+    org_bold: str = "IntelliForge",
+    org_light: str = "AI",
+    partner_org: str = "maidaan.academy",
+    escape: bool = True,
+) -> str:
+    """HTML/CSS header bar (xhtml2pdf-safe — no raster images)."""
+    esc = html_mod.escape if escape else lambda x: x
+    partner_name, partner_tld = _split_partner_org(partner_org)
+    label = (
+        f"font-size:5.5pt;color:{accent};letter-spacing:1.2pt;"
+        f"text-transform:uppercase;font-weight:bold;"
+    )
+    rule = f"border-top:1px solid {accent};font-size:1pt;line-height:1pt;width:46pt;"
     return (
-        '<table width="100%" cellspacing="0" cellpadding="0"><tr>'
-        f'<td align="left" style="text-align:left;vertical-align:middle;">'
-        f'<img src="{left}" height="34" alt="IntelliForge AI" /></td>'
-        f'<td align="right" style="text-align:right;vertical-align:middle;">'
-        f'<img src="{right}" height="34" alt="maidaan.academy" /></td>'
-        "</tr></table>"
+        f'<table width="100%" cellspacing="0" cellpadding="0" '
+        f'style="background-color:{header_bg};">'
+        f"<tr>"
+        f'<td width="50%" style="padding:7pt 14pt 9pt;vertical-align:bottom;">'
+        f'<table cellspacing="0" cellpadding="0"><tr>'
+        f'<td style="{label}">Sponsored by</td></tr>'
+        f'<tr><td style="{rule}">&nbsp;</td></tr></table>'
+        f'<table cellspacing="0" cellpadding="0" style="margin-top:4pt;"><tr>'
+        f'<td style="background-color:{ai_color};color:#ffffff;font-weight:bold;'
+        f"font-size:9pt;width:15pt;height:15pt;text-align:center;"
+        f'vertical-align:middle;">I</td>'
+        f'<td style="background-color:{accent};color:#ffffff;font-weight:bold;'
+        f"font-size:9pt;width:15pt;height:15pt;text-align:center;"
+        f'vertical-align:middle;">F</td>'
+        f'<td style="padding-left:6pt;vertical-align:middle;">'
+        f'<div style="font-size:10pt;font-weight:bold;color:#ffffff;line-height:1.15;">'
+        f"{esc(org_bold)} <span style=\"color:{ai_color};\">{esc(org_light)}</span>"
+        f"</div></td></tr></table></td>"
+        f'<td width="50%" align="right" style="padding:7pt 14pt 9pt;'
+        f'vertical-align:bottom;text-align:right;">'
+        f'<table cellspacing="0" cellpadding="0" align="right"><tr>'
+        f'<td align="right" style="{label}text-align:right;">Event technology by</td></tr>'
+        f'<tr><td align="right" style="{rule}">&nbsp;</td></tr></table>'
+        f'<table cellspacing="0" cellpadding="0" align="right" style="margin-top:4pt;"><tr>'
+        f'<td style="background-color:{secondary};color:#07070E;font-weight:bold;'
+        f"font-size:9pt;width:15pt;height:15pt;text-align:center;"
+        f'vertical-align:middle;">M</td>'
+        f'<td style="padding-left:6pt;vertical-align:middle;text-align:left;">'
+        f'<div style="font-size:10pt;font-weight:bold;color:#ffffff;line-height:1.15;">'
+        f'{esc(partner_name)}<span style="color:{secondary};">{esc(partner_tld)}</span>'
+        f"</div></td></tr></table></td></tr></table>"
+    )
+
+
+def appreciation_header_html_from_branding(branding: dict) -> str:
+    return appreciation_header_html(
+        header_bg=branding.get("appreciation_header_bg", APPRECIATION_HEADER_BG),
+        accent=branding.get("appreciation_accent", APPRECIATION_ACCENT_COLOR),
+        secondary=branding.get("appreciation_secondary_color", APPRECIATION_SECONDARY_COLOR),
+        ai_color=branding.get("appreciation_ai_color", APPRECIATION_AI_COLOR),
+        org_bold=branding.get("appreciation_org_bold", "IntelliForge"),
+        org_light=branding.get("appreciation_org_light", "AI"),
+        partner_org=branding.get("appreciation_partner_org", "maidaan.academy"),
     )
 
 

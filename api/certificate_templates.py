@@ -583,8 +583,8 @@ VIEWER_APPRECIATION_HTML = """
         body{{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:#eef2f6;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem}}
         .card{{position:relative;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.14);max-width:680px;width:100%;overflow:hidden;animation:up .5s ease-out}}
         @keyframes up{{from{{opacity:0;transform:translateY(30px)}}to{{opacity:1;transform:translateY(0)}}}}
-        .card-header{{background:{header_bg};padding:.85rem 1.1rem;display:flex;justify-content:space-between;align-items:center;gap:.75rem}}
-        .card-header img{{height:34px;width:auto;max-width:46%}}
+        .card-header{{background:{header_bg};padding:0}}
+        .card-header table{{width:100%}}
         .tricolor{{display:flex;height:4px}}
         .tricolor span{{flex:1}}
         .tricolor .saffron{{background:{accent_color}}}
@@ -621,14 +621,13 @@ VIEWER_APPRECIATION_HTML = """
         .sport-dot.orange{{background:{accent_color}}}
         .sport-dot.grey{{background:#d1d5db}}
         .sport-dot.green{{background:#138808}}
-        @media(max-width:520px){{body{{padding:1rem}}.sidebar{{width:48px}}.main{{padding:1.2rem 1rem 1rem 1.2rem}}.name{{font-size:1.25rem}}.card-header img{{height:26px}}}}
+        @media(max-width:520px){{body{{padding:1rem}}.sidebar{{width:48px}}.main{{padding:1.2rem 1rem 1rem 1.2rem}}.name{{font-size:1.25rem}}}}
     </style>
 </head>
 <body>
     <div class="card">
         <div class="card-header">
-            <img src="{logo_left_url}" alt="IntelliForge AI" />
-            <img src="{logo_right_url}" alt="maidaan.academy" />
+            {header_block}
         </div>
         <div class="tricolor" aria-hidden="true">
             <span class="saffron"></span><span class="white"></span><span class="green"></span>

@@ -543,16 +543,103 @@
   background: var(--appreciation-header-bg, #07070e);
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-end;
   gap: 0.75rem;
-  padding: 0.7rem 1rem;
+  padding: 0.65rem 0.9rem 0.7rem;
 }
 
-.cert-appreciation-header-logo {
-  height: 34px;
-  width: auto;
-  max-width: 46%;
-  object-fit: contain;
+.cert-appreciation-header-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  flex: 1;
+}
+
+.cert-appreciation-header-col-right {
+  align-items: flex-end;
+}
+
+.cert-appreciation-header-label {
+  font-size: 0.42rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--appreciation-accent, #f05b00);
+}
+
+.cert-appreciation-header-rule {
+  display: block;
+  width: 3.2rem;
+  height: 1px;
+  background: var(--appreciation-accent, #f05b00);
+  margin: 0.2rem 0 0.35rem;
+}
+
+.cert-appreciation-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.cert-if-mark {
+  display: inline-flex;
+  line-height: 1;
+}
+
+.cert-if-mark .i,
+.cert-if-mark .f {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  font-size: 0.58rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.cert-if-mark .i {
+  background: var(--appreciation-ai, #7b6fff);
+}
+
+.cert-if-mark .f {
+  background: var(--appreciation-accent, #f05b00);
+}
+
+.cert-if-word {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.1;
+}
+
+.cert-if-word em {
+  font-style: normal;
+  color: var(--appreciation-ai, #7b6fff);
+}
+
+.cert-maidaan-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  font-size: 0.58rem;
+  font-weight: 800;
+  color: #07070e;
+  background: var(--appreciation-secondary, #ffba08);
+}
+
+.cert-maidaan-word {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.1;
+}
+
+.cert-maidaan-word .tld {
+  color: var(--appreciation-secondary, #ffba08);
 }
 
 .cert-appreciation-tricolor {

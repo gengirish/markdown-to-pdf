@@ -289,8 +289,11 @@ function CertificatePreviewCard({
     const sidebar = branding.appreciation_sidebar_color || '#0A2818'
     const headerBg = branding.appreciation_header_bg || '#07070E'
     const secondary = branding.appreciation_secondary_color || '#FFBA08'
-    const logoLeft = '/branding/appreciation-header-left.png'
-    const logoRight = '/branding/appreciation-header-right.png'
+    const aiColor = branding.appreciation_ai_color || '#7B6FFF'
+    const partner = branding.appreciation_partner_org || 'maidaan.academy'
+    const dotIdx = partner.indexOf('.')
+    const partnerName = dotIdx >= 0 ? partner.slice(0, dotIdx) : partner
+    const partnerTld = dotIdx >= 0 ? partner.slice(dotIdx) : ''
 
     return (
       <div
@@ -300,11 +303,35 @@ function CertificatePreviewCard({
           '--appreciation-sidebar': sidebar,
           '--appreciation-header-bg': headerBg,
           '--appreciation-secondary': secondary,
+          '--appreciation-ai': aiColor,
         }}
       >
         <div className="cert-appreciation-header">
-          <img src={logoLeft} alt="IntelliForge AI" className="cert-appreciation-header-logo" />
-          <img src={logoRight} alt="maidaan.academy" className="cert-appreciation-header-logo" />
+          <div className="cert-appreciation-header-col">
+            <span className="cert-appreciation-header-label">Sponsored by</span>
+            <span className="cert-appreciation-header-rule" />
+            <div className="cert-appreciation-brand-row">
+              <span className="cert-if-mark" aria-hidden="true">
+                <span className="i">I</span>
+                <span className="f">F</span>
+              </span>
+              <span className="cert-if-word">
+                {branding.appreciation_org_bold}{' '}
+                <em>{branding.appreciation_org_light}</em>
+              </span>
+            </div>
+          </div>
+          <div className="cert-appreciation-header-col cert-appreciation-header-col-right">
+            <span className="cert-appreciation-header-label">Event technology by</span>
+            <span className="cert-appreciation-header-rule" />
+            <div className="cert-appreciation-brand-row">
+              <span className="cert-maidaan-mark" aria-hidden="true">M</span>
+              <span className="cert-maidaan-word">
+                {partnerName}
+                <span className="tld">{partnerTld}</span>
+              </span>
+            </div>
+          </div>
         </div>
         <div className="cert-appreciation-tricolor" aria-hidden="true">
           <span className="saffron" /><span className="white" /><span className="green" />
