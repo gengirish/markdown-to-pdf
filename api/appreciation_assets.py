@@ -49,11 +49,11 @@ def appreciation_header_html(
         f'<table width="100%" cellspacing="0" cellpadding="0" '
         f'style="background-color:{header_bg};">'
         f"<tr>"
-        f'<td width="50%" style="padding:7pt 14pt 9pt;vertical-align:bottom;">'
+        f'<td width="50%" style="padding:8pt 16pt 10pt;vertical-align:bottom;">'
         f'<table cellspacing="0" cellpadding="0"><tr>'
         f'<td style="{label}">Sponsored by</td></tr>'
         f'<tr><td style="{rule}">&nbsp;</td></tr></table>'
-        f'<table cellspacing="0" cellpadding="0" style="margin-top:4pt;"><tr>'
+        f'<table cellspacing="0" cellpadding="0" style="margin-top:5pt;"><tr>'
         f'<td style="background-color:{ai_color};color:#ffffff;font-weight:bold;'
         f"font-size:9pt;width:15pt;height:15pt;text-align:center;"
         f'vertical-align:middle;">I</td>'
@@ -64,12 +64,12 @@ def appreciation_header_html(
         f'<div style="font-size:10pt;font-weight:bold;color:#ffffff;line-height:1.15;">'
         f"{esc(org_bold)} <span style=\"color:{ai_color};\">{esc(org_light)}</span>"
         f"</div></td></tr></table></td>"
-        f'<td width="50%" align="right" style="padding:7pt 14pt 9pt;'
+        f'<td width="50%" align="right" style="padding:8pt 16pt 10pt;'
         f'vertical-align:bottom;text-align:right;">'
         f'<table cellspacing="0" cellpadding="0" align="right"><tr>'
         f'<td align="right" style="{label}text-align:right;">Event technology by</td></tr>'
         f'<tr><td align="right" style="{rule}">&nbsp;</td></tr></table>'
-        f'<table cellspacing="0" cellpadding="0" align="right" style="margin-top:4pt;"><tr>'
+        f'<table cellspacing="0" cellpadding="0" align="right" style="margin-top:5pt;"><tr>'
         f'<td style="background-color:{secondary};color:#07070E;font-weight:bold;'
         f"font-size:9pt;width:15pt;height:15pt;text-align:center;"
         f'vertical-align:middle;">M</td>'
@@ -128,35 +128,37 @@ def appreciation_host_strip_html(
     *,
     sidebar_color: str = APPRECIATION_SIDEBAR_COLOR,
     accent: str = APPRECIATION_ACCENT_COLOR,
+    secondary: str = APPRECIATION_SECONDARY_COLOR,
     escape: bool = True,
 ) -> str:
-    """Sobha-style venue/host branding band (xhtml2pdf-safe)."""
+    """Venue/host branding band — single hierarchy, no duplicate labels (xhtml2pdf-safe)."""
     esc = html_mod.escape if escape else lambda x: x
     host = (host_name or APPRECIATION_HOST_NAME_DEFAULT).strip()
     org = (organizer or "").strip()
     tricolor = "".join(
-        f'<td style="background-color:{c};width:22pt;height:3pt;font-size:1pt;line-height:3pt;">&nbsp;</td>'
+        f'<td style="background-color:{c};width:24pt;height:3pt;font-size:1pt;line-height:3pt;">&nbsp;</td>'
         for c in APPRECIATION_TRICOLOR
     )
     org_row = ""
     if org:
         org_row = (
-            f'<table align="center" cellspacing="0" cellpadding="0" style="margin-top:5pt;">'
+            f'<table align="center" cellspacing="0" cellpadding="0" style="margin-top:6pt;">'
             f'<tr><td align="center" style="background-color:{sidebar_color};color:#ffffff;'
-            f"font-size:6pt;font-weight:bold;letter-spacing:0.8pt;padding:3pt 12pt;"
+            f"font-size:6pt;font-weight:bold;letter-spacing:0.9pt;padding:3pt 14pt;"
             f'text-transform:uppercase;">Organized by: {esc(org)}</td></tr></table>'
         )
     return (
         f'<table width="100%" cellspacing="0" cellpadding="0" '
-        f'style="background-color:#ffffff;border-bottom:1px solid #e2e8f0;">'
-        f'<tr><td align="center" style="text-align:center;padding:9pt 16pt 8pt;">'
+        f'style="background-color:#fafbfc;border-bottom:1px solid #e2e8f0;">'
+        f'<tr><td align="center" style="text-align:center;padding:10pt 18pt 9pt;">'
         f'<table align="center" cellspacing="0" cellpadding="0"><tr>{tricolor}</tr></table>'
-        f'<div style="font-size:11pt;font-weight:bold;color:#1a202c;letter-spacing:1.2pt;'
-        f'margin-top:6pt;text-transform:uppercase;">{esc(host)}</div>'
-        f'<table align="center" cellspacing="0" cellpadding="0" style="margin-top:4pt;"><tr>'
-        f'<td style="background-color:{sidebar_color};color:#ffffff;font-size:6.5pt;'
-        f'font-weight:bold;padding:2pt 8pt;letter-spacing:0.5pt;">'
-        f'<span style="color:{accent};">&#9679;</span> {esc(host)}</td></tr></table>'
+        f'<div style="font-size:6pt;color:#718096;letter-spacing:1pt;text-transform:uppercase;'
+        f'margin-top:7pt;">Venue &amp; Host Community</div>'
+        f'<div style="font-size:12pt;font-weight:bold;color:#1a202c;letter-spacing:1.4pt;'
+        f'margin-top:3pt;text-transform:uppercase;">{esc(host)}</div>'
+        f'<table align="center" cellspacing="0" cellpadding="0" style="margin-top:5pt;"><tr>'
+        f'<td style="border-top:2pt solid {secondary};font-size:1pt;line-height:1pt;'
+        f'width:36pt;">&nbsp;</td></tr></table>'
         f"{org_row}"
         f"</td></tr></table>"
     )
@@ -177,53 +179,63 @@ def appreciation_host_strip_from_branding(
         branding.get("appreciation_host_organizer", APPRECIATION_HOST_ORGANIZER_DEFAULT),
         sidebar_color=branding.get("appreciation_sidebar_color", APPRECIATION_SIDEBAR_COLOR),
         accent=branding.get("appreciation_accent", APPRECIATION_ACCENT_COLOR),
+        secondary=branding.get("appreciation_secondary_color", APPRECIATION_SECONDARY_COLOR),
     )
 
 
 def appreciation_event_footer_html(
     event_name: str,
-    host_name: str,
+    host_name: str = "",
     *,
     accent: str = APPRECIATION_ACCENT_COLOR,
     sidebar_color: str = APPRECIATION_SIDEBAR_COLOR,
+    show_host: bool = False,
     escape: bool = True,
 ) -> str:
+    """Event metadata block — host lives in the strip; event only by default."""
     esc = html_mod.escape if escape else lambda x: x
-    if not event_name and not host_name:
+    if not event_name and not (show_host and host_name):
         return "&nbsp;"
     parts = []
     if event_name:
         parts.append(
-            f'<div style="font-size:10pt;font-weight:bold;color:#1a202c;'
-            f'letter-spacing:0.6pt;text-transform:uppercase;">{esc(event_name)}</div>'
+            f'<div style="font-size:6.5pt;color:#718096;text-transform:uppercase;'
+            f'letter-spacing:0.9pt;margin-bottom:3pt;text-align:right;">Event</div>'
         )
-    if host_name:
+        parts.append(
+            f'<div style="font-size:10pt;font-weight:bold;color:#1a202c;'
+            f'letter-spacing:0.5pt;text-transform:uppercase;border-left:2pt solid {accent};'
+            f'padding-left:8pt;text-align:left;display:inline-block;">{esc(event_name)}</div>'
+        )
+    if show_host and host_name:
         parts.append(
             f'<div style="font-size:7.5pt;font-weight:bold;color:{sidebar_color};'
             f'letter-spacing:0.8pt;margin-top:4pt;text-transform:uppercase;">{esc(host_name)}</div>'
         )
-        parts.append(
-            f'<div style="font-size:6pt;color:{accent};letter-spacing:0.4pt;margin-top:2pt;">'
-            f"&#9679; Venue &amp; host community</div>"
-        )
     return "".join(parts)
 
 
-def appreciation_pdf_sports_icons() -> str:
+def appreciation_pdf_accent_rail() -> str:
+    """Vertical tricolor accent (replaces decorative dot column)."""
     rows = []
-    for color in (APPRECIATION_ACCENT_COLOR, "#D1D5DB", APPRECIATION_GREEN_ACCENT) * 2:
+    for color in APPRECIATION_TRICOLOR:
         rows.append(
-            f'<tr><td align="center" style="text-align:center;color:{color};'
-            f'font-size:10pt;padding:3pt 0;">&#9679;</td></tr>'
+            f'<tr><td style="background-color:{color};width:4pt;height:28pt;'
+            f'font-size:1pt;line-height:1pt;">&nbsp;</td></tr>'
         )
     return f"<table cellspacing='0' cellpadding='0'>{''.join(rows)}</table>"
+
+
+def appreciation_pdf_sports_icons() -> str:
+    """Backward-compatible alias for accent rail."""
+    return appreciation_pdf_accent_rail()
 
 
 def appreciation_pdf_tricolor_footer() -> str:
     cells = []
     for color in APPRECIATION_TRICOLOR:
         cells.append(
-            f'<td style="background-color:{color};font-size:2pt;height:3pt;line-height:3pt;">&nbsp;</td>'
+            f'<td style="background-color:{color};font-size:2pt;height:4pt;line-height:4pt;">&nbsp;</td>'
         )
     return (
         '<table width="100%" cellspacing="0" cellpadding="0"><tr>'

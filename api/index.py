@@ -35,7 +35,7 @@ from api.appreciation_assets import (
     appreciation_event_footer_html,
     appreciation_header_html_from_branding,
     appreciation_host_strip_from_branding,
-    appreciation_pdf_sports_icons,
+    appreciation_pdf_accent_rail,
     appreciation_pdf_tricolor_footer,
     resolve_appreciation_host_name,
 )
@@ -593,11 +593,12 @@ def _stacked_vertical_letters(word: str) -> str:
 def _appreciation_pdf_sidebar(line1: str, line2: str) -> str:
     parts1 = _stacked_vertical_letters(line1)
     parts2 = "<br/><br/>".join(_stacked_vertical_letters(w) for w in line2.upper().split())
+    gold = APPRECIATION_SECONDARY_COLOR
     return (
         f'<table width="100%" height="100%"><tr><td align="center" valign="middle" '
-        f'style="text-align:center;vertical-align:middle;">'
-        f'<div style="color:#ffffff;font-weight:bold;font-size:12pt;line-height:1.1;">{parts1}</div>'
-        f'<div style="color:#ffffff;font-size:5.5pt;letter-spacing:1pt;margin-top:12pt;line-height:1.15;">'
+        f'style="text-align:center;vertical-align:middle;border-left:3pt solid {gold};">'
+        f'<div style="color:#ffffff;font-weight:bold;font-size:11pt;line-height:1.12;">{parts1}</div>'
+        f'<div style="color:#ffffff;font-size:5.5pt;letter-spacing:1pt;margin-top:14pt;line-height:1.2;">'
         f"{parts2}</div></td></tr></table>"
     )
 
@@ -612,14 +613,19 @@ def _appreciation_pdf_event_footer(
         host_name,
         accent=brand.get("appreciation_accent", APPRECIATION_ACCENT_COLOR),
         sidebar_color=brand.get("appreciation_sidebar_color", APPRECIATION_SIDEBAR_COLOR),
+        show_host=False,
     )
 
 
 def _appreciation_viewer_event_block(event_name: str, host_name: str, brand: dict) -> str:
-    if not event_name and not host_name:
+    if not event_name:
         return ""
-    inner = _appreciation_pdf_event_footer(event_name, host_name, brand)
-    return f'<div class="event-block">{inner}</div>'
+    return (
+        f'<div class="event-block">'
+        f'<div class="event-label">Event</div>'
+        f'<div class="event-name">{html_mod.escape(event_name)}</div>'
+        f"</div>"
+    )
 
 
 def _appreciation_host_for_payload(data: dict, brand: dict) -> str:
@@ -1080,7 +1086,7 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
             event_color=brand["appreciation_event_color"],
             header_block=appreciation_header_html_from_branding(brand),
             host_strip=appreciation_host_strip_from_branding(brand, venue, sponsor),
-            sports_icons=appreciation_pdf_sports_icons(),
+            accent_rail=appreciation_pdf_accent_rail(),
             tricolor_footer=appreciation_pdf_tricolor_footer(),
             sidebar_block=_appreciation_pdf_sidebar(
                 brand["appreciation_title_line1"],

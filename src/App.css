@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:wght@600;700&family=Lato:wght@400;700&display=swap');
 
 /* ── Layout Shell ── */
 
@@ -532,11 +533,14 @@
 .cert-card-appreciation {
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 0;
   max-width: 720px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+  box-shadow:
+    0 4px 6px rgba(0, 0, 0, 0.04),
+    0 20px 48px rgba(0, 0, 0, 0.1);
   overflow: hidden;
+  font-family: 'Lato', var(--font-body), sans-serif;
 }
 
 .cert-appreciation-header {
@@ -642,33 +646,33 @@
   color: var(--appreciation-secondary, #ffba08);
 }
 
-.cert-appreciation-tricolor {
+.cert-appreciation-tricolor-footer {
   display: flex;
   height: 4px;
 }
 
-.cert-appreciation-tricolor .saffron {
+.cert-appreciation-tricolor-footer .saffron {
   flex: 1;
   background: var(--appreciation-accent, #f05b00);
 }
 
-.cert-appreciation-tricolor .white {
+.cert-appreciation-tricolor-footer .white {
   flex: 1;
   background: #ffffff;
   border-top: 1px solid #e2e8f0;
   border-bottom: 1px solid #e2e8f0;
 }
 
-.cert-appreciation-tricolor .green {
+.cert-appreciation-tricolor-footer .green {
   flex: 1;
   background: #138808;
 }
 
 .cert-appreciation-host-strip {
-  background: #fff;
+  background: #fafbfc;
   border-bottom: 1px solid #e2e8f0;
   text-align: center;
-  padding: 0.55rem 0.75rem 0.6rem;
+  padding: 0.65rem 0.85rem 0.7rem;
 }
 
 .cert-appreciation-host-tricolor {
@@ -698,57 +702,90 @@
   background: #138808;
 }
 
+.cert-appreciation-host-eyebrow {
+  margin: 0.35rem 0 0.15rem;
+  font-size: 0.42rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #718096;
+}
+
 .cert-appreciation-host-title {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: #1a202c;
 }
 
-.cert-appreciation-host-pill {
-  display: inline-block;
-  margin: 0.3rem 0 0;
-  padding: 0.15rem 0.55rem;
-  font-size: 0.5rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: #fff;
-  background: var(--appreciation-sidebar, #0a2818);
-}
-
-.cert-appreciation-host-pill .pin {
-  color: var(--appreciation-accent, #f05b00);
-  margin-right: 0.15rem;
+.cert-appreciation-host-divider {
+  display: block;
+  width: 2.4rem;
+  height: 2px;
+  background: var(--appreciation-secondary, #ffba08);
+  margin: 0.35rem auto 0;
 }
 
 .cert-appreciation-host-organizer {
-  margin: 0.35rem 0 0;
-  font-size: 0.46rem;
+  margin: 0.4rem 0 0;
+  font-size: 0.44rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: #fff;
   background: var(--appreciation-sidebar, #0a2818);
   display: inline-block;
-  padding: 0.2rem 0.5rem;
+  padding: 0.22rem 0.55rem;
 }
 
 .cert-appreciation-layout {
   display: flex;
-  min-height: 280px;
+  min-height: 290px;
 }
 
 .cert-appreciation-main {
   flex: 1;
-  padding: 1.2rem 1rem 1rem 1.4rem;
+  padding: 1.25rem 1rem 1rem 1.5rem;
   position: relative;
   color: #1a202c;
+  border-left: 1px solid #edf2f7;
+}
+
+.cert-appreciation-accent-rail {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  width: 4px;
+  border-radius: 0 2px 2px 0;
+  overflow: hidden;
+}
+
+.cert-appreciation-accent-rail span {
+  height: 26px;
+  display: block;
+}
+
+.cert-appreciation-accent-rail .saffron {
+  background: var(--appreciation-accent, #f05b00);
+}
+
+.cert-appreciation-accent-rail .white {
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.cert-appreciation-accent-rail .green {
+  background: #138808;
 }
 
 .cert-appreciation-sidebar {
-  width: 56px;
+  width: 58px;
   background: var(--appreciation-sidebar, #0a2818);
   display: flex;
   flex-direction: column;
@@ -759,63 +796,37 @@
   color: #fff;
   font-weight: 700;
   font-size: 0.38rem;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   writing-mode: vertical-rl;
   transform: rotate(180deg);
   line-height: 1.5;
-}
-
-.cert-appreciation-sports {
-  position: absolute;
-  left: 0.35rem;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  opacity: 0.45;
-}
-
-.cert-appreciation-sports span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  display: block;
-}
-
-.cert-appreciation-sports .orange {
-  background: var(--appreciation-accent, #f05b00);
-}
-
-.cert-appreciation-sports .grey {
-  background: #d1d5db;
-}
-
-.cert-appreciation-sports .green {
-  background: #138808;
+  border-left: 3px solid var(--appreciation-secondary, #ffba08);
 }
 
 .cert-appreciation-label {
-  font-size: 0.68rem;
-  color: #4a5568;
-  margin: 0.5rem 0 0.35rem;
+  font-size: 0.58rem;
+  color: #718096;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 0.45rem 0 0.3rem;
 }
 
 .cert-appreciation-name {
-  font-size: 1.45rem;
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 1.55rem;
   font-weight: 700;
   color: var(--appreciation-accent, #f05b00);
-  border-bottom: 1px solid #cbd5e0;
-  padding-bottom: 0.3rem;
-  margin: 0 0 0.75rem;
-  line-height: 1.2;
+  border-bottom: 2px solid var(--appreciation-accent, #f05b00);
+  padding-bottom: 0.28rem;
+  margin: 0 0 0.7rem;
+  line-height: 1.15;
 }
 
 .cert-appreciation-recognition {
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   color: #2d3748;
-  line-height: 1.55;
+  line-height: 1.6;
   margin: 0 0 1rem;
   max-width: 92%;
 }
@@ -829,50 +840,51 @@
   flex-wrap: wrap;
 }
 
+.cert-appreciation-date-card {
+  background: #fafbfc;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 0.45rem 0.65rem;
+}
+
 .cert-appreciation-date-val {
   display: block;
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: 0.82rem;
+  font-weight: 700;
   color: var(--appreciation-accent, #f05b00);
-  border-bottom: 1px solid #a0aec0;
-  padding-bottom: 0.1rem;
 }
 
 .cert-appreciation-date-lbl {
-  font-size: 0.55rem;
+  font-size: 0.48rem;
   color: #718096;
-  margin-top: 0.15rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 0.1rem;
   display: block;
 }
 
 .cert-appreciation-event {
   text-align: right;
-  font-size: 0.72rem;
+}
+
+.cert-appreciation-event-lbl {
+  display: block;
+  font-size: 0.48rem;
+  color: #718096;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 0.12rem;
 }
 
 .cert-appreciation-event strong {
-  display: block;
-  letter-spacing: 0.5px;
+  display: inline-block;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
   color: #1a202c;
-}
-
-.cert-appreciation-event span.host-line {
-  display: block;
-  font-size: 0.58rem;
-  color: var(--appreciation-sidebar, #0a2818);
-  margin-top: 0.15rem;
-  letter-spacing: 0.08em;
-  font-weight: 700;
   text-transform: uppercase;
-}
-
-.cert-appreciation-event span:not(.host-line) {
-  display: block;
-  font-size: 0.58rem;
-  color: var(--appreciation-secondary, #ffba08);
-  margin-top: 0.15rem;
-  letter-spacing: 0.3px;
-  font-weight: 600;
+  border-left: 3px solid var(--appreciation-accent, #f05b00);
+  padding-left: 0.45rem;
+  text-align: left;
 }
 
 .cert-card-appreciation .cert-qr-placeholder {

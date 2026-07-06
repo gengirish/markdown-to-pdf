@@ -352,42 +352,37 @@ function CertificatePreviewCard({
             </div>
           </div>
         </div>
-        <div className="cert-appreciation-tricolor" aria-hidden="true">
-          <span className="saffron" /><span className="white" /><span className="green" />
-        </div>
         <div className="cert-appreciation-host-strip">
           <div className="cert-appreciation-host-tricolor" aria-hidden="true">
             <span className="saffron" /><span className="white" /><span className="green" />
           </div>
+          <p className="cert-appreciation-host-eyebrow">Venue &amp; Host Community</p>
           <p className="cert-appreciation-host-title">{hostName}</p>
-          <p className="cert-appreciation-host-pill">
-            <span className="pin" aria-hidden="true">&#9679;</span> {hostName}
-          </p>
+          <span className="cert-appreciation-host-divider" aria-hidden="true" />
           {organizer ? (
             <p className="cert-appreciation-host-organizer">Organized by: {organizer}</p>
           ) : null}
         </div>
         <div className="cert-appreciation-layout">
           <div className="cert-appreciation-main">
-            <div className="cert-appreciation-sports" aria-hidden="true">
-              <span className="orange" /><span className="grey" /><span className="green" />
-              <span className="orange" /><span className="grey" /><span className="green" />
+            <div className="cert-appreciation-accent-rail" aria-hidden="true">
+              <span className="saffron" /><span className="white" /><span className="green" />
             </div>
             <VerifiedBadge />
             <p className="cert-appreciation-label">{branding.appreciation_presented_label}</p>
             <p className="cert-appreciation-name">{participantName}</p>
             <p className="cert-appreciation-recognition">{recognition}</p>
             <div className="cert-appreciation-footer">
-              <div className="cert-appreciation-date">
-                <span className="cert-appreciation-date-val">{completionDate}</span>
+              <div className="cert-appreciation-date-card">
                 <span className="cert-appreciation-date-lbl">Date</span>
+                <span className="cert-appreciation-date-val">{completionDate}</span>
               </div>
-              {(eventName || hostName) && (
+              {eventName ? (
                 <div className="cert-appreciation-event">
-                  {eventName ? <strong>{eventName}</strong> : null}
-                  {hostName ? <span className="host-line">{hostName}</span> : null}
+                  <span className="cert-appreciation-event-lbl">Event</span>
+                  <strong>{eventName}</strong>
                 </div>
-              )}
+              ) : null}
             </div>
             <PreviewQrBlock
               getApiUrl={getApiUrl}
@@ -400,6 +395,9 @@ function CertificatePreviewCard({
             <span>{branding.appreciation_title_line1}</span>
             <span>{branding.appreciation_title_line2}</span>
           </div>
+        </div>
+        <div className="cert-appreciation-tricolor-footer" aria-hidden="true">
+          <span className="saffron" /><span className="white" /><span className="green" />
         </div>
       </div>
     )
