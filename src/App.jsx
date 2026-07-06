@@ -105,8 +105,8 @@ function useBranding(getApiUrl) {
     appreciation_sidebar_color: '#0A2818',
     appreciation_secondary_color: '#FFBA08',
     appreciation_header_bg: '#07070E',
-    appreciation_event_color: '#FFBA08',
-    appreciation_ai_color: '#7B6FFF',
+    appreciation_host_name: 'SOBHA DREAM GARDENS',
+    appreciation_host_organizer: 'SDG RWA & SDG SPORTS COMMITTEE',
     founder_name: 'Girish Hiremath',
     founder_title: 'Founder, Intelliforge AI',
     founder_signature_data_uri: '',
@@ -254,6 +254,19 @@ function PreviewSignatureBlocks({ signatories }) {
   )
 }
 
+function resolveAppreciationHostName(venueName, sponsorLabel, defaultHost) {
+  const sponsor = sponsorLabel?.trim() || ''
+  let venue = venueName?.trim() || ''
+  const placeholders = new Set(['', 'venue / store', 'venue/store', 'venue', 'store', 'sports event'])
+  if (placeholders.has(venue.toLowerCase())) venue = ''
+  if (sponsor) {
+    const low = sponsor.toLowerCase()
+    if (!low.includes('intelliforge') && !low.includes('maidaan')) return sponsor
+  }
+  if (venue) return venue
+  return defaultHost || 'SOBHA DREAM GARDENS'
+}
+
 function CertificatePreviewCard({
   kind,
   certForm,
@@ -285,6 +298,12 @@ function CertificatePreviewCard({
         : 'Recognition text for participation in sports events.')
     const eventName = certForm.event_name?.trim()
     const sponsor = certForm.sponsor_label?.trim()
+    const hostName = resolveAppreciationHostName(
+      certForm.venue_name,
+      sponsor,
+      branding.appreciation_host_name,
+    )
+    const organizer = branding.appreciation_host_organizer || 'SDG RWA & SDG SPORTS COMMITTEE'
     const accent = branding.appreciation_accent || '#F05B00'
     const sidebar = branding.appreciation_sidebar_color || '#0A2818'
     const headerBg = branding.appreciation_header_bg || '#07070E'
@@ -336,6 +355,18 @@ function CertificatePreviewCard({
         <div className="cert-appreciation-tricolor" aria-hidden="true">
           <span className="saffron" /><span className="white" /><span className="green" />
         </div>
+        <div className="cert-appreciation-host-strip">
+          <div className="cert-appreciation-host-tricolor" aria-hidden="true">
+            <span className="saffron" /><span className="white" /><span className="green" />
+          </div>
+          <p className="cert-appreciation-host-title">{hostName}</p>
+          <p className="cert-appreciation-host-pill">
+            <span className="pin" aria-hidden="true">&#9679;</span> {hostName}
+          </p>
+          {organizer ? (
+            <p className="cert-appreciation-host-organizer">Organized by: {organizer}</p>
+          ) : null}
+        </div>
         <div className="cert-appreciation-layout">
           <div className="cert-appreciation-main">
             <div className="cert-appreciation-sports" aria-hidden="true">
@@ -351,10 +382,10 @@ function CertificatePreviewCard({
                 <span className="cert-appreciation-date-val">{completionDate}</span>
                 <span className="cert-appreciation-date-lbl">Date</span>
               </div>
-              {(eventName || sponsor) && (
+              {(eventName || hostName) && (
                 <div className="cert-appreciation-event">
                   {eventName ? <strong>{eventName}</strong> : null}
-                  {sponsor ? <span>{sponsor}</span> : null}
+                  {hostName ? <span className="host-line">{hostName}</span> : null}
                 </div>
               )}
             </div>
@@ -1064,7 +1095,7 @@ function App() {
     institution_name: '',
     recognition_text: '',
     event_name: '',
-    venue_name: '',
+    venue_name: 'Sobha Dream Gardens',
     sponsor_label: '',
   })
   const [isGenerating, setIsGenerating] = useState(false)
@@ -1356,11 +1387,11 @@ function App() {
                   </div>
                   <div className="form-row">
                     <div className="form-group">
-                      <label htmlFor="venue_name">Venue / store</label>
+                      <label htmlFor="venue_name">Venue / host community</label>
                       <input
                         id="venue_name"
                         type="text"
-                        placeholder="e.g. Hennur Road store"
+                        placeholder="e.g. Sobha Dream Gardens"
                         value={certForm.venue_name}
                         onChange={(e) => updateCertField('venue_name', e.target.value)}
                       />
@@ -1370,14 +1401,17 @@ function App() {
                       <input
                         id="event_name"
                         type="text"
-                        placeholder="e.g. ONAM FESTIVAL 2025"
+                        placeholder="e.g. Independence Day Sports Festival 2026"
                         value={certForm.event_name}
                         onChange={(e) => updateCertField('event_name', e.target.value)}
                       />
                     </div>
                   </div>
                   <div className="form-group">
-                    <label htmlFor="sponsor_label">Sponsor / location label</label>
+                    <label htmlFor="sponsor_label">
+                      Host label override
+                      <span className="form-optional"> (optional — defaults to venue or SOBHA DREAM GARDENS)</span>
+                    </label>
                     <input
                       id="sponsor_label"
                       type="text"

@@ -28,11 +28,16 @@ import html as html_mod
 from api.appreciation_assets import (
     APPRECIATION_ACCENT_COLOR,
     APPRECIATION_HEADER_BG,
+    APPRECIATION_HOST_NAME_DEFAULT,
+    APPRECIATION_HOST_ORGANIZER_DEFAULT,
     APPRECIATION_SECONDARY_COLOR,
     APPRECIATION_SIDEBAR_COLOR,
+    appreciation_event_footer_html,
     appreciation_header_html_from_branding,
+    appreciation_host_strip_from_branding,
     appreciation_pdf_sports_icons,
     appreciation_pdf_tricolor_footer,
+    resolve_appreciation_host_name,
 )
 from api.certificate_templates import (
     CERTIFICATE_APPRECIATION_HTML,
@@ -452,6 +457,12 @@ CERT_APPRECIATION_EVENT_COLOR = _sanitize_env(
 CERT_APPRECIATION_AI_COLOR = _sanitize_env(
     os.environ.get("CERT_APPRECIATION_AI_COLOR", "#7B6FFF")
 ) or "#7B6FFF"
+CERT_APPRECIATION_HOST_NAME = _sanitize_env(
+    os.environ.get("CERT_APPRECIATION_HOST_NAME", APPRECIATION_HOST_NAME_DEFAULT)
+) or APPRECIATION_HOST_NAME_DEFAULT
+CERT_APPRECIATION_HOST_ORGANIZER = _sanitize_env(
+    os.environ.get("CERT_APPRECIATION_HOST_ORGANIZER", APPRECIATION_HOST_ORGANIZER_DEFAULT)
+) or APPRECIATION_HOST_ORGANIZER_DEFAULT
 SITE_URL = _sanitize_env(os.environ.get("SITE_URL", "")).rstrip("/")
 CONTACT_EMAIL = _sanitize_env(os.environ.get("CONTACT_EMAIL", "support@intelliforge.tech")) or "support@intelliforge.tech"
 _signature_cache: dict[str, str] = {}
@@ -522,6 +533,8 @@ def certificate_branding() -> dict:
         "appreciation_header_bg": CERT_APPRECIATION_HEADER_BG,
         "appreciation_event_color": CERT_APPRECIATION_EVENT_COLOR,
         "appreciation_ai_color": CERT_APPRECIATION_AI_COLOR,
+        "appreciation_host_name": CERT_APPRECIATION_HOST_NAME,
+        "appreciation_host_organizer": CERT_APPRECIATION_HOST_ORGANIZER,
         "founder_name": FOUNDER_NAME,
         "founder_title": FOUNDER_TITLE,
         "founder_signature_data_uri": _generate_signature_data_uri(FOUNDER_NAME),
@@ -589,28 +602,32 @@ def _appreciation_pdf_sidebar(line1: str, line2: str) -> str:
     )
 
 
-def _appreciation_pdf_event_footer(event_name: str, sponsor: str, event_color: str) -> str:
-    if not event_name and not sponsor:
-        return "&nbsp;"
-    parts = []
-    if event_name:
-        parts.append(
-            f'<div style="font-size:10pt;font-weight:bold;color:#1a202c;letter-spacing:0.5pt;">'
-            f"{html_mod.escape(event_name)}</div>"
-        )
-    if sponsor:
-        parts.append(
-            f'<div style="font-size:7pt;color:{event_color};letter-spacing:0.5pt;margin-top:3pt;">'
-            f"{html_mod.escape(sponsor)}</div>"
-        )
-    return "".join(parts)
+def _appreciation_pdf_event_footer(
+    event_name: str,
+    host_name: str,
+    brand: dict,
+) -> str:
+    return appreciation_event_footer_html(
+        event_name,
+        host_name,
+        accent=brand.get("appreciation_accent", APPRECIATION_ACCENT_COLOR),
+        sidebar_color=brand.get("appreciation_sidebar_color", APPRECIATION_SIDEBAR_COLOR),
+    )
 
 
-def _appreciation_viewer_event_block(event_name: str, sponsor: str, event_color: str) -> str:
-    if not event_name and not sponsor:
+def _appreciation_viewer_event_block(event_name: str, host_name: str, brand: dict) -> str:
+    if not event_name and not host_name:
         return ""
-    inner = _appreciation_pdf_event_footer(event_name, sponsor, event_color)
+    inner = _appreciation_pdf_event_footer(event_name, host_name, brand)
     return f'<div class="event-block">{inner}</div>'
+
+
+def _appreciation_host_for_payload(data: dict, brand: dict) -> str:
+    return resolve_appreciation_host_name(
+        (data.get("v") or "").strip(),
+        (data.get("p") or "").strip(),
+        brand.get("appreciation_host_name", CERT_APPRECIATION_HOST_NAME),
+    )
 
 
 def _default_appreciation_recognition(venue_name: str) -> str:
@@ -1047,6 +1064,8 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
     elif _is_appreciation_payload(data):
         brand = certificate_branding()
         event_name = (data.get("e") or "").strip()
+        host_name = _appreciation_host_for_payload(data, brand)
+        venue = (data.get("v") or "").strip()
         sponsor = (data.get("p") or "").strip()
         full_html = CERTIFICATE_APPRECIATION_HTML.format(
             participant_name=html_mod.escape(data["n"]),
@@ -1060,13 +1079,14 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
             header_bg=brand["appreciation_header_bg"],
             event_color=brand["appreciation_event_color"],
             header_block=appreciation_header_html_from_branding(brand),
+            host_strip=appreciation_host_strip_from_branding(brand, venue, sponsor),
             sports_icons=appreciation_pdf_sports_icons(),
             tricolor_footer=appreciation_pdf_tricolor_footer(),
             sidebar_block=_appreciation_pdf_sidebar(
                 brand["appreciation_title_line1"],
                 brand["appreciation_title_line2"],
             ),
-            event_footer=_appreciation_pdf_event_footer(event_name, sponsor, brand["appreciation_event_color"]),
+            event_footer=_appreciation_pdf_event_footer(event_name, host_name, brand),
         )
     else:
         full_html = CERTIFICATE_PARTICIPATION_HTML.format(
@@ -1760,6 +1780,8 @@ async def view_certificate(token: str, req: Request):
         cert_id = _cert_id(data)
         appreciation_brand = certificate_branding()
         event_name = (data.get("e") or "").strip()
+        host_name = _appreciation_host_for_payload(data, appreciation_brand)
+        venue = (data.get("v") or "").strip()
         sponsor = (data.get("p") or "").strip()
         meta_description = html_mod.escape(
             f"Verified Certificate of Appreciation for {data['n']}: {data['r'][:120]}"
@@ -1770,8 +1792,9 @@ async def view_certificate(token: str, req: Request):
             completion_date=html_mod.escape(data["d"]),
             cert_id=html_mod.escape(cert_id),
             event_block=_appreciation_viewer_event_block(
-                event_name, sponsor, appreciation_brand["appreciation_event_color"]
+                event_name, host_name, appreciation_brand
             ),
+            host_strip=appreciation_host_strip_from_branding(appreciation_brand, venue, sponsor),
             page_url=page_url,
             download_url=download_url,
             linkedin_url=linkedin_url,

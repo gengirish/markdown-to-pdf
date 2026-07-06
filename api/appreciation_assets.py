@@ -15,6 +15,8 @@ APPRECIATION_SECONDARY_COLOR = "#FFBA08"
 APPRECIATION_AI_COLOR = "#7B6FFF"
 APPRECIATION_GREEN_ACCENT = "#138808"
 APPRECIATION_TRICOLOR = ("#F05B00", "#FFFFFF", "#138808")
+APPRECIATION_HOST_NAME_DEFAULT = "SOBHA DREAM GARDENS"
+APPRECIATION_HOST_ORGANIZER_DEFAULT = "SDG RWA & SDG SPORTS COMMITTEE"
 
 
 def _split_partner_org(partner_org: str) -> tuple[str, str]:
@@ -88,6 +90,123 @@ def appreciation_header_html_from_branding(branding: dict) -> str:
         org_light=branding.get("appreciation_org_light", "AI"),
         partner_org=branding.get("appreciation_partner_org", "maidaan.academy"),
     )
+
+
+_PLACEHOLDER_VENUES = frozenset({
+    "",
+    "venue / store",
+    "venue/store",
+    "venue",
+    "store",
+    "sports event",
+    "select a venue",
+})
+
+
+def resolve_appreciation_host_name(
+    venue_name: str = "",
+    sponsor_label: str = "",
+    default_host: str = APPRECIATION_HOST_NAME_DEFAULT,
+) -> str:
+    """Pick venue/host line; ignore sponsor_label when it lists tech partners only."""
+    venue = (venue_name or "").strip()
+    sponsor = (sponsor_label or "").strip()
+    if venue.lower() in _PLACEHOLDER_VENUES:
+        venue = ""
+    if sponsor:
+        low = sponsor.lower()
+        if "intelliforge" not in low and "maidaan" not in low:
+            return sponsor
+    if venue:
+        return venue
+    return default_host
+
+
+def appreciation_host_strip_html(
+    host_name: str,
+    organizer: str = "",
+    *,
+    sidebar_color: str = APPRECIATION_SIDEBAR_COLOR,
+    accent: str = APPRECIATION_ACCENT_COLOR,
+    escape: bool = True,
+) -> str:
+    """Sobha-style venue/host branding band (xhtml2pdf-safe)."""
+    esc = html_mod.escape if escape else lambda x: x
+    host = (host_name or APPRECIATION_HOST_NAME_DEFAULT).strip()
+    org = (organizer or "").strip()
+    tricolor = "".join(
+        f'<td style="background-color:{c};width:22pt;height:3pt;font-size:1pt;line-height:3pt;">&nbsp;</td>'
+        for c in APPRECIATION_TRICOLOR
+    )
+    org_row = ""
+    if org:
+        org_row = (
+            f'<table align="center" cellspacing="0" cellpadding="0" style="margin-top:5pt;">'
+            f'<tr><td align="center" style="background-color:{sidebar_color};color:#ffffff;'
+            f"font-size:6pt;font-weight:bold;letter-spacing:0.8pt;padding:3pt 12pt;"
+            f'text-transform:uppercase;">Organized by: {esc(org)}</td></tr></table>'
+        )
+    return (
+        f'<table width="100%" cellspacing="0" cellpadding="0" '
+        f'style="background-color:#ffffff;border-bottom:1px solid #e2e8f0;">'
+        f'<tr><td align="center" style="text-align:center;padding:9pt 16pt 8pt;">'
+        f'<table align="center" cellspacing="0" cellpadding="0"><tr>{tricolor}</tr></table>'
+        f'<div style="font-size:11pt;font-weight:bold;color:#1a202c;letter-spacing:1.2pt;'
+        f'margin-top:6pt;text-transform:uppercase;">{esc(host)}</div>'
+        f'<table align="center" cellspacing="0" cellpadding="0" style="margin-top:4pt;"><tr>'
+        f'<td style="background-color:{sidebar_color};color:#ffffff;font-size:6.5pt;'
+        f'font-weight:bold;padding:2pt 8pt;letter-spacing:0.5pt;">'
+        f'<span style="color:{accent};">&#9679;</span> {esc(host)}</td></tr></table>'
+        f"{org_row}"
+        f"</td></tr></table>"
+    )
+
+
+def appreciation_host_strip_from_branding(
+    branding: dict,
+    venue_name: str = "",
+    sponsor_label: str = "",
+) -> str:
+    host = resolve_appreciation_host_name(
+        venue_name,
+        sponsor_label,
+        branding.get("appreciation_host_name", APPRECIATION_HOST_NAME_DEFAULT),
+    )
+    return appreciation_host_strip_html(
+        host,
+        branding.get("appreciation_host_organizer", APPRECIATION_HOST_ORGANIZER_DEFAULT),
+        sidebar_color=branding.get("appreciation_sidebar_color", APPRECIATION_SIDEBAR_COLOR),
+        accent=branding.get("appreciation_accent", APPRECIATION_ACCENT_COLOR),
+    )
+
+
+def appreciation_event_footer_html(
+    event_name: str,
+    host_name: str,
+    *,
+    accent: str = APPRECIATION_ACCENT_COLOR,
+    sidebar_color: str = APPRECIATION_SIDEBAR_COLOR,
+    escape: bool = True,
+) -> str:
+    esc = html_mod.escape if escape else lambda x: x
+    if not event_name and not host_name:
+        return "&nbsp;"
+    parts = []
+    if event_name:
+        parts.append(
+            f'<div style="font-size:10pt;font-weight:bold;color:#1a202c;'
+            f'letter-spacing:0.6pt;text-transform:uppercase;">{esc(event_name)}</div>'
+        )
+    if host_name:
+        parts.append(
+            f'<div style="font-size:7.5pt;font-weight:bold;color:{sidebar_color};'
+            f'letter-spacing:0.8pt;margin-top:4pt;text-transform:uppercase;">{esc(host_name)}</div>'
+        )
+        parts.append(
+            f'<div style="font-size:6pt;color:{accent};letter-spacing:0.4pt;margin-top:2pt;">'
+            f"&#9679; Venue &amp; host community</div>"
+        )
+    return "".join(parts)
 
 
 def appreciation_pdf_sports_icons() -> str:

@@ -664,6 +664,77 @@
   background: #138808;
 }
 
+.cert-appreciation-host-strip {
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: center;
+  padding: 0.55rem 0.75rem 0.6rem;
+}
+
+.cert-appreciation-host-tricolor {
+  display: flex;
+  justify-content: center;
+  gap: 0;
+  max-width: 4.5rem;
+  margin: 0 auto 0.35rem;
+}
+
+.cert-appreciation-host-tricolor span {
+  flex: 1;
+  height: 3px;
+}
+
+.cert-appreciation-host-tricolor .saffron {
+  background: var(--appreciation-accent, #f05b00);
+}
+
+.cert-appreciation-host-tricolor .white {
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.cert-appreciation-host-tricolor .green {
+  background: #138808;
+}
+
+.cert-appreciation-host-title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #1a202c;
+}
+
+.cert-appreciation-host-pill {
+  display: inline-block;
+  margin: 0.3rem 0 0;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: var(--appreciation-sidebar, #0a2818);
+}
+
+.cert-appreciation-host-pill .pin {
+  color: var(--appreciation-accent, #f05b00);
+  margin-right: 0.15rem;
+}
+
+.cert-appreciation-host-organizer {
+  margin: 0.35rem 0 0;
+  font-size: 0.46rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--appreciation-sidebar, #0a2818);
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+}
+
 .cert-appreciation-layout {
   display: flex;
   min-height: 280px;
@@ -785,7 +856,17 @@
   color: #1a202c;
 }
 
-.cert-appreciation-event span {
+.cert-appreciation-event span.host-line {
+  display: block;
+  font-size: 0.58rem;
+  color: var(--appreciation-sidebar, #0a2818);
+  margin-top: 0.15rem;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.cert-appreciation-event span:not(.host-line) {
   display: block;
   font-size: 0.58rem;
   color: var(--appreciation-secondary, #ffba08);

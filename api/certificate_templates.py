@@ -490,6 +490,11 @@ CERTIFICATE_APPRECIATION_HTML = """
     </td>
 </tr>
 <tr>
+    <td colspan="3" style="padding: 0;">
+        {host_strip}
+    </td>
+</tr>
+<tr>
     <td width="5%" style="vertical-align: middle; padding: 18pt 0 18pt 14pt;">
         {sports_icons}
     </td>
@@ -585,6 +590,11 @@ VIEWER_APPRECIATION_HTML = """
         @keyframes up{{from{{opacity:0;transform:translateY(30px)}}to{{opacity:1;transform:translateY(0)}}}}
         .card-header{{background:{header_bg};padding:0}}
         .card-header table{{width:100%}}
+        .host-strip{{background:#fff;border-bottom:1px solid #e2e8f0}}
+        .host-strip table{{width:100%}}
+        .event-block .host-line{{font-size:.72rem;font-weight:700;color:{sidebar_color};letter-spacing:.08em;text-transform:uppercase;margin-top:.25rem}}
+        .event-block .event-line{{font-size:.78rem;font-weight:700;color:#1a202c;letter-spacing:.05em;text-transform:uppercase}}
+        .event-block .venue-note{{font-size:.55rem;color:{accent_color};margin-top:.15rem}}
         .tricolor{{display:flex;height:4px}}
         .tricolor span{{flex:1}}
         .tricolor .saffron{{background:{accent_color}}}
@@ -628,6 +638,9 @@ VIEWER_APPRECIATION_HTML = """
     <div class="card">
         <div class="card-header">
             {header_block}
+        </div>
+        <div class="host-strip">
+            {host_strip}
         </div>
         <div class="tricolor" aria-hidden="true">
             <span class="saffron"></span><span class="white"></span><span class="green"></span>
