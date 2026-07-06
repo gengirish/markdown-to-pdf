@@ -647,7 +647,7 @@ VIEWER_APPRECIATION_HTML = """
         .date-lbl{{font-family:'Barlow Condensed',sans-serif;font-size:.5rem;color:{accent_color};text-transform:uppercase;letter-spacing:.1em;margin-bottom:.12rem;font-weight:700}}
         .date-val{{font-family:'Barlow Condensed',sans-serif;font-size:.95rem;font-weight:700;color:#1a202c;letter-spacing:.02em}}
         .actions{{display:flex;flex-direction:column;gap:.5rem;align-items:center;padding-top:.65rem;border-top:1px solid #e2e8f0}}
-        .btn-download{{display:inline-flex;align-items:center;gap:.5rem;background:{accent_color};color:#fff;border:none;padding:.72rem 1.85rem;border-radius:6px;font-family:'Barlow Condensed',sans-serif;font-size:.9rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;text-decoration:none;transition:background .2s ease,transform .2s ease,box-shadow .2s ease;box-shadow:0 3px 10px rgba(240,91,0,.3)}}
+        .btn-download{{display:inline-flex;align-items:center;gap:.5rem;background:{accent_color};color:#fff;border:none;padding:.72rem 1.85rem;border-radius:6px;font-family:'Barlow Condensed',sans-serif;font-size:.9rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;text-decoration:none;transition:background .2s ease,transform .2s ease,box-shadow .2s ease;box-shadow:0 3px 10px rgba(240,91,0,.3);appearance:none}}
         .btn-download:hover{{background:#d94f00;transform:translateY(-1px);box-shadow:0 5px 16px rgba(240,91,0,.4)}}
         .btn-download:focus-visible{{outline:2px solid {accent_color};outline-offset:2px}}
         .share-row{{display:flex;gap:.45rem;flex-wrap:wrap;justify-content:center}}
@@ -666,6 +666,16 @@ VIEWER_APPRECIATION_HTML = """
         .card-footer p{{font-size:.6rem;color:#a0aec0}}
         .card-footer a{{color:{accent_color};text-decoration:none;transition:opacity .2s ease}}
         .card-footer a:hover{{opacity:.8}}
+        .print-hint{{font-size:.58rem;color:#a0aec0;text-align:center;margin:0;line-height:1.4}}
+        @media print{{
+            @page{{size:auto;margin:12mm}}
+            body{{background:#fff!important;padding:0!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+            .card{{box-shadow:none!important;border:1px solid #e2e8f0!important;max-width:100%!important;width:100%!important;border-radius:0!important;animation:none!important;break-inside:avoid-page}}
+            .actions,.print-hint,.btn-share{{display:none!important}}
+            .card-footer{{background:#f8fafc!important;border-top:1px solid #e2e8f0!important}}
+            .verified{{background:#fff4eb!important;border-color:#fdba74!important}}
+            .host-strip,.sidebar,.header-stripe,.tricolor-footer,.card-header{{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+        }}
         @media(max-width:520px){{body{{padding:1rem}}.sidebar{{width:54px}}.main{{padding:1.2rem 1rem 1rem .85rem}}.name{{font-size:1.45rem}}.body-row{{gap:.55rem}}}}
     </style>
 </head>
@@ -716,7 +726,8 @@ VIEWER_APPRECIATION_HTML = """
                     </div>
                 </div>
                 <div class="actions">
-                    <a class="btn-download" href="{download_url}">Download PDF</a>
+                    <button type="button" class="btn-download" onclick="saveCertificatePdf()">Save as PDF</button>
+                    <p class="print-hint">In the print dialog, choose &ldquo;Save as PDF&rdquo; as the destination.</p>
                     <div class="share-row">
                         <a class="btn-share btn-linkedin" href="{linkedin_url}" target="_blank" rel="noopener">LinkedIn</a>
                         <a class="btn-share btn-twitter" href="{twitter_url}" target="_blank" rel="noopener">Share</a>
@@ -742,6 +753,15 @@ VIEWER_APPRECIATION_HTML = """
             <p>Issued by {issued_by} &middot; <a href="{page_url}">{website}</a></p>
         </div>
     </div>
+    <script>
+    async function saveCertificatePdf() {{
+        if (document.fonts && document.fonts.ready) {{
+            try {{ await document.fonts.ready; }} catch (e) {{}}
+        }}
+        window.print();
+    }}
+    {auto_print_script}
+    </script>
 </body>
 </html>
 """

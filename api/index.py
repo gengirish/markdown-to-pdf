@@ -8,7 +8,7 @@ so no database is needed and certificates are permanent and tamper-proof.
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, HTMLResponse, JSONResponse
+from fastapi.responses import Response, HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, model_validator
 from xhtml2pdf import pisa
 from io import BytesIO
@@ -637,6 +637,24 @@ def _appreciation_viewer_event_block(event_name: str, host_name: str, brand: dic
         f'<div class="event-name">{html_mod.escape(event_name)}</div>'
         f"</div></div>"
     )
+
+
+def _appreciation_auto_print_script(enable: bool) -> str:
+    if not enable:
+        return ""
+    return """
+    (function () {
+        if (new URLSearchParams(location.search).get('print') !== '1') return;
+        async function go() {
+            if (document.fonts && document.fonts.ready) {
+                try { await document.fonts.ready; } catch (e) {}
+            }
+            setTimeout(function () { window.print(); }, 400);
+        }
+        if (document.readyState === 'complete') go();
+        else window.addEventListener('load', go);
+    })();
+    """
 
 
 def _appreciation_host_for_payload(data: dict, brand: dict) -> str:
@@ -1816,6 +1834,7 @@ async def view_certificate(token: str, req: Request):
     base_url = str(req.base_url).rstrip("/")
     page_url = f"{base_url}/certificate/{token}"
     download_url = f"{page_url}/download"
+    auto_print = req.query_params.get("print") == "1"
 
     linkedin_params = urlencode({"url": page_url})
     linkedin_url = f"https://www.linkedin.com/sharing/share-offsite/?{linkedin_params}"
@@ -1911,6 +1930,7 @@ async def view_certificate(token: str, req: Request):
                 "url": page_url,
             }),
             header_block=appreciation_header_html_from_branding(appreciation_brand),
+            auto_print_script=_appreciation_auto_print_script(auto_print),
             **_appreciation_branding_html(),
         )
     else:
@@ -1955,9 +1975,16 @@ async def view_certificate(token: str, req: Request):
 
 @app.get("/certificate/{token}/download", tags=["Certificates"])
 async def download_certificate(token: str, req: Request):
-    """Download a certificate as a PDF file."""
+    """Download a certificate. Appreciation certs open the viewer print dialog (WYSIWYG PDF)."""
     data = _resolve_cert(token)
     base_url = str(req.base_url).rstrip("/")
+
+    if _is_appreciation_payload(data):
+        return RedirectResponse(
+            url=f"{base_url}/certificate/{token}?print=1",
+            status_code=302,
+        )
+
     verify_url = f"{base_url}/certificate/{token}"
     pdf_bytes = _build_cert_pdf(data, verify_url=verify_url)
     safe_name = data["n"].replace(" ", "_")
