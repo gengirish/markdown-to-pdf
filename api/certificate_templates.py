@@ -2,7 +2,7 @@
 HTML sources for certificate PDFs (xhtml2pdf).
 Participation: general course completion.
 Internship (VTU-style): formal fields for institutional records + verifiable QR.
-Appreciation: sports / event participation (landscape, Decathlon Play-style layout).
+Appreciation: sports / event participation (IntelliForge / maidaan poster theme).
 """
 
 # Landscape A4-style (matches existing participation certificate)
@@ -483,18 +483,18 @@ CERTIFICATE_APPRECIATION_HTML = """
 </head>
 <body>
 
-<table width="100%" height="100%" style="background-color: #ffffff;">
+<table width="100%" height="100%" cellspacing="0" cellpadding="0" style="background-color: #ffffff;">
+<tr>
+    <td colspan="3" style="background-color: {header_bg}; padding: 10pt 20pt 8pt;">
+        {header_block}
+    </td>
+</tr>
 <tr>
     <td width="5%" style="vertical-align: middle; padding: 18pt 0 18pt 14pt;">
         {sports_icons}
     </td>
-    <td width="70%" style="vertical-align: top; padding: 22pt 24pt 18pt 8pt;">
+    <td width="70%" style="vertical-align: top; padding: 20pt 24pt 16pt 8pt;">
         <table width="100%" cellspacing="0" cellpadding="0">
-            <tr>
-                <td align="right" style="text-align: right; padding-bottom: 28pt;">
-                    {logo_block}
-                </td>
-            </tr>
             <tr>
                 <td style="padding-left: 8pt;">
                     <table width="100%" cellspacing="0" cellpadding="0">
@@ -546,21 +546,14 @@ CERTIFICATE_APPRECIATION_HTML = """
             </tr>
         </table>
     </td>
-    <td width="25%" style="background-color: {accent_color}; vertical-align: middle;">
+    <td width="25%" style="background-color: {sidebar_color}; vertical-align: middle;">
         {sidebar_block}
     </td>
 </tr>
-</table>
-
-<table width="100%" cellspacing="0" cellpadding="0">
 <tr>
-    <td style="border-top: 1px solid #e2e8f0; font-size: 1pt;">&nbsp;</td>
-</tr>
-<tr>
-    <td style="border-top: 1px solid #e2e8f0; font-size: 1pt;">&nbsp;</td>
-</tr>
-<tr>
-    <td style="border-top: 1px solid #e2e8f0; font-size: 1pt;">&nbsp;</td>
+    <td colspan="3" style="padding: 0;">
+        {tricolor_footer}
+    </td>
 </tr>
 </table>
 
@@ -587,19 +580,21 @@ VIEWER_APPRECIATION_HTML = """
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
-        body{{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f4f8;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem}}
-        .card{{position:relative;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.12);max-width:640px;width:100%;overflow:hidden;animation:up .5s ease-out}}
+        body{{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:#eef2f6;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem}}
+        .card{{position:relative;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.14);max-width:680px;width:100%;overflow:hidden;animation:up .5s ease-out}}
         @keyframes up{{from{{opacity:0;transform:translateY(30px)}}to{{opacity:1;transform:translateY(0)}}}}
+        .card-header{{background:{header_bg};padding:.85rem 1.1rem;display:flex;justify-content:space-between;align-items:center;gap:.75rem}}
+        .card-header img{{height:34px;width:auto;max-width:46%}}
+        .tricolor{{display:flex;height:4px}}
+        .tricolor span{{flex:1}}
+        .tricolor .saffron{{background:{accent_color}}}
+        .tricolor .white{{background:#ffffff;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0}}
+        .tricolor .green{{background:#138808}}
         .layout{{display:flex;min-height:320px}}
-        .main{{flex:1;padding:1.8rem 1.6rem 1.4rem 1.4rem;position:relative}}
-        .sidebar{{width:72px;background:{accent_color};display:flex;align-items:center;justify-content:center;padding:.75rem .35rem}}
+        .main{{flex:1;padding:1.5rem 1.4rem 1.2rem 1.5rem;position:relative}}
+        .sidebar{{width:72px;background:{sidebar_color};display:flex;align-items:center;justify-content:center;padding:.75rem .35rem}}
         .sidebar-text{{color:#fff;font-weight:700;font-size:.42rem;letter-spacing:.15em;text-transform:uppercase;writing-mode:vertical-rl;transform:rotate(180deg);line-height:1.6}}
-        .logo-row{{display:flex;justify-content:flex-end;align-items:center;gap:.35rem;margin-bottom:1.2rem}}
-        .logo-mark{{width:28px;height:28px;border-radius:50%;background:{accent_color};color:#fff;font-weight:700;font-size:.85rem;display:flex;align-items:center;justify-content:center}}
-        .logo-text{{text-align:right;line-height:1.1}}
-        .logo-bold{{font-weight:800;font-size:.72rem;color:{accent_color};letter-spacing:.5px}}
-        .logo-light{{font-weight:500;font-size:.68rem;color:{accent_color}}}
-        .verified{{display:inline-flex;align-items:center;gap:.35rem;background:#ebf8ff;border:1px solid #90cdf4;color:#2c5282;font-size:.62rem;font-weight:600;padding:.25rem .7rem;border-radius:20px;margin-bottom:.9rem}}
+        .verified{{display:inline-flex;align-items:center;gap:.35rem;background:#fff4eb;border:1px solid #fdba74;color:#9a3412;font-size:.62rem;font-weight:600;padding:.25rem .7rem;border-radius:20px;margin-bottom:.9rem}}
         .verified svg{{width:12px;height:12px}}
         .label{{font-size:.62rem;color:#4a5568;margin-bottom:.5rem}}
         .name{{font-size:1.65rem;font-weight:700;color:{accent_color};border-bottom:1px solid #cbd5e0;padding-bottom:.35rem;margin-bottom:.9rem;line-height:1.2}}
@@ -608,8 +603,6 @@ VIEWER_APPRECIATION_HTML = """
         .date-val{{font-size:.9rem;font-weight:600;color:{accent_color};border-bottom:1px solid #a0aec0;padding-bottom:.15rem}}
         .date-lbl{{font-size:.55rem;color:#718096;margin-top:.2rem}}
         .event-block{{text-align:right}}
-        .event-name{{font-size:.78rem;font-weight:700;color:#1a202c;letter-spacing:.5px}}
-        .sponsor{{font-size:.58rem;color:#718096;margin-top:.15rem;letter-spacing:.3px}}
         .actions{{display:flex;flex-direction:column;gap:.55rem;align-items:center;padding-top:.5rem;border-top:1px solid #edf2f7}}
         .btn-download{{display:inline-flex;align-items:center;gap:.5rem;background:{accent_color};color:#fff;border:none;padding:.7rem 1.6rem;border-radius:10px;font-size:.85rem;font-weight:600;cursor:pointer;text-decoration:none}}
         .share-row{{display:flex;gap:.4rem;flex-wrap:wrap;justify-content:center}}
@@ -623,24 +616,32 @@ VIEWER_APPRECIATION_HTML = """
         .card-footer{{background:#f8fafc;border-top:1px solid #edf2f7;padding:.85rem 1.5rem;text-align:center}}
         .card-footer p{{font-size:.62rem;color:#a0aec0}}
         .card-footer a{{color:{accent_color};text-decoration:none}}
-        .sports-col{{position:absolute;left:.5rem;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:.35rem;opacity:.35}}
-        .sport-dot{{width:8px;height:8px;border-radius:50%;background:{accent_color}}}
-        @media(max-width:520px){{body{{padding:1rem}}.sidebar{{width:48px}}.main{{padding:1.2rem 1rem 1rem 1.2rem}}.name{{font-size:1.25rem}}}}
+        .sports-col{{position:absolute;left:.35rem;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:.35rem;opacity:.45}}
+        .sport-dot{{width:8px;height:8px;border-radius:50%}}
+        .sport-dot.orange{{background:{accent_color}}}
+        .sport-dot.grey{{background:#d1d5db}}
+        .sport-dot.green{{background:#138808}}
+        @media(max-width:520px){{body{{padding:1rem}}.sidebar{{width:48px}}.main{{padding:1.2rem 1rem 1rem 1.2rem}}.name{{font-size:1.25rem}}.card-header img{{height:26px}}}}
     </style>
 </head>
 <body>
     <div class="card">
+        <div class="card-header">
+            <img src="{logo_left_url}" alt="IntelliForge AI" />
+            <img src="{logo_right_url}" alt="maidaan.academy" />
+        </div>
+        <div class="tricolor" aria-hidden="true">
+            <span class="saffron"></span><span class="white"></span><span class="green"></span>
+        </div>
         <div class="layout">
             <div class="main">
                 <div class="sports-col" aria-hidden="true">
-                    <div class="sport-dot"></div><div class="sport-dot"></div><div class="sport-dot"></div><div class="sport-dot"></div>
-                </div>
-                <div class="logo-row">
-                    <div class="logo-text">
-                        <div class="logo-bold">{appreciation_org_bold}</div>
-                        <div class="logo-light">{appreciation_org_light}</div>
-                    </div>
-                    <div class="logo-mark">D</div>
+                    <div class="sport-dot orange"></div>
+                    <div class="sport-dot grey"></div>
+                    <div class="sport-dot green"></div>
+                    <div class="sport-dot orange"></div>
+                    <div class="sport-dot grey"></div>
+                    <div class="sport-dot green"></div>
                 </div>
                 <div class="verified">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>

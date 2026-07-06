@@ -25,6 +25,16 @@ from urllib.parse import urlencode
 from typing import Literal
 import html as html_mod
 
+from api.appreciation_assets import (
+    APPRECIATION_ACCENT_COLOR,
+    APPRECIATION_HEADER_BG,
+    APPRECIATION_SECONDARY_COLOR,
+    APPRECIATION_SIDEBAR_COLOR,
+    appreciation_logo_urls,
+    appreciation_pdf_header_block,
+    appreciation_pdf_sports_icons,
+    appreciation_pdf_tricolor_footer,
+)
 from api.certificate_templates import (
     CERTIFICATE_APPRECIATION_HTML,
     CERTIFICATE_INTERNSHIP_VTU_HTML,
@@ -383,14 +393,17 @@ CERT_INTERNSHIP_BRAND_ACCENT = _sanitize_env(
     os.environ.get("CERT_INTERNSHIP_BRAND_ACCENT", "Forge")
 ) or "Forge"
 CERT_APPRECIATION_ORG = _sanitize_env(
-    os.environ.get("CERT_APPRECIATION_ORG", "Decathlon Play")
-) or "Decathlon Play"
+    os.environ.get("CERT_APPRECIATION_ORG", "IntelliForge AI")
+) or "IntelliForge AI"
 CERT_APPRECIATION_ORG_BOLD = _sanitize_env(
-    os.environ.get("CERT_APPRECIATION_ORG_BOLD", "DECATHLON")
-) or "DECATHLON"
+    os.environ.get("CERT_APPRECIATION_ORG_BOLD", "IntelliForge")
+) or "IntelliForge"
 CERT_APPRECIATION_ORG_LIGHT = _sanitize_env(
-    os.environ.get("CERT_APPRECIATION_ORG_LIGHT", "Play")
-) or "Play"
+    os.environ.get("CERT_APPRECIATION_ORG_LIGHT", "AI")
+) or "AI"
+CERT_APPRECIATION_PARTNER_ORG = _sanitize_env(
+    os.environ.get("CERT_APPRECIATION_PARTNER_ORG", "maidaan.academy")
+) or "maidaan.academy"
 CERT_APPRECIATION_TITLE_LINE1 = _sanitize_env(
     os.environ.get("CERT_APPRECIATION_TITLE_LINE1", "CERTIFICATE")
 ) or "CERTIFICATE"
@@ -404,11 +417,23 @@ CERT_APPRECIATION_PRESENTED_LABEL = _sanitize_env(
     )
 ) or "This certificate is proudly presented to"
 CERT_APPRECIATION_ACCENT = _sanitize_env(
-    os.environ.get("CERT_APPRECIATION_ACCENT", "#0082C3")
-) or "#0082C3"
+    os.environ.get("CERT_APPRECIATION_ACCENT", APPRECIATION_ACCENT_COLOR)
+) or APPRECIATION_ACCENT_COLOR
+CERT_APPRECIATION_SIDEBAR_COLOR = _sanitize_env(
+    os.environ.get("CERT_APPRECIATION_SIDEBAR_COLOR", APPRECIATION_SIDEBAR_COLOR)
+) or APPRECIATION_SIDEBAR_COLOR
+CERT_APPRECIATION_SECONDARY_COLOR = _sanitize_env(
+    os.environ.get("CERT_APPRECIATION_SECONDARY_COLOR", APPRECIATION_SECONDARY_COLOR)
+) or APPRECIATION_SECONDARY_COLOR
+CERT_APPRECIATION_HEADER_BG = _sanitize_env(
+    os.environ.get("CERT_APPRECIATION_HEADER_BG", APPRECIATION_HEADER_BG)
+) or APPRECIATION_HEADER_BG
 CERT_APPRECIATION_EVENT_COLOR = _sanitize_env(
-    os.environ.get("CERT_APPRECIATION_EVENT_COLOR", "#2E7D32")
-) or "#2E7D32"
+    os.environ.get("CERT_APPRECIATION_EVENT_COLOR", APPRECIATION_SECONDARY_COLOR)
+) or APPRECIATION_SECONDARY_COLOR
+CERT_APPRECIATION_AI_COLOR = _sanitize_env(
+    os.environ.get("CERT_APPRECIATION_AI_COLOR", "#7B6FFF")
+) or "#7B6FFF"
 SITE_URL = _sanitize_env(os.environ.get("SITE_URL", "")).rstrip("/")
 CONTACT_EMAIL = _sanitize_env(os.environ.get("CONTACT_EMAIL", "support@intelliforge.tech")) or "support@intelliforge.tech"
 _signature_cache: dict[str, str] = {}
@@ -469,11 +494,16 @@ def certificate_branding() -> dict:
         "appreciation_org": CERT_APPRECIATION_ORG,
         "appreciation_org_bold": CERT_APPRECIATION_ORG_BOLD,
         "appreciation_org_light": CERT_APPRECIATION_ORG_LIGHT,
+        "appreciation_partner_org": CERT_APPRECIATION_PARTNER_ORG,
         "appreciation_title_line1": CERT_APPRECIATION_TITLE_LINE1,
         "appreciation_title_line2": CERT_APPRECIATION_TITLE_LINE2,
         "appreciation_presented_label": CERT_APPRECIATION_PRESENTED_LABEL,
         "appreciation_accent": CERT_APPRECIATION_ACCENT,
+        "appreciation_sidebar_color": CERT_APPRECIATION_SIDEBAR_COLOR,
+        "appreciation_secondary_color": CERT_APPRECIATION_SECONDARY_COLOR,
+        "appreciation_header_bg": CERT_APPRECIATION_HEADER_BG,
         "appreciation_event_color": CERT_APPRECIATION_EVENT_COLOR,
+        "appreciation_ai_color": CERT_APPRECIATION_AI_COLOR,
         "founder_name": FOUNDER_NAME,
         "founder_title": FOUNDER_TITLE,
         "founder_signature_data_uri": _generate_signature_data_uri(FOUNDER_NAME),
@@ -510,13 +540,18 @@ def _appreciation_branding_html() -> dict[str, str]:
         "appreciation_org": html_mod.escape(b["appreciation_org"]),
         "appreciation_org_bold": html_mod.escape(b["appreciation_org_bold"]),
         "appreciation_org_light": html_mod.escape(b["appreciation_org_light"]),
+        "appreciation_partner_org": html_mod.escape(b["appreciation_partner_org"]),
         "title_line1": html_mod.escape(b["appreciation_title_line1"]),
         "title_line2": html_mod.escape(b["appreciation_title_line2"]),
         "presented_label": html_mod.escape(b["appreciation_presented_label"]),
         "issued_by": html_mod.escape(b["issued_by"]),
         "website": html_mod.escape(b["website"]),
         "accent_color": b["appreciation_accent"],
+        "sidebar_color": b["appreciation_sidebar_color"],
+        "secondary_color": b["appreciation_secondary_color"],
+        "header_bg": b["appreciation_header_bg"],
         "event_color": b["appreciation_event_color"],
+        "ai_color": b["appreciation_ai_color"],
     }
 
 
@@ -534,34 +569,6 @@ def _appreciation_pdf_sidebar(line1: str, line2: str) -> str:
         f'<div style="color:#ffffff;font-size:5.5pt;letter-spacing:1pt;margin-top:12pt;line-height:1.15;">'
         f"{parts2}</div></td></tr></table>"
     )
-
-
-def _appreciation_pdf_logo_block(accent: str, org_bold: str, org_light: str) -> str:
-    return (
-        f'<table align="right" cellspacing="0" cellpadding="0">'
-        f'<tr><td align="right" style="text-align:right;">'
-        f'<table cellspacing="0" cellpadding="0"><tr>'
-        f'<td style="padding-right:6pt;vertical-align:middle;">'
-        f'<table cellspacing="0" cellpadding="0"><tr><td align="center" '
-        f'style="width:22pt;height:22pt;background-color:{accent};color:#ffffff;'
-        f'font-weight:bold;font-size:11pt;text-align:center;vertical-align:middle;">D</td></tr></table>'
-        f"</td>"
-        f'<td style="vertical-align:middle;text-align:left;">'
-        f'<div style="font-size:9pt;font-weight:bold;color:{accent};letter-spacing:0.5pt;">'
-        f"{html_mod.escape(org_bold)}</div>"
-        f'<div style="font-size:8pt;color:{accent};font-weight:normal;">'
-        f"{html_mod.escape(org_light)}</div>"
-        f"</td></tr></table></td></tr></table>"
-    )
-
-
-def _appreciation_pdf_sports_icons(accent: str) -> str:
-    rows = "".join(
-        f'<tr><td align="center" style="text-align:center;color:{accent};font-size:11pt;padding:3pt 0;">'
-        f"&#9679;</td></tr>"
-        for _ in range(6)
-    )
-    return f"<table cellspacing='0' cellpadding='0'>{rows}</table>"
 
 
 def _appreciation_pdf_event_footer(event_name: str, sponsor: str, event_color: str) -> str:
@@ -593,8 +600,8 @@ def _default_appreciation_recognition(venue_name: str) -> str:
     if not venue:
         return ""
     return (
-        f"For your commendable participation in Sports events conducted by "
-        f"{CERT_APPRECIATION_ORG}, {venue}."
+        f"For your commendable participation in sports events organized by "
+        f"{CERT_APPRECIATION_ORG} at {venue}."
     )
 
 
@@ -944,7 +951,7 @@ async def get_info():
             "Public shareable certificate pages",
             "PDF certificate generation with QR codes",
             "VTU-style internship completion (USN, hours, mentor)",
-            "Sports/event appreciation certificates (landscape Decathlon-style layout)",
+            "Sports/event appreciation certificates (IntelliForge / maidaan poster theme)",
             "LinkedIn and X social sharing",
         ],
         "tech_stack": {
@@ -1021,8 +1028,6 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
         )
     elif _is_appreciation_payload(data):
         brand = certificate_branding()
-        accent = brand["appreciation_accent"]
-        event_color = brand["appreciation_event_color"]
         event_name = (data.get("e") or "").strip()
         sponsor = (data.get("p") or "").strip()
         full_html = CERTIFICATE_APPRECIATION_HTML.format(
@@ -1032,19 +1037,18 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
             certificate_id=html_mod.escape(cert_id),
             qr_data_uri=qr_data_uri,
             presented_label=html_mod.escape(brand["appreciation_presented_label"]),
-            accent_color=accent,
-            event_color=event_color,
-            sports_icons=_appreciation_pdf_sports_icons(accent),
-            logo_block=_appreciation_pdf_logo_block(
-                accent,
-                brand["appreciation_org_bold"],
-                brand["appreciation_org_light"],
-            ),
+            accent_color=brand["appreciation_accent"],
+            sidebar_color=brand["appreciation_sidebar_color"],
+            header_bg=brand["appreciation_header_bg"],
+            event_color=brand["appreciation_event_color"],
+            header_block=appreciation_pdf_header_block(),
+            sports_icons=appreciation_pdf_sports_icons(),
+            tricolor_footer=appreciation_pdf_tricolor_footer(),
             sidebar_block=_appreciation_pdf_sidebar(
                 brand["appreciation_title_line1"],
                 brand["appreciation_title_line2"],
             ),
-            event_footer=_appreciation_pdf_event_footer(event_name, sponsor, event_color),
+            event_footer=_appreciation_pdf_event_footer(event_name, sponsor, brand["appreciation_event_color"]),
         )
     else:
         full_html = CERTIFICATE_PARTICIPATION_HTML.format(
@@ -1739,6 +1743,7 @@ async def view_certificate(token: str, req: Request):
                 "identifier": cert_id,
                 "url": page_url,
             }),
+            **appreciation_logo_urls(base_url),
             **_appreciation_branding_html(),
         )
     else:

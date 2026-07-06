@@ -94,14 +94,19 @@ function useBranding(getApiUrl) {
     website: 'learning.intelliforge.tech',
     internship_org: 'Intelliforge Digital Services',
     internship_brand_prefix: 'IntelliForge',
-    appreciation_org: 'Decathlon Play',
-    appreciation_org_bold: 'DECATHLON',
-    appreciation_org_light: 'Play',
+    appreciation_org: 'IntelliForge AI',
+    appreciation_org_bold: 'IntelliForge',
+    appreciation_org_light: 'AI',
+    appreciation_partner_org: 'maidaan.academy',
     appreciation_title_line1: 'CERTIFICATE',
     appreciation_title_line2: 'OF APPRECIATION',
     appreciation_presented_label: 'This certificate is proudly presented to',
-    appreciation_accent: '#0082C3',
-    appreciation_event_color: '#2E7D32',
+    appreciation_accent: '#F05B00',
+    appreciation_sidebar_color: '#0A2818',
+    appreciation_secondary_color: '#FFBA08',
+    appreciation_header_bg: '#07070E',
+    appreciation_event_color: '#FFBA08',
+    appreciation_ai_color: '#7B6FFF',
     founder_name: 'Girish Hiremath',
     founder_title: 'Founder, Intelliforge AI',
     founder_signature_data_uri: '',
@@ -276,25 +281,39 @@ function CertificatePreviewCard({
     const recognition =
       certForm.recognition_text?.trim()
       || (certForm.venue_name?.trim()
-        ? `For your commendable participation in Sports events conducted by ${branding.appreciation_org}, ${certForm.venue_name.trim()}.`
+        ? `For your commendable participation in sports events organized by ${branding.appreciation_org} at ${certForm.venue_name.trim()}.`
         : 'Recognition text for participation in sports events.')
     const eventName = certForm.event_name?.trim()
     const sponsor = certForm.sponsor_label?.trim()
-    const accent = branding.appreciation_accent || '#0082C3'
+    const accent = branding.appreciation_accent || '#F05B00'
+    const sidebar = branding.appreciation_sidebar_color || '#0A2818'
+    const headerBg = branding.appreciation_header_bg || '#07070E'
+    const secondary = branding.appreciation_secondary_color || '#FFBA08'
+    const logoLeft = '/branding/appreciation-header-left.png'
+    const logoRight = '/branding/appreciation-header-right.png'
 
     return (
-      <div className="cert-card cert-card-appreciation" style={{ '--appreciation-accent': accent }}>
+      <div
+        className="cert-card cert-card-appreciation"
+        style={{
+          '--appreciation-accent': accent,
+          '--appreciation-sidebar': sidebar,
+          '--appreciation-header-bg': headerBg,
+          '--appreciation-secondary': secondary,
+        }}
+      >
+        <div className="cert-appreciation-header">
+          <img src={logoLeft} alt="IntelliForge AI" className="cert-appreciation-header-logo" />
+          <img src={logoRight} alt="maidaan.academy" className="cert-appreciation-header-logo" />
+        </div>
+        <div className="cert-appreciation-tricolor" aria-hidden="true">
+          <span className="saffron" /><span className="white" /><span className="green" />
+        </div>
         <div className="cert-appreciation-layout">
           <div className="cert-appreciation-main">
             <div className="cert-appreciation-sports" aria-hidden="true">
-              <span /><span /><span /><span /><span />
-            </div>
-            <div className="cert-appreciation-logo">
-              <div className="cert-appreciation-logo-text">
-                <strong>{branding.appreciation_org_bold}</strong>
-                <span>{branding.appreciation_org_light}</span>
-              </div>
-              <div className="cert-appreciation-logo-mark">D</div>
+              <span className="orange" /><span className="grey" /><span className="green" />
+              <span className="orange" /><span className="grey" /><span className="green" />
             </div>
             <VerifiedBadge />
             <p className="cert-appreciation-label">{branding.appreciation_presented_label}</p>
@@ -1297,7 +1316,7 @@ function App() {
                     <textarea
                       id="recognition_text"
                       rows={3}
-                      placeholder="For your commendable participation in Sports events conducted by Decathlon Play, Hennur Road store."
+                      placeholder="For your commendable participation in sports events organized by IntelliForge AI at Sobha Dream Gardens."
                       value={certForm.recognition_text}
                       onChange={(e) => updateCertField('recognition_text', e.target.value)}
                     />

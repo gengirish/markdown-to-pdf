@@ -536,6 +536,45 @@
   padding: 0;
   max-width: 720px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+.cert-appreciation-header {
+  background: var(--appreciation-header-bg, #07070e);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 1rem;
+}
+
+.cert-appreciation-header-logo {
+  height: 34px;
+  width: auto;
+  max-width: 46%;
+  object-fit: contain;
+}
+
+.cert-appreciation-tricolor {
+  display: flex;
+  height: 4px;
+}
+
+.cert-appreciation-tricolor .saffron {
+  flex: 1;
+  background: var(--appreciation-accent, #f05b00);
+}
+
+.cert-appreciation-tricolor .white {
+  flex: 1;
+  background: #ffffff;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.cert-appreciation-tricolor .green {
+  flex: 1;
+  background: #138808;
 }
 
 .cert-appreciation-layout {
@@ -552,7 +591,7 @@
 
 .cert-appreciation-sidebar {
   width: 56px;
-  background: var(--appreciation-accent, #0082c3);
+  background: var(--appreciation-sidebar, #0a2818);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -567,7 +606,6 @@
   writing-mode: vertical-rl;
   transform: rotate(180deg);
   line-height: 1.5;
-  border-radius: 0 8px 8px 0;
 }
 
 .cert-appreciation-sports {
@@ -578,55 +616,26 @@
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  opacity: 0.35;
+  opacity: 0.45;
 }
 
 .cert-appreciation-sports span {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--appreciation-accent, #0082c3);
   display: block;
 }
 
-.cert-appreciation-logo {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 0.4rem;
-  margin-bottom: 0.75rem;
-  padding-right: 0.25rem;
+.cert-appreciation-sports .orange {
+  background: var(--appreciation-accent, #f05b00);
 }
 
-.cert-appreciation-logo-text {
-  text-align: right;
-  line-height: 1.1;
+.cert-appreciation-sports .grey {
+  background: #d1d5db;
 }
 
-.cert-appreciation-logo-text strong {
-  display: block;
-  font-size: 0.68rem;
-  color: var(--appreciation-accent, #0082c3);
-  letter-spacing: 0.5px;
-}
-
-.cert-appreciation-logo-text span {
-  font-size: 0.62rem;
-  color: var(--appreciation-accent, #0082c3);
-  font-weight: 500;
-}
-
-.cert-appreciation-logo-mark {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: var(--appreciation-accent, #0082c3);
-  color: #fff;
-  font-weight: 700;
-  font-size: 0.8rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.cert-appreciation-sports .green {
+  background: #138808;
 }
 
 .cert-appreciation-label {
@@ -638,7 +647,7 @@
 .cert-appreciation-name {
   font-size: 1.45rem;
   font-weight: 700;
-  color: var(--appreciation-accent, #0082c3);
+  color: var(--appreciation-accent, #f05b00);
   border-bottom: 1px solid #cbd5e0;
   padding-bottom: 0.3rem;
   margin: 0 0 0.75rem;
@@ -666,7 +675,7 @@
   display: block;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--appreciation-accent, #0082c3);
+  color: var(--appreciation-accent, #f05b00);
   border-bottom: 1px solid #a0aec0;
   padding-bottom: 0.1rem;
 }
@@ -692,9 +701,10 @@
 .cert-appreciation-event span {
   display: block;
   font-size: 0.58rem;
-  color: #2e7d32;
+  color: var(--appreciation-secondary, #ffba08);
   margin-top: 0.15rem;
   letter-spacing: 0.3px;
+  font-weight: 600;
 }
 
 .cert-card-appreciation .cert-qr-placeholder {
@@ -704,15 +714,15 @@
 }
 
 .cert-card-appreciation .cert-verified {
-  background: #ebf8ff;
-  border-color: #90cdf4;
-  color: #2c5282;
+  background: #fff4eb;
+  border-color: #fdba74;
+  color: #9a3412;
 }
 
 .cert-kind-badge-appreciation {
-  background: #ebf8ff;
-  border-color: #90cdf4;
-  color: #2c5282;
+  background: #fff4eb;
+  border-color: #fdba74;
+  color: #9a3412;
 }
 
 .cert-form textarea {
