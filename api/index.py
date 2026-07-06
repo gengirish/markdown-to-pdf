@@ -34,9 +34,12 @@ from api.appreciation_assets import (
     APPRECIATION_SIDEBAR_COLOR,
     appreciation_event_footer_html,
     appreciation_header_html_from_branding,
+    appreciation_header_stripe_html,
     appreciation_host_strip_from_branding,
     appreciation_pdf_accent_rail,
+    appreciation_pdf_sidebar_stripes,
     appreciation_pdf_tricolor_footer,
+    appreciation_sport_seal_html,
     resolve_appreciation_host_name,
 )
 from api.certificate_templates import (
@@ -120,13 +123,19 @@ AGENTMAIL_INBOX_ID = _sanitize_env(
 _agentmail_client = None
 _agentmail_ready = False
 _agentmail_inbox_cached: str = ""
-_email_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cert-email")
+_agentmail_inbox_lock = threading.Lock()
+EMAIL_SEND_TIMEOUT_SEC = 20.0
+AGENTMAIL_HTTP_TIMEOUT_SEC = 10.0
+_email_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="cert-email")
 if AGENTMAIL_API_KEY:
     try:
         from agentmail import AgentMail as AgentMailClient
 
-        _agentmail_client = AgentMailClient(api_key=AGENTMAIL_API_KEY)
-        logger.info("AgentMail client configured (inbox check deferred)")
+        _agentmail_client = AgentMailClient(
+            api_key=AGENTMAIL_API_KEY,
+            timeout=AGENTMAIL_HTTP_TIMEOUT_SEC,
+        )
+        logger.info("AgentMail client configured (inbox warm-up in background)")
     except Exception as e:
         logger.warning(f"AgentMail initialization failed: {e}")
 
@@ -590,13 +599,13 @@ def _stacked_vertical_letters(word: str) -> str:
     return "<br/>".join(html_mod.escape(ch) for ch in word.upper() if ch != " ")
 
 
-def _appreciation_pdf_sidebar(line1: str, line2: str) -> str:
+def _appreciation_pdf_sidebar(line1: str, line2: str, brand: dict | None = None) -> str:
     parts1 = _stacked_vertical_letters(line1)
     parts2 = "<br/><br/>".join(_stacked_vertical_letters(w) for w in line2.upper().split())
-    gold = APPRECIATION_SECONDARY_COLOR
+    gold = (brand or {}).get("appreciation_secondary_color", APPRECIATION_SECONDARY_COLOR)
     return (
         f'<table width="100%" height="100%"><tr><td align="center" valign="middle" '
-        f'style="text-align:center;vertical-align:middle;border-left:3pt solid {gold};">'
+        f'style="text-align:center;vertical-align:middle;border-left:3pt solid {gold};padding-top:8pt;">'
         f'<div style="color:#ffffff;font-weight:bold;font-size:11pt;line-height:1.12;">{parts1}</div>'
         f'<div style="color:#ffffff;font-size:5.5pt;letter-spacing:1pt;margin-top:14pt;line-height:1.2;">'
         f"{parts2}</div></td></tr></table>"
@@ -612,6 +621,7 @@ def _appreciation_pdf_event_footer(
         event_name,
         host_name,
         accent=brand.get("appreciation_accent", APPRECIATION_ACCENT_COLOR),
+        secondary=brand.get("appreciation_secondary_color", APPRECIATION_SECONDARY_COLOR),
         sidebar_color=brand.get("appreciation_sidebar_color", APPRECIATION_SIDEBAR_COLOR),
         show_host=False,
     )
@@ -622,9 +632,10 @@ def _appreciation_viewer_event_block(event_name: str, host_name: str, brand: dic
         return ""
     return (
         f'<div class="event-block">'
-        f'<div class="event-label">Event</div>'
+        f'<div class="event-bib">'
+        f'<div class="event-label">&#9654; Event</div>'
         f'<div class="event-name">{html_mod.escape(event_name)}</div>'
-        f"</div>"
+        f"</div></div>"
     )
 
 
@@ -1081,16 +1092,31 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
             qr_data_uri=qr_data_uri,
             presented_label=html_mod.escape(brand["appreciation_presented_label"]),
             accent_color=brand["appreciation_accent"],
+            secondary_color=brand["appreciation_secondary_color"],
             sidebar_color=brand["appreciation_sidebar_color"],
             header_bg=brand["appreciation_header_bg"],
             event_color=brand["appreciation_event_color"],
             header_block=appreciation_header_html_from_branding(brand),
+            header_stripe=appreciation_header_stripe_html(accent=brand["appreciation_accent"]),
             host_strip=appreciation_host_strip_from_branding(brand, venue, sponsor),
-            accent_rail=appreciation_pdf_accent_rail(),
+            accent_rail=appreciation_pdf_accent_rail(
+                accent=brand["appreciation_accent"],
+                secondary=brand["appreciation_secondary_color"],
+            ),
+            sport_seal=appreciation_sport_seal_html(
+                accent=brand["appreciation_accent"],
+                secondary=brand["appreciation_secondary_color"],
+                sidebar_color=brand["appreciation_sidebar_color"],
+            ),
             tricolor_footer=appreciation_pdf_tricolor_footer(),
+            sidebar_stripes=appreciation_pdf_sidebar_stripes(
+                accent=brand["appreciation_accent"],
+                secondary=brand["appreciation_secondary_color"],
+            ),
             sidebar_block=_appreciation_pdf_sidebar(
                 brand["appreciation_title_line1"],
                 brand["appreciation_title_line2"],
+                brand,
             ),
             event_footer=_appreciation_pdf_event_footer(event_name, host_name, brand),
         )
@@ -1191,43 +1217,82 @@ def _agentmail_error_message(exc: Exception) -> str:
     return text[:240] if text else "Could not deliver email."
 
 
-def _resolve_agentmail_inbox_id() -> str:
-    """Resolve inbox id; AgentMail may use the email address as inbox_id."""
-    global _agentmail_inbox_cached, _agentmail_ready
+def _get_agentmail_inbox_id() -> str:
+    """Return cached inbox id, or the configured default without an API round-trip."""
     if _agentmail_inbox_cached:
         return _agentmail_inbox_cached
+    return AGENTMAIL_INBOX_ID if _agentmail_client else ""
+
+
+def _refresh_agentmail_inbox_from_api(*, force: bool = False) -> str:
+    """Resolve inbox id via AgentMail list API and cache the result."""
+    global _agentmail_inbox_cached, _agentmail_ready
     if not _agentmail_client:
         return ""
     configured = AGENTMAIL_INBOX_ID
+    with _agentmail_inbox_lock:
+        if _agentmail_inbox_cached and not force:
+            return _agentmail_inbox_cached
+        if force:
+            _agentmail_inbox_cached = ""
+        try:
+            from agentmail.core.api_error import ApiError as AgentMailApiError
+
+            page = _agentmail_client.inboxes.list(limit=50)
+            inboxes = page.inboxes or []
+            if not inboxes:
+                _agentmail_inbox_cached = configured
+                return configured
+            by_email = {ib.email.strip().lower(): ib.inbox_id for ib in inboxes if getattr(ib, "email", None)}
+            by_id = {ib.inbox_id: ib.inbox_id for ib in inboxes}
+            key = configured.strip().lower()
+            if key in by_email:
+                _agentmail_inbox_cached = by_email[key]
+                _agentmail_ready = True
+                return _agentmail_inbox_cached
+            if configured in by_id:
+                _agentmail_inbox_cached = configured
+                _agentmail_ready = True
+                return configured
+            if len(inboxes) == 1:
+                _agentmail_inbox_cached = inboxes[0].inbox_id
+                _agentmail_ready = True
+                return _agentmail_inbox_cached
+        except AgentMailApiError:
+            pass
+        except Exception as e:
+            logger.warning(f"AgentMail inbox lookup failed: {e}")
+        _agentmail_inbox_cached = configured
+        return configured
+
+
+def _warm_agentmail_inbox():
+    """Background warm-up so the first certificate email does not pay for inbox lookup."""
+    try:
+        inbox_id = _refresh_agentmail_inbox_from_api()
+        if inbox_id:
+            logger.info(f"AgentMail inbox ready ({inbox_id})")
+    except Exception as e:
+        logger.warning(f"AgentMail inbox warm-up failed: {e}")
+
+
+def _is_agentmail_inbox_not_found(exc: Exception) -> bool:
     try:
         from agentmail.core.api_error import ApiError as AgentMailApiError
 
-        page = _agentmail_client.inboxes.list(limit=50)
-        inboxes = page.inboxes or []
-        if not inboxes:
-            _agentmail_inbox_cached = configured
-            return configured
-        by_email = {ib.email.strip().lower(): ib.inbox_id for ib in inboxes if getattr(ib, "email", None)}
-        by_id = {ib.inbox_id: ib.inbox_id for ib in inboxes}
-        key = configured.strip().lower()
-        if key in by_email:
-            _agentmail_inbox_cached = by_email[key]
-            _agentmail_ready = True
-            return _agentmail_inbox_cached
-        if configured in by_id:
-            _agentmail_inbox_cached = configured
-            _agentmail_ready = True
-            return configured
-        if len(inboxes) == 1:
-            _agentmail_inbox_cached = inboxes[0].inbox_id
-            _agentmail_ready = True
-            return _agentmail_inbox_cached
-    except AgentMailApiError:
+        if isinstance(exc, AgentMailApiError) and exc.status_code == 404:
+            return True
+    except Exception:
         pass
-    except Exception as e:
-        logger.warning(f"AgentMail inbox lookup failed: {e}")
-    _agentmail_inbox_cached = configured
-    return configured
+    return False
+
+
+if _agentmail_client:
+    threading.Thread(
+        target=_warm_agentmail_inbox,
+        daemon=True,
+        name="agentmail-warm",
+    ).start()
 
 
 def _run_with_timeout(fn, timeout_sec: float, timeout_message: str):
@@ -1239,6 +1304,18 @@ def _run_with_timeout(fn, timeout_sec: float, timeout_message: str):
         return None
 
 
+def _agentmail_send_message(
+    inbox_id: str, *, recipient: str, subject: str, text: str, html: str
+) -> None:
+    _agentmail_client.inboxes.messages.send(
+        inbox_id,
+        to=recipient,
+        subject=subject,
+        text=text,
+        html=html,
+    )
+
+
 def _agentmail_deliver(
     *, to_email: str, subject: str, text: str, html: str, link_hint: str = "certificate"
 ) -> tuple[bool, str]:
@@ -1247,14 +1324,14 @@ def _agentmail_deliver(
     recipient = to_email.strip()
     if not recipient:
         return False, "Recipient email is required."
-    inbox_id = _resolve_agentmail_inbox_id()
+    inbox_id = _get_agentmail_inbox_id()
     if not inbox_id:
         return False, "AgentMail inbox is not configured. Set AGENTMAIL_INBOX_ID."
     fallback = f"Could not deliver email. Share the {link_hint} link instead."
     try:
-        _agentmail_client.inboxes.messages.send(
+        _agentmail_send_message(
             inbox_id,
-            to=recipient,
+            recipient=recipient,
             subject=subject,
             text=text,
             html=html,
@@ -1262,6 +1339,21 @@ def _agentmail_deliver(
         logger.info(f"AgentMail sent to {recipient} from inbox {inbox_id}")
         return True, ""
     except Exception as e:
+        if _is_agentmail_inbox_not_found(e):
+            resolved = _refresh_agentmail_inbox_from_api(force=True)
+            if resolved and resolved != inbox_id:
+                try:
+                    _agentmail_send_message(
+                        resolved,
+                        recipient=recipient,
+                        subject=subject,
+                        text=text,
+                        html=html,
+                    )
+                    logger.info(f"AgentMail sent to {recipient} from inbox {resolved}")
+                    return True, ""
+                except Exception as retry_exc:
+                    e = retry_exc
         err = _agentmail_error_message(e)
         logger.warning(f"AgentMail send to {recipient} failed: {e}")
         if err and "Could not deliver" not in err:
@@ -1512,7 +1604,7 @@ async def generate_certificate(request: CertificateRequest, req: Request):
 
             email_result = _run_with_timeout(
                 _send_email,
-                12,
+                EMAIL_SEND_TIMEOUT_SEC,
                 f"Email delivery timed out for {participant_email}",
             )
             if email_result is None:
@@ -2296,28 +2388,28 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
             email_sent = False
             email_error = ""
             if p_email:
-                if entry.certificate_kind == "internship":
-                    email_sent, email_error = _send_internship_certificate_email(
-                        to_email=p_email,
-                        participant_name=name,
-                        course_name=course_for_db,
-                        completion_date=entry.completion_date,
-                        instructor_name=lead,
-                        mentor_name=entry.mentor_name.strip(),
-                        usn=entry.usn.strip(),
-                        duration_text=entry.internship_duration.strip(),
-                        hours_text=entry.internship_hours.strip(),
-                        certificate_id=cert_id,
-                        view_url=shareable_url,
-                        download_url=download_url,
-                    )
-                else:
+                def _send_bulk_email():
+                    if entry.certificate_kind == "internship":
+                        return _send_internship_certificate_email(
+                            to_email=p_email,
+                            participant_name=name,
+                            course_name=course_for_db,
+                            completion_date=entry.completion_date,
+                            instructor_name=lead,
+                            mentor_name=entry.mentor_name.strip(),
+                            usn=entry.usn.strip(),
+                            duration_text=entry.internship_duration.strip(),
+                            hours_text=entry.internship_hours.strip(),
+                            certificate_id=cert_id,
+                            view_url=shareable_url,
+                            download_url=download_url,
+                        )
                     email_label = (
                         recognition[:80] + "…"
                         if entry.certificate_kind == "appreciation" and len(recognition) > 80
                         else course_for_db
                     )
-                    email_sent, email_error = _send_certificate_email(
+                    return _send_certificate_email(
                         to_email=p_email,
                         participant_name=name,
                         course_name=email_label,
@@ -2327,6 +2419,17 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
                         view_url=shareable_url,
                         download_url=download_url,
                     )
+
+                email_result = _run_with_timeout(
+                    _send_bulk_email,
+                    EMAIL_SEND_TIMEOUT_SEC,
+                    f"Email delivery timed out for {p_email}",
+                )
+                if email_result is None:
+                    email_sent = False
+                    email_error = "Email delivery timed out. Share the certificate link instead."
+                else:
+                    email_sent, email_error = email_result
 
             row = {
                 "index": i,

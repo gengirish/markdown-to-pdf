@@ -352,13 +352,18 @@ function CertificatePreviewCard({
             </div>
           </div>
         </div>
+        <div className="cert-appreciation-header-stripe" aria-hidden="true">
+          <span className="saffron" /><span className="white" /><span className="green" />
+        </div>
         <div className="cert-appreciation-host-strip">
           <div className="cert-appreciation-host-tricolor" aria-hidden="true">
             <span className="saffron" /><span className="white" /><span className="green" />
           </div>
           <p className="cert-appreciation-host-eyebrow">Venue &amp; Host Community</p>
           <p className="cert-appreciation-host-title">{hostName}</p>
-          <span className="cert-appreciation-host-divider" aria-hidden="true" />
+          <div className="cert-appreciation-host-ticks" aria-hidden="true">
+            <span className="gold" /><span className="saffron" /><span className="green" />
+          </div>
           {organizer ? (
             <p className="cert-appreciation-host-organizer">Organized by: {organizer}</p>
           ) : null}
@@ -366,20 +371,33 @@ function CertificatePreviewCard({
         <div className="cert-appreciation-layout">
           <div className="cert-appreciation-main">
             <div className="cert-appreciation-accent-rail" aria-hidden="true">
-              <span className="saffron" /><span className="white" /><span className="green" />
+              <span className="seg1" /><span className="seg2" /><span className="seg3" />
+              <span className="seg4" /><span className="seg5" /><span className="seg6" /><span className="seg7" />
             </div>
             <VerifiedBadge />
-            <p className="cert-appreciation-label">{branding.appreciation_presented_label}</p>
-            <p className="cert-appreciation-name">{participantName}</p>
-            <p className="cert-appreciation-recognition">{recognition}</p>
+            <div className="cert-appreciation-body-row">
+              <div className="cert-appreciation-sport-seal" aria-hidden="true">
+                <span className="seal-icon">&#9733;</span>
+                <span className="seal-lbl">Sports</span>
+              </div>
+              <div className="cert-appreciation-body-content">
+                <p className="cert-appreciation-label">{branding.appreciation_presented_label}</p>
+                <p className="cert-appreciation-name">
+                  <span className="star" aria-hidden="true">&#9733;</span>
+                  {participantName}
+                  <span className="star" aria-hidden="true">&#9733;</span>
+                </p>
+                <p className="cert-appreciation-recognition">{recognition}</p>
+              </div>
+            </div>
             <div className="cert-appreciation-footer">
               <div className="cert-appreciation-date-card">
-                <span className="cert-appreciation-date-lbl">Date</span>
+                <span className="cert-appreciation-date-lbl">&#9654; Date</span>
                 <span className="cert-appreciation-date-val">{completionDate}</span>
               </div>
               {eventName ? (
                 <div className="cert-appreciation-event">
-                  <span className="cert-appreciation-event-lbl">Event</span>
+                  <span className="cert-appreciation-event-lbl">&#9654; Event</span>
                   <strong>{eventName}</strong>
                 </div>
               ) : null}
@@ -392,8 +410,13 @@ function CertificatePreviewCard({
             />
           </div>
           <div className="cert-appreciation-sidebar" aria-hidden="true">
-            <span>{branding.appreciation_title_line1}</span>
-            <span>{branding.appreciation_title_line2}</span>
+            <div className="cert-appreciation-sidebar-stripes" aria-hidden="true">
+              <span className="saffron" /><span className="gold" /><span className="green" /><span className="dark" />
+            </div>
+            <div className="cert-appreciation-sidebar-body">
+              <span>{branding.appreciation_title_line1}</span>
+              <span>{branding.appreciation_title_line2}</span>
+            </div>
           </div>
         </div>
         <div className="cert-appreciation-tricolor-footer" aria-hidden="true">

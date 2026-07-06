@@ -485,8 +485,13 @@ CERTIFICATE_APPRECIATION_HTML = """
 
 <table width="100%" height="100%" cellspacing="0" cellpadding="0" style="background-color: #ffffff;">
 <tr>
-    <td colspan="3" style="background-color: {header_bg}; padding: 10pt 20pt 8pt;">
+    <td colspan="3" style="background-color: {header_bg}; padding: 10pt 20pt 0;">
         {header_block}
+    </td>
+</tr>
+<tr>
+    <td colspan="3" style="padding: 0;">
+        {header_stripe}
     </td>
 </tr>
 <tr>
@@ -495,39 +500,42 @@ CERTIFICATE_APPRECIATION_HTML = """
     </td>
 </tr>
 <tr>
-    <td width="3%" style="vertical-align: middle; padding: 22pt 0 22pt 12pt;">
+    <td width="3%" style="vertical-align: middle; padding: 20pt 0 20pt 10pt; background-color: #f8faf9;">
         {accent_rail}
     </td>
-    <td width="72%" style="vertical-align: top; padding: 22pt 20pt 18pt 6pt;">
+    <td width="72%" style="vertical-align: top; padding: 18pt 18pt 16pt 4pt; background-color: #f8faf9;">
         <table width="100%" cellspacing="0" cellpadding="0">
             <tr>
-                <td style="padding-left: 6pt; border-left: 1pt solid #e2e8f0;">
+                <td width="38pt" valign="top" align="center" style="vertical-align: top; text-align: center; padding-top: 2pt;">
+                    {sport_seal}
+                </td>
+                <td style="padding-left: 4pt; border-left: 2pt solid {secondary_color};">
                     <table width="100%" cellspacing="0" cellpadding="0">
-                        <tr><td style="font-size: 8pt; color: #718096; letter-spacing: 0.6pt; text-transform: uppercase; padding-bottom: 8pt;">
+                        <tr><td style="font-size: 7.5pt; color: #718096; letter-spacing: 0.8pt; text-transform: uppercase; padding-bottom: 6pt; font-weight: bold;">
                             {presented_label}
                         </td></tr>
-                        <tr><td style="font-size: 26pt; font-weight: bold; color: {accent_color}; padding: 0 0 8pt; border-bottom: 1.5pt solid {accent_color};">
-                            {participant_name}
+                        <tr><td style="font-size: 27pt; font-weight: bold; color: {accent_color}; padding: 0 0 6pt; letter-spacing: 0.5pt; border-bottom: 2pt solid {accent_color};">
+                            &#9733; {participant_name} &#9733;
                         </td></tr>
-                        <tr><td style="font-size: 10.5pt; color: #2d3748; line-height: 1.6; padding-top: 16pt; max-width: 420pt;">
+                        <tr><td style="font-size: 10.5pt; color: #2d3748; line-height: 1.65; padding-top: 14pt; max-width: 420pt;">
                             {recognition_text}
                         </td></tr>
                     </table>
                 </td>
             </tr>
             <tr>
-                <td style="padding-top: 32pt; padding-left: 6pt;">
+                <td colspan="2" style="padding-top: 28pt;">
                     <table width="100%" cellspacing="0" cellpadding="0">
                         <tr>
                             <td width="38%" valign="bottom" style="vertical-align: bottom;">
-                                <table cellspacing="0" cellpadding="0" style="background-color:#fafbfc;border:1pt solid #e2e8f0;padding:8pt 12pt;">
-                                    <tr><td style="font-size: 6.5pt; color: #718096; text-transform: uppercase; letter-spacing: 0.8pt; padding-bottom: 3pt;">Date</td></tr>
-                                    <tr><td style="font-size: 11pt; color: {accent_color}; font-weight: bold;">
+                                <table cellspacing="0" cellpadding="0" style="background-color:#ffffff;border:1.5pt solid {accent_color};border-top:3pt solid {secondary_color};padding:8pt 12pt;">
+                                    <tr><td style="font-size: 6.5pt; color: {accent_color}; text-transform: uppercase; letter-spacing: 0.9pt; padding-bottom: 3pt; font-weight: bold;">&#9654; Date</td></tr>
+                                    <tr><td style="font-size: 11pt; color: #1a202c; font-weight: bold;">
                                         {completion_date}
                                     </td></tr>
                                 </table>
                             </td>
-                            <td width="62%" align="right" valign="bottom" style="text-align: right; vertical-align: bottom; padding-right: 8pt;">
+                            <td width="62%" align="right" valign="bottom" style="text-align: right; vertical-align: bottom; padding-right: 4pt;">
                                 {event_footer}
                             </td>
                         </tr>
@@ -535,8 +543,8 @@ CERTIFICATE_APPRECIATION_HTML = """
                 </td>
             </tr>
             <tr>
-                <td align="center" style="text-align: center; padding-top: 16pt;">
-                    <table align="center" cellspacing="0" cellpadding="0" style="border:1pt solid #e2e8f0;background-color:#fafbfc;">
+                <td colspan="2" align="center" style="text-align: center; padding-top: 14pt;">
+                    <table align="center" cellspacing="0" cellpadding="0" style="border:1.5pt solid #e2e8f0;background-color:#ffffff;">
                         <tr>
                             <td align="center" style="text-align: center; padding: 6pt;">
                                 <img src="{qr_data_uri}" width="52" height="52" alt="QR" />
@@ -551,7 +559,8 @@ CERTIFICATE_APPRECIATION_HTML = """
             </tr>
         </table>
     </td>
-    <td width="25%" style="background-color: {sidebar_color}; vertical-align: middle;">
+    <td width="25%" style="background-color: {sidebar_color}; vertical-align: top;">
+        {sidebar_stripes}
         {sidebar_block}
     </td>
 </tr>
@@ -582,55 +591,74 @@ VIEWER_APPRECIATION_HTML = """
     <meta name="twitter:description" content="{meta_description}" />
     {json_ld}
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@600;700&family=Lato:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;600;700&family=EB+Garamond:wght@600;700&display=swap" rel="stylesheet">
     <style>
         *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
-        body{{font-family:'Lato',-apple-system,BlinkMacSystemFont,sans-serif;background:linear-gradient(160deg,#eef2f6 0%,#e2e8f0 100%);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem}}
-        .card{{position:relative;background:#fff;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,.04),0 24px 64px rgba(0,0,0,.12);max-width:720px;width:100%;overflow:hidden;animation:up .45s ease-out;border:1px solid #e2e8f0}}
+        body{{font-family:'Barlow',-apple-system,BlinkMacSystemFont,sans-serif;background:linear-gradient(160deg,#e8edf2 0%,#dce3ea 100%);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem}}
+        .card{{position:relative;background:#fff;border-radius:10px;box-shadow:0 4px 6px rgba(0,0,0,.05),0 28px 70px rgba(10,40,24,.14);max-width:740px;width:100%;overflow:hidden;animation:up .45s ease-out;border:1px solid #d1d9e0}}
         @keyframes up{{from{{opacity:0;transform:translateY(24px)}}to{{opacity:1;transform:translateY(0)}}}}
         .card-header{{background:{header_bg};padding:0}}
         .card-header table{{width:100%}}
-        .host-strip{{background:#fafbfc;border-bottom:1px solid #e2e8f0}}
+        .header-stripe{{display:flex;height:5px}}
+        .header-stripe span{{flex:1}}
+        .header-stripe .saffron{{background:{accent_color}}}
+        .header-stripe .white{{background:#ffffff}}
+        .header-stripe .green{{background:#138808}}
+        .host-strip{{background:{sidebar_color}}}
         .host-strip table{{width:100%}}
         .event-block{{text-align:right}}
-        .event-block .event-label{{font-size:.58rem;color:#718096;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.2rem}}
-        .event-block .event-name{{font-size:.82rem;font-weight:700;color:#1a202c;letter-spacing:.04em;text-transform:uppercase;border-left:3px solid {accent_color};padding-left:.55rem;display:inline-block;text-align:left}}
-        .tricolor-footer{{display:flex;height:4px}}
+        .event-block .event-bib{{display:inline-block;border:2px solid {accent_color};border-top:3px solid {secondary_color};background:#fffbf5;padding:.5rem .75rem;text-align:left}}
+        .event-block .event-label{{font-family:'Barlow Condensed',sans-serif;font-size:.56rem;color:{accent_color};text-transform:uppercase;letter-spacing:.12em;margin-bottom:.15rem;font-weight:700}}
+        .event-block .event-name{{font-family:'Barlow Condensed',sans-serif;font-size:.88rem;font-weight:700;color:#1a202c;letter-spacing:.06em;text-transform:uppercase}}
+        .tricolor-footer{{display:flex;height:5px}}
         .tricolor-footer span{{flex:1}}
         .tricolor-footer .saffron{{background:{accent_color}}}
         .tricolor-footer .white{{background:#ffffff;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0}}
         .tricolor-footer .green{{background:#138808}}
-        .layout{{display:flex;min-height:340px}}
-        .main{{flex:1;padding:1.6rem 1.5rem 1.3rem 1.1rem;position:relative;border-left:1px solid #edf2f7}}
-        .accent-rail{{position:absolute;left:0;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;width:4px;border-radius:0 2px 2px 0;overflow:hidden}}
-        .accent-rail span{{height:28px;display:block}}
-        .accent-rail .saffron{{background:{accent_color}}}
-        .accent-rail .white{{background:#fff;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0}}
-        .accent-rail .green{{background:#138808}}
-        .sidebar{{width:76px;background:{sidebar_color};display:flex;align-items:center;justify-content:center;padding:.85rem .35rem;border-left:3px solid {secondary_color}}}
-        .sidebar-text{{color:#fff;font-weight:700;font-size:.4rem;letter-spacing:.18em;text-transform:uppercase;writing-mode:vertical-rl;transform:rotate(180deg);line-height:1.65}}
-        .verified{{display:inline-flex;align-items:center;gap:.35rem;background:#fff4eb;border:1px solid #fdba74;color:#9a3412;font-size:.6rem;font-weight:600;padding:.22rem .65rem;border-radius:20px;margin-bottom:.85rem}}
+        .layout{{display:flex;min-height:350px;background:#f8faf9}}
+        .main{{flex:1;padding:1.5rem 1.4rem 1.2rem 1rem;position:relative}}
+        .accent-rail{{position:absolute;left:0;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;width:5px;border-radius:0 3px 3px 0;overflow:hidden;box-shadow:1px 0 4px rgba(0,0,0,.08)}}
+        .accent-rail span{{display:block}}
+        .accent-rail .seg1{{height:22px;background:{accent_color}}}
+        .accent-rail .seg2{{height:4px;background:#e2e8f0}}
+        .accent-rail .seg3{{height:18px;background:{secondary_color}}}
+        .accent-rail .seg4{{height:4px;background:#e2e8f0}}
+        .accent-rail .seg5{{height:22px;background:#138808}}
+        .accent-rail .seg6{{height:4px;background:#e2e8f0}}
+        .accent-rail .seg7{{height:14px;background:{accent_color}}}
+        .body-row{{display:flex;gap:.85rem;align-items:flex-start}}
+        .sport-seal{{flex-shrink:0;text-align:center}}
+        .sport-seal .seal-icon{{width:2.4rem;height:2.4rem;background:{sidebar_color};border:2px solid {secondary_color};display:flex;align-items:center;justify-content:center;color:{secondary_color};font-size:1.1rem;font-weight:700;margin:0 auto}}
+        .sport-seal .seal-lbl{{font-family:'Barlow Condensed',sans-serif;font-size:.46rem;color:{accent_color};letter-spacing:.12em;text-transform:uppercase;margin-top:.25rem;font-weight:700}}
+        .body-content{{flex:1;border-left:2px solid {secondary_color};padding-left:.85rem;min-width:0}}
+        .sidebar{{width:80px;background:linear-gradient(165deg,{sidebar_color} 0%,#0d3320 100%);display:flex;flex-direction:column;align-items:center;border-left:3px solid {secondary_color};position:relative;overflow:hidden}}
+        .sidebar-stripes{{width:100%;display:flex;height:8px;flex-direction:row}}
+        .sidebar-stripes span{{flex:1;display:block;height:100%}}
+        .sidebar-body{{flex:1;display:flex;align-items:center;justify-content:center;padding:.85rem .35rem}}
+        .sidebar-text{{color:#fff;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.44rem;letter-spacing:.2em;text-transform:uppercase;writing-mode:vertical-rl;transform:rotate(180deg);line-height:1.7}}
+        .verified{{display:inline-flex;align-items:center;gap:.35rem;background:#fff4eb;border:1px solid #fdba74;color:#9a3412;font-family:'Barlow Condensed',sans-serif;font-size:.58rem;font-weight:700;letter-spacing:.04em;padding:.22rem .65rem;border-radius:20px;margin-bottom:.75rem;text-transform:uppercase}}
         .verified svg{{width:11px;height:11px}}
-        .label{{font-size:.58rem;color:#718096;letter-spacing:.08em;text-transform:uppercase;margin-bottom:.45rem}}
-        .name{{font-family:'EB Garamond',Georgia,serif;font-size:1.85rem;font-weight:700;color:{accent_color};border-bottom:2px solid {accent_color};padding-bottom:.3rem;margin-bottom:.85rem;line-height:1.15}}
-        .recognition{{font-size:.84rem;color:#2d3748;line-height:1.6;margin-bottom:1.25rem;max-width:36em}}
+        .label{{font-family:'Barlow Condensed',sans-serif;font-size:.58rem;color:#718096;letter-spacing:.1em;text-transform:uppercase;margin-bottom:.4rem;font-weight:700}}
+        .name{{font-family:'EB Garamond',Georgia,serif;font-size:1.9rem;font-weight:700;color:{accent_color};border-bottom:2px solid {accent_color};padding-bottom:.28rem;margin-bottom:.8rem;line-height:1.12}}
+        .name .star{{color:{secondary_color};font-size:1rem;vertical-align:middle;margin:0 .15rem}}
+        .recognition{{font-size:.86rem;color:#2d3748;line-height:1.65;margin-bottom:1.15rem;max-width:36em}}
         .footer-row{{display:flex;justify-content:space-between;align-items:flex-end;gap:1.25rem;margin-bottom:1rem;flex-wrap:wrap}}
-        .date-card{{background:#fafbfc;border:1px solid #e2e8f0;padding:.55rem .85rem;border-radius:4px}}
-        .date-lbl{{font-size:.52rem;color:#718096;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.15rem}}
-        .date-val{{font-size:.92rem;font-weight:700;color:{accent_color}}}
-        .actions{{display:flex;flex-direction:column;gap:.5rem;align-items:center;padding-top:.65rem;border-top:1px solid #edf2f7}}
-        .btn-download{{display:inline-flex;align-items:center;gap:.5rem;background:{accent_color};color:#fff;border:none;padding:.72rem 1.75rem;border-radius:8px;font-size:.84rem;font-weight:700;cursor:pointer;text-decoration:none;transition:background .2s ease,transform .2s ease,box-shadow .2s ease;box-shadow:0 2px 8px rgba(240,91,0,.25)}}
-        .btn-download:hover{{background:#d94f00;transform:translateY(-1px);box-shadow:0 4px 14px rgba(240,91,0,.35)}}
+        .date-card{{background:#fff;border:2px solid {accent_color};border-top:3px solid {secondary_color};padding:.5rem .8rem;border-radius:2px}}
+        .date-lbl{{font-family:'Barlow Condensed',sans-serif;font-size:.5rem;color:{accent_color};text-transform:uppercase;letter-spacing:.1em;margin-bottom:.12rem;font-weight:700}}
+        .date-val{{font-family:'Barlow Condensed',sans-serif;font-size:.95rem;font-weight:700;color:#1a202c;letter-spacing:.02em}}
+        .actions{{display:flex;flex-direction:column;gap:.5rem;align-items:center;padding-top:.65rem;border-top:1px solid #e2e8f0}}
+        .btn-download{{display:inline-flex;align-items:center;gap:.5rem;background:{accent_color};color:#fff;border:none;padding:.72rem 1.85rem;border-radius:6px;font-family:'Barlow Condensed',sans-serif;font-size:.9rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;text-decoration:none;transition:background .2s ease,transform .2s ease,box-shadow .2s ease;box-shadow:0 3px 10px rgba(240,91,0,.3)}}
+        .btn-download:hover{{background:#d94f00;transform:translateY(-1px);box-shadow:0 5px 16px rgba(240,91,0,.4)}}
         .btn-download:focus-visible{{outline:2px solid {accent_color};outline-offset:2px}}
         .share-row{{display:flex;gap:.45rem;flex-wrap:wrap;justify-content:center}}
-        .btn-share{{display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .9rem;border-radius:8px;font-size:.68rem;font-weight:600;text-decoration:none;border:1.5px solid #e2e8f0;color:#4a5568;background:#fff;cursor:pointer;transition:border-color .2s ease,color .2s ease,background .2s ease}}
+        .btn-share{{display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .9rem;border-radius:6px;font-family:'Barlow Condensed',sans-serif;font-size:.68rem;font-weight:700;letter-spacing:.04em;text-decoration:none;border:2px solid #e2e8f0;color:#4a5568;background:#fff;cursor:pointer;transition:border-color .2s ease,color .2s ease,background .2s ease;text-transform:uppercase}}
         .btn-share:hover{{background:#f8fafc}}
         .btn-share:focus-visible{{outline:2px solid {accent_color};outline-offset:2px}}
         .btn-linkedin{{border-color:#0077b5;color:#0077b5}}
         .btn-linkedin:hover{{background:#f0f7fb}}
         .btn-twitter{{border-color:#1da1f2;color:#1da1f2}}
         .btn-twitter:hover{{background:#f0f9ff}}
-        .qr-section{{display:inline-flex;align-items:center;justify-content:center;gap:.65rem;margin-top:.85rem;padding:.65rem .85rem;border:1px solid #e2e8f0;background:#fafbfc;border-radius:6px}}
+        .qr-section{{display:inline-flex;align-items:center;justify-content:center;gap:.65rem;margin-top:.85rem;padding:.65rem .85rem;border:2px solid #e2e8f0;background:#fff;border-radius:4px}}
         .qr-section img{{border-radius:4px}}
         .qr-text{{font-size:.56rem;color:#a0aec0;text-align:left;line-height:1.45}}
         .qr-text strong{{color:#4a5568;display:block;font-size:.62rem;font-weight:700}}
@@ -638,7 +666,7 @@ VIEWER_APPRECIATION_HTML = """
         .card-footer p{{font-size:.6rem;color:#a0aec0}}
         .card-footer a{{color:{accent_color};text-decoration:none;transition:opacity .2s ease}}
         .card-footer a:hover{{opacity:.8}}
-        @media(max-width:520px){{body{{padding:1rem}}.sidebar{{width:52px}}.main{{padding:1.25rem 1rem 1rem 1rem}}.name{{font-size:1.4rem}}}}
+        @media(max-width:520px){{body{{padding:1rem}}.sidebar{{width:54px}}.main{{padding:1.2rem 1rem 1rem .85rem}}.name{{font-size:1.45rem}}.body-row{{gap:.55rem}}}}
     </style>
 </head>
 <body>
@@ -646,24 +674,36 @@ VIEWER_APPRECIATION_HTML = """
         <div class="card-header">
             {header_block}
         </div>
+        <div class="header-stripe" aria-hidden="true">
+            <span class="saffron"></span><span class="white"></span><span class="green"></span>
+        </div>
         <div class="host-strip">
             {host_strip}
         </div>
         <div class="layout">
             <div class="main">
                 <div class="accent-rail" aria-hidden="true">
-                    <span class="saffron"></span><span class="white"></span><span class="green"></span>
+                    <span class="seg1"></span><span class="seg2"></span><span class="seg3"></span>
+                    <span class="seg4"></span><span class="seg5"></span><span class="seg6"></span><span class="seg7"></span>
                 </div>
                 <div class="verified">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                     Verified &amp; Authentic
                 </div>
-                <div class="label">{presented_label}</div>
-                <div class="name">{participant_name}</div>
-                <div class="recognition">{recognition_text}</div>
+                <div class="body-row">
+                    <div class="sport-seal" aria-hidden="true">
+                        <div class="seal-icon">&#9733;</div>
+                        <div class="seal-lbl">Sports</div>
+                    </div>
+                    <div class="body-content">
+                        <div class="label">{presented_label}</div>
+                        <div class="name"><span class="star">&#9733;</span>{participant_name}<span class="star">&#9733;</span></div>
+                        <div class="recognition">{recognition_text}</div>
+                    </div>
+                </div>
                 <div class="footer-row">
                     <div class="date-card">
-                        <div class="date-lbl">Date</div>
+                        <div class="date-lbl">&#9654; Date</div>
                         <div class="date-val">{completion_date}</div>
                     </div>
                     {event_block}
@@ -684,7 +724,15 @@ VIEWER_APPRECIATION_HTML = """
                 </div>
             </div>
             <div class="sidebar" aria-hidden="true">
-                <div class="sidebar-text">{title_line1} {title_line2}</div>
+                <div class="sidebar-stripes" aria-hidden="true">
+                    <span style="background:{accent_color}"></span>
+                    <span style="background:{secondary_color}"></span>
+                    <span style="background:#138808"></span>
+                    <span style="background:#0d3320"></span>
+                </div>
+                <div class="sidebar-body">
+                    <div class="sidebar-text">{title_line1} {title_line2}</div>
+                </div>
             </div>
         </div>
         <div class="tricolor-footer" aria-hidden="true">

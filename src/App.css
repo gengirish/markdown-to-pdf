@@ -1,5 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:wght@600;700&family=Lato:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;600;700&family=EB+Garamond:wght@600;700&display=swap');
 
 /* ── Layout Shell ── */
 
@@ -532,15 +532,35 @@
 
 .cert-card-appreciation {
   background: #ffffff;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #d1d9e0;
   border-radius: 10px;
   padding: 0;
   max-width: 720px;
   box-shadow:
-    0 4px 6px rgba(0, 0, 0, 0.04),
-    0 20px 48px rgba(0, 0, 0, 0.1);
+    0 4px 6px rgba(0, 0, 0, 0.05),
+    0 24px 56px rgba(10, 40, 24, 0.12);
   overflow: hidden;
-  font-family: 'Lato', var(--font-body), sans-serif;
+  font-family: 'Barlow', var(--font-body), sans-serif;
+}
+
+.cert-appreciation-header-stripe {
+  display: flex;
+  height: 5px;
+}
+
+.cert-appreciation-header-stripe .saffron {
+  flex: 1;
+  background: var(--appreciation-accent, #f05b00);
+}
+
+.cert-appreciation-header-stripe .white {
+  flex: 1;
+  background: #ffffff;
+}
+
+.cert-appreciation-header-stripe .green {
+  flex: 1;
+  background: #138808;
 }
 
 .cert-appreciation-header {
@@ -669,23 +689,24 @@
 }
 
 .cert-appreciation-host-strip {
-  background: #fafbfc;
-  border-bottom: 1px solid #e2e8f0;
+  background: var(--appreciation-sidebar, #0a2818);
   text-align: center;
-  padding: 0.65rem 0.85rem 0.7rem;
+  padding: 0.55rem 0.85rem 0.65rem;
+  position: relative;
 }
 
 .cert-appreciation-host-tricolor {
   display: flex;
   justify-content: center;
   gap: 0;
-  max-width: 4.5rem;
-  margin: 0 auto 0.35rem;
+  width: 100%;
+  margin: 0 0 0.35rem;
 }
 
 .cert-appreciation-host-tricolor span {
   flex: 1;
-  height: 3px;
+  height: 4px;
+  max-width: none;
 }
 
 .cert-appreciation-host-tricolor .saffron {
@@ -703,54 +724,75 @@
 }
 
 .cert-appreciation-host-eyebrow {
-  margin: 0.35rem 0 0.15rem;
-  font-size: 0.42rem;
-  font-weight: 600;
-  letter-spacing: 0.12em;
+  margin: 0.15rem 0 0.12rem;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.44rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #718096;
+  color: var(--appreciation-secondary, #ffba08);
 }
 
 .cert-appreciation-host-title {
   margin: 0;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #1a202c;
+  color: #ffffff;
 }
 
-.cert-appreciation-host-divider {
-  display: block;
-  width: 2.4rem;
-  height: 2px;
-  background: var(--appreciation-secondary, #ffba08);
+.cert-appreciation-host-ticks {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
   margin: 0.35rem auto 0;
+}
+
+.cert-appreciation-host-ticks span {
+  display: block;
+  height: 2px;
+  width: 1.1rem;
+}
+
+.cert-appreciation-host-ticks .gold {
+  background: var(--appreciation-secondary, #ffba08);
+}
+
+.cert-appreciation-host-ticks .saffron {
+  background: var(--appreciation-accent, #f05b00);
+}
+
+.cert-appreciation-host-ticks .green {
+  background: #138808;
 }
 
 .cert-appreciation-host-organizer {
   margin: 0.4rem 0 0;
-  font-size: 0.44rem;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.42rem;
   font-weight: 700;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #fff;
-  background: var(--appreciation-sidebar, #0a2818);
+  background: var(--appreciation-accent, #f05b00);
   display: inline-block;
-  padding: 0.22rem 0.55rem;
+  padding: 0.22rem 0.6rem;
 }
 
 .cert-appreciation-layout {
   display: flex;
-  min-height: 290px;
+  min-height: 295px;
+  background: #f8faf9;
 }
 
 .cert-appreciation-main {
   flex: 1;
-  padding: 1.25rem 1rem 1rem 1.5rem;
+  padding: 1.2rem 1rem 1rem 1.35rem;
   position: relative;
   color: #1a202c;
-  border-left: 1px solid #edf2f7;
 }
 
 .cert-appreciation-accent-rail {
@@ -760,33 +802,122 @@
   transform: translateY(-50%);
   display: flex;
   flex-direction: column;
-  width: 4px;
-  border-radius: 0 2px 2px 0;
+  width: 5px;
+  border-radius: 0 3px 3px 0;
   overflow: hidden;
+  box-shadow: 1px 0 4px rgba(0, 0, 0, 0.06);
 }
 
 .cert-appreciation-accent-rail span {
-  height: 26px;
   display: block;
 }
 
-.cert-appreciation-accent-rail .saffron {
+.cert-appreciation-accent-rail .seg1 {
+  height: 22px;
   background: var(--appreciation-accent, #f05b00);
 }
 
-.cert-appreciation-accent-rail .white {
-  background: #fff;
-  border-top: 1px solid #e2e8f0;
-  border-bottom: 1px solid #e2e8f0;
+.cert-appreciation-accent-rail .seg2,
+.cert-appreciation-accent-rail .seg4,
+.cert-appreciation-accent-rail .seg6 {
+  height: 4px;
+  background: #e2e8f0;
 }
 
-.cert-appreciation-accent-rail .green {
+.cert-appreciation-accent-rail .seg3 {
+  height: 18px;
+  background: var(--appreciation-secondary, #ffba08);
+}
+
+.cert-appreciation-accent-rail .seg5 {
+  height: 22px;
   background: #138808;
+}
+
+.cert-appreciation-accent-rail .seg7 {
+  height: 14px;
+  background: var(--appreciation-accent, #f05b00);
+}
+
+.cert-appreciation-body-row {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+}
+
+.cert-appreciation-sport-seal {
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.cert-appreciation-sport-seal .seal-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  background: var(--appreciation-sidebar, #0a2818);
+  border: 2px solid var(--appreciation-secondary, #ffba08);
+  color: var(--appreciation-secondary, #ffba08);
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0 auto;
+}
+
+.cert-appreciation-sport-seal .seal-lbl {
+  display: block;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.4rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--appreciation-accent, #f05b00);
+  margin-top: 0.2rem;
+}
+
+.cert-appreciation-body-content {
+  flex: 1;
+  border-left: 2px solid var(--appreciation-secondary, #ffba08);
+  padding-left: 0.65rem;
+  min-width: 0;
 }
 
 .cert-appreciation-sidebar {
   width: 58px;
-  background: var(--appreciation-sidebar, #0a2818);
+  background: linear-gradient(165deg, var(--appreciation-sidebar, #0a2818) 0%, #0d3320 100%);
+  display: flex;
+  flex-direction: column;
+  border-left: 3px solid var(--appreciation-secondary, #ffba08);
+}
+
+.cert-appreciation-sidebar-stripes {
+  display: flex;
+  height: 8px;
+  width: 100%;
+}
+
+.cert-appreciation-sidebar-stripes span {
+  flex: 1;
+}
+
+.cert-appreciation-sidebar-stripes .saffron {
+  background: var(--appreciation-accent, #f05b00);
+}
+
+.cert-appreciation-sidebar-stripes .gold {
+  background: var(--appreciation-secondary, #ffba08);
+}
+
+.cert-appreciation-sidebar-stripes .green {
+  background: #138808;
+}
+
+.cert-appreciation-sidebar-stripes .dark {
+  background: #0d3320;
+}
+
+.cert-appreciation-sidebar-body {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -794,41 +925,50 @@
   gap: 0.35rem;
   padding: 0.75rem 0.25rem;
   color: #fff;
+  font-family: 'Barlow Condensed', sans-serif;
   font-weight: 700;
   font-size: 0.38rem;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   writing-mode: vertical-rl;
   transform: rotate(180deg);
   line-height: 1.5;
-  border-left: 3px solid var(--appreciation-secondary, #ffba08);
 }
 
 .cert-appreciation-label {
-  font-size: 0.58rem;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.54rem;
   color: #718096;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  margin: 0.45rem 0 0.3rem;
+  margin: 0 0 0.28rem;
+  font-weight: 700;
 }
 
 .cert-appreciation-name {
   font-family: 'EB Garamond', Georgia, serif;
-  font-size: 1.55rem;
+  font-size: 1.5rem;
   font-weight: 700;
   color: var(--appreciation-accent, #f05b00);
   border-bottom: 2px solid var(--appreciation-accent, #f05b00);
-  padding-bottom: 0.28rem;
-  margin: 0 0 0.7rem;
-  line-height: 1.15;
+  padding-bottom: 0.25rem;
+  margin: 0 0 0.65rem;
+  line-height: 1.12;
+}
+
+.cert-appreciation-name .star {
+  color: var(--appreciation-secondary, #ffba08);
+  font-size: 0.85rem;
+  vertical-align: middle;
+  margin: 0 0.12rem;
 }
 
 .cert-appreciation-recognition {
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   color: #2d3748;
-  line-height: 1.6;
-  margin: 0 0 1rem;
-  max-width: 92%;
+  line-height: 1.65;
+  margin: 0 0 0.85rem;
+  max-width: 100%;
 }
 
 .cert-appreciation-footer {
@@ -841,26 +981,31 @@
 }
 
 .cert-appreciation-date-card {
-  background: #fafbfc;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
-  padding: 0.45rem 0.65rem;
+  background: #fff;
+  border: 2px solid var(--appreciation-accent, #f05b00);
+  border-top: 3px solid var(--appreciation-secondary, #ffba08);
+  border-radius: 2px;
+  padding: 0.4rem 0.6rem;
 }
 
 .cert-appreciation-date-val {
   display: block;
-  font-size: 0.82rem;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.78rem;
   font-weight: 700;
-  color: var(--appreciation-accent, #f05b00);
+  color: #1a202c;
+  letter-spacing: 0.02em;
 }
 
 .cert-appreciation-date-lbl {
-  font-size: 0.48rem;
-  color: #718096;
-  letter-spacing: 0.08em;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.46rem;
+  color: var(--appreciation-accent, #f05b00);
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  margin-bottom: 0.1rem;
+  margin-bottom: 0.08rem;
   display: block;
+  font-weight: 700;
 }
 
 .cert-appreciation-event {
@@ -869,21 +1014,27 @@
 
 .cert-appreciation-event-lbl {
   display: block;
-  font-size: 0.48rem;
-  color: #718096;
-  letter-spacing: 0.08em;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.46rem;
+  color: var(--appreciation-accent, #f05b00);
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  margin-bottom: 0.12rem;
+  margin-bottom: 0.1rem;
+  font-weight: 700;
 }
 
 .cert-appreciation-event strong {
   display: inline-block;
+  font-family: 'Barlow Condensed', sans-serif;
   font-size: 0.72rem;
-  letter-spacing: 0.04em;
+  font-weight: 700;
+  letter-spacing: 0.05em;
   color: #1a202c;
   text-transform: uppercase;
-  border-left: 3px solid var(--appreciation-accent, #f05b00);
-  padding-left: 0.45rem;
+  border: 2px solid var(--appreciation-accent, #f05b00);
+  border-top: 3px solid var(--appreciation-secondary, #ffba08);
+  background: #fffbf5;
+  padding: 0.35rem 0.55rem;
   text-align: left;
 }
 
