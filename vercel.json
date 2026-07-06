@@ -35,6 +35,14 @@
       "destination": "/api/index.py"
     },
     {
+      "source": "/robots.txt",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/sitemap.xml",
+      "destination": "/api/index.py"
+    },
+    {
       "source": "/.well-known/:path*",
       "destination": "/api/index.py"
     },

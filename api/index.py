@@ -368,6 +368,8 @@ CERT_INTERNSHIP_BRAND_PREFIX = _sanitize_env(
 CERT_INTERNSHIP_BRAND_ACCENT = _sanitize_env(
     os.environ.get("CERT_INTERNSHIP_BRAND_ACCENT", "Forge")
 ) or "Forge"
+SITE_URL = _sanitize_env(os.environ.get("SITE_URL", "")).rstrip("/")
+CONTACT_EMAIL = _sanitize_env(os.environ.get("CONTACT_EMAIL", "support@intelliforge.tech")) or "support@intelliforge.tech"
 _signature_cache: dict[str, str] = {}
 
 
@@ -451,6 +453,85 @@ def _internship_branding_html() -> dict[str, str]:
         "issued_by": html_mod.escape(b["issued_by"]),
         "website": html_mod.escape(b["website"]),
     }
+
+
+def _resolve_site_url(req: Request | None = None) -> str:
+    if SITE_URL:
+        return SITE_URL
+    if req is not None:
+        return str(req.base_url).rstrip("/")
+    return "https://certs.intelliforge.tech"
+
+
+def _json_ld_script(payload: dict) -> str:
+    return (
+        '<script type="application/ld+json">'
+        f"{json.dumps(payload, ensure_ascii=False)}"
+        "</script>"
+    )
+
+
+def _participation_json_ld(
+    *,
+    participant_name: str,
+    course_name: str,
+    completion_date: str,
+    cert_id: str,
+    page_url: str,
+    brand_name: str,
+    participation_title: str,
+) -> str:
+    return _json_ld_script(
+        {
+            "@context": "https://schema.org",
+            "@type": "EducationalOccupationalCredential",
+            "name": participation_title,
+            "credentialCategory": "certificate",
+            "identifier": cert_id,
+            "url": page_url,
+            "dateCreated": completion_date,
+            "recognizedBy": {"@type": "Organization", "name": brand_name},
+            "awardedTo": {"@type": "Person", "name": participant_name},
+            "about": {"@type": "Course", "name": course_name},
+        }
+    )
+
+
+def _internship_json_ld(
+    *,
+    participant_name: str,
+    course_name: str,
+    completion_date: str,
+    cert_id: str,
+    page_url: str,
+    org_name: str,
+    usn: str,
+    duration_text: str,
+    hours_text: str,
+) -> str:
+    return _json_ld_script(
+        {
+            "@context": "https://schema.org",
+            "@type": "EducationalOccupationalCredential",
+            "name": "Certificate of Internship Completion",
+            "credentialCategory": "internship certificate",
+            "identifier": cert_id,
+            "url": page_url,
+            "dateCreated": completion_date,
+            "recognizedBy": {"@type": "Organization", "name": org_name},
+            "awardedTo": {
+                "@type": "Person",
+                "name": participant_name,
+                "identifier": usn,
+            },
+            "about": {
+                "@type": "Course",
+                "name": course_name,
+                "timeRequired": duration_text,
+                "educationalCredentialAwarded": f"{hours_text} internship hours",
+            },
+        }
+    )
 
 
 def _norm_signatory(name: str) -> str:
@@ -1190,13 +1271,18 @@ VIEWER_HTML = """<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{participant_name} – Certificate</title>
+    <meta name="description" content="{meta_description}" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="{page_url}" />
     <meta property="og:title" content="{participant_name} – {participation_title}" />
-    <meta property="og:description" content="{participant_name} successfully completed {course_name} at {brand_name}." />
+    <meta property="og:description" content="{meta_description}" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="{page_url}" />
+    <meta property="og:site_name" content="{brand_name}" />
     <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="{participant_name} – Certificate" />
-    <meta name="twitter:description" content="Verified certificate for completing {course_name}" />
+    <meta name="twitter:title" content="{participant_name} – {participation_title}" />
+    <meta name="twitter:description" content="{meta_description}" />
+    {json_ld}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
     <style>
@@ -1345,6 +1431,12 @@ async def view_certificate(token: str, req: Request):
         institution_block = (
             f'<div class="inst">{html_mod.escape(inst)}</div>' if inst else ""
         )
+        cert_id = _cert_id(data)
+        internship_brand = certificate_branding()
+        meta_description = html_mod.escape(
+            f"Verified VTU internship certificate: {data['n']} (USN {data['u']}) completed "
+            f"{data['c']} at {internship_brand['internship_org']} — {data['w']}, {data['h']}."
+        )
         html = VIEWER_INTERNSHIP_HTML.format(
             participant_name=html_mod.escape(data["n"]),
             usn=html_mod.escape(data["u"]),
@@ -1354,13 +1446,25 @@ async def view_certificate(token: str, req: Request):
             mentor_name=html_mod.escape(data["m"]),
             duration_text=html_mod.escape(data["w"]),
             hours_text=html_mod.escape(data["h"]),
-            cert_id=html_mod.escape(_cert_id(data)),
+            cert_id=html_mod.escape(cert_id),
             institution_block=institution_block,
             page_url=page_url,
             download_url=download_url,
             linkedin_url=linkedin_url,
             twitter_url=twitter_url,
             qr_data_uri=_generate_qr_data_uri(page_url),
+            meta_description=meta_description,
+            json_ld=_internship_json_ld(
+                participant_name=data["n"],
+                course_name=data["c"],
+                completion_date=data["d"],
+                cert_id=cert_id,
+                page_url=page_url,
+                org_name=internship_brand["internship_org"],
+                usn=data["u"],
+                duration_text=data["w"],
+                hours_text=data["h"],
+            ),
             signatures_html=_viewer_signatures_html([
                 (FOUNDER_NAME, "Authorised signatory"),
                 (data["m"], "Industry mentor"),
@@ -1373,18 +1477,32 @@ async def view_certificate(token: str, req: Request):
         twitter_params = urlencode({"text": cert_desc, "url": page_url})
         twitter_url = f"https://twitter.com/intent/tweet?{twitter_params}"
         brand_html = _participation_branding_html()
+        cert_id = _cert_id(data)
+        meta_description = html_mod.escape(
+            f"Verified {CERT_PARTICIPATION_TITLE}: {data['n']} completed {data['c']} at {CERT_BRAND_NAME}."
+        )
         html = VIEWER_HTML.format(
             participant_name=data["n"],
             course_name=data["c"],
             completion_date=data["d"],
             instructor_name=data["i"],
-            cert_id=_cert_id(data),
-            meta_html=_participation_viewer_meta_html(data["d"], data["i"], _cert_id(data)),
+            cert_id=cert_id,
+            meta_html=_participation_viewer_meta_html(data["d"], data["i"], cert_id),
             page_url=page_url,
             download_url=download_url,
             linkedin_url=linkedin_url,
             twitter_url=twitter_url,
             qr_data_uri=_generate_qr_data_uri(page_url),
+            meta_description=meta_description,
+            json_ld=_participation_json_ld(
+                participant_name=data["n"],
+                course_name=data["c"],
+                completion_date=data["d"],
+                cert_id=cert_id,
+                page_url=page_url,
+                brand_name=CERT_BRAND_NAME,
+                participation_title=CERT_PARTICIPATION_TITLE,
+            ),
             signatures_html=_viewer_signatures_html([
                 (FOUNDER_NAME, FOUNDER_TITLE),
                 (data["i"], "Course Instructor"),
@@ -1486,114 +1604,146 @@ async def batch_verify_certificates(request: BatchVerifyRequest):
 
 
 # ---------------------------------------------------------------------------
-# Agent / LLM discovery
+# Agent / LLM discovery & SEO
 # ---------------------------------------------------------------------------
-LLMS_TXT = """# PDF Cert Generator API
 
-> API-first PDF certificate generation. Create tamper-proof certificates with shareable URLs and PDF download.
+_AI_CRAWLERS = (
+    "GPTBot", "ChatGPT-User", "OAI-SearchBot",
+    "ClaudeBot", "Claude-Web", "anthropic-ai",
+    "PerplexityBot", "Perplexity-User",
+    "Google-Extended", "GoogleOther",
+    "Applebot", "Applebot-Extended",
+    "Bytespider", "CCBot", "cohere-ai", "Diffbot",
+    "Meta-ExternalAgent", "Meta-ExternalFetcher", "FacebookBot",
+    "DuckAssistBot", "Amazonbot", "MistralAI-User", "YouBot",
+)
 
-## Base URL
-https://your-deployment.example.com
 
-## Authentication
-- Certificate creation: `X-API-Key: <key>` header
-- Admin endpoints: `X-Admin-Key: <key>` header
-- Public endpoints (view, download, verify): No auth required
+def _build_llms_txt(base_url: str) -> str:
+    b = certificate_branding()
+    brand = b["brand_name"]
+    return f"""# {brand} Certificate Platform
 
-## Endpoints
+> Issue and verify tamper-proof PDF certificates with HMAC-signed shareable URLs — course participation and VTU-style internship credentials.
 
-### Create Certificate
-POST /api/certificate
-Content-Type: application/json
-X-API-Key: <key>
+{brand} ({b['website']}) provides API-first certificate generation for training completions and industry internships. Each certificate is a cryptographically signed URL with a downloadable PDF and public verification page. No database is required for verification.
 
-{
-  "participant_name": "Jane Doe",
-  "course_name": "AI Product Development Fundamentals",
-  "completion_date": "2026-04-15",
-  "instructor_name": "Certificate Team",
-  "participant_email": "jane@example.com",
-  "callback_url": "https://your-server.com/webhook",
-  "idempotency_key": "unique-request-id"
-}
+## Documentation
 
-Internship (VTU / college records) — add:
+- [OpenAPI specification]({base_url}/openapi.json): Machine-readable API schema (v2.0.0).
+- [Interactive API docs]({base_url}/docs): Swagger UI for trying endpoints.
+- [API metadata]({base_url}/api/info): Version, branding, and feature list.
 
-{
-  "certificate_kind": "internship",
-  "participant_name": "Jane Doe",
-  "course_name": "VTU Industry Internship – IntelliForge AI Programme",
-  "completion_date": "2026-06-10",
-  "instructor_name": "Program Lead",
-  "usn": "1RV22CS001",
-  "internship_duration": "January 2026 – June 2026",
-  "internship_hours": "120",
-  "mentor_name": "Industry Mentor Name",
-  "institution_name": "Affiliated Engineering College (optional)"
-}
+## Pages
 
-Response: { certificate_id, token, url, download_url, certificate_kind, email_sent, request_id, ... }
+- [Certificate generator]({base_url}/): Web UI to issue participation and internship certificates.
+- [List courses]({base_url}/api/courses): Active courses available for certificate issuance.
 
-### List Courses
-GET /api/courses
-Response: { courses: ["Course 1", "Course 2", ...] }
+## Verification
 
-### Verify Certificate
-GET /certificate/{token}/verify
-Response: { valid: true, certificate_id, participant_name, course_name, ... }
+- `GET /certificate/{{token}}/verify` — JSON verification for a single certificate.
+- `POST /api/certificates/verify` — Batch verify up to 100 tokens.
+- `GET /certificate/{{token}}` — Public HTML certificate page (shareable).
+- `GET /certificate/{{token}}/download` — Download certificate PDF.
 
-### Batch Verify
-POST /api/certificates/verify
-{ "tokens": ["token1", "token2"] }
-Response: { total, valid, invalid, results: [...] }
+## Create certificates
 
-### Download PDF
-GET /certificate/{token}/download
-Response: application/pdf
+`POST /api/certificate` with `X-API-Key` when configured.
 
-### Bulk Generate (Admin)
-POST /api/admin/certificates/bulk
-X-Admin-Key: <key>
-{ "entries": [{ participant_name, course_name, completion_date, participant_email, certificate_kind?, usn?, internship_duration?, internship_hours?, mentor_name?, institution_name? }, ...] }
+Participation body:
+```json
+{{"participant_name":"Jane Doe","course_name":"AI Product Development","completion_date":"2026-04-15","instructor_name":"Certificate Team","participant_email":"jane@example.com"}}
+```
 
-### OpenAPI Spec
-GET /openapi.json
+Internship body adds: `certificate_kind`, `usn`, `internship_duration`, `internship_hours`, `mentor_name`, `institution_name`.
 
-## Key Features
-- Stateless HMAC-SHA256 signed tokens — no database needed for verification
-- Idempotency keys to prevent duplicates
-- Webhook callbacks for async automation
-- Email delivery via AgentMail
-- Bulk generation (up to 500 per batch)
-- Batch verification (up to 100 per request)
+## Automation
+
+- Webhooks: pass `callback_url` on create to receive `certificate.created` events.
+- Idempotency: pass `idempotency_key` to prevent duplicate issuance.
+- Bulk admin: `POST /api/admin/certificates/bulk` with `X-Admin-Key`.
+- Email delivery: optional `participant_email` via AgentMail.
+
+## Branding (env-configurable)
+
+- Org tagline: {b['org_tagline']}
+- Brand: {brand}
+- Participation title: {b['participation_title']}
+- Internship org: {b['internship_org']}
+- Contact: {CONTACT_EMAIL}
+
+## Optional
+
+- [Sitemap]({base_url}/sitemap.xml)
+- [Robots]({base_url}/robots.txt)
+- [AI plugin manifest]({base_url}/.well-known/ai-plugin.json)
 """
 
 
+def _build_robots_txt(base_url: str) -> str:
+    lines = ["User-agent: *", "Allow: /", ""]
+    for bot in _AI_CRAWLERS:
+        lines.extend([f"User-agent: {bot}", "Allow: /", ""])
+    lines.append(f"Sitemap: {base_url}/sitemap.xml")
+    return "\n".join(lines) + "\n"
+
+
+def _build_sitemap_xml(base_url: str) -> str:
+    pages = ["/", "/docs", "/openapi.json", "/llms.txt", "/api/info", "/api/courses"]
+    urls = "\n".join(
+        f"  <url><loc>{base_url}{path}</loc><changefreq>weekly</changefreq></url>"
+        for path in pages
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"{urls}\n"
+        "</urlset>\n"
+    )
+
+
 @app.get("/llms.txt", tags=["System"], include_in_schema=False)
-async def llms_txt():
-    """Agent/LLM discovery document describing available API capabilities."""
-    return Response(content=LLMS_TXT, media_type="text/plain")
+async def llms_txt(req: Request):
+    """Agent/LLM discovery document (llmstxt.org format)."""
+    return Response(content=_build_llms_txt(_resolve_site_url(req)), media_type="text/plain; charset=utf-8")
+
+
+@app.get("/robots.txt", tags=["System"], include_in_schema=False)
+async def robots_txt(req: Request):
+    """Crawler rules including explicit AI bot allowances."""
+    return Response(content=_build_robots_txt(_resolve_site_url(req)), media_type="text/plain; charset=utf-8")
+
+
+@app.get("/sitemap.xml", tags=["System"], include_in_schema=False)
+async def sitemap_xml(req: Request):
+    """Sitemap for marketing and API discovery pages."""
+    return Response(content=_build_sitemap_xml(_resolve_site_url(req)), media_type="application/xml; charset=utf-8")
 
 
 @app.get("/.well-known/ai-plugin.json", tags=["System"], include_in_schema=False)
-async def ai_plugin():
+async def ai_plugin(req: Request):
     """OpenAI-compatible plugin manifest for agent discovery."""
+    base = _resolve_site_url(req)
+    b = certificate_branding()
     return JSONResponse({
         "schema_version": "v1",
-        "name_for_human": "PDF Cert Generator",
-        "name_for_model": "pdf_cert_generator",
-        "description_for_human": "Generate and verify tamper-proof course and VTU internship certificates with shareable URLs.",
+        "name_for_human": f"{b['brand_name']} Certificates",
+        "name_for_model": "intelliforge_certificates",
+        "description_for_human": (
+            f"Generate and verify tamper-proof course and VTU internship certificates from {b['brand_name']}."
+        ),
         "description_for_model": (
-            "API for generating HMAC-signed verifiable certificates (participation and internship with USN, hours, mentor). "
-            "Use POST /api/certificate to create, GET /certificate/{token}/verify to verify, "
-            "POST /api/certificates/verify for batch verification. "
-            "Supports idempotency_key, callback_url webhooks, and email delivery."
+            f"API for HMAC-signed verifiable certificates at {base}. "
+            "Use POST /api/certificate to create (participation or internship with USN, hours, mentor). "
+            "Use GET /certificate/{{token}}/verify or POST /api/certificates/verify for verification. "
+            "Supports idempotency_key, callback_url webhooks, and email delivery. "
+            "See /llms.txt and /openapi.json for full documentation."
         ),
         "auth": {"type": "service_http", "authorization_type": "bearer", "verification_tokens": {}},
-        "api": {"type": "openapi", "url": "/openapi.json"},
-        "logo_url": "/favicon.svg",
-        "contact_email": "support@example.com",
-        "legal_info_url": "/",
+        "api": {"type": "openapi", "url": f"{base}/openapi.json"},
+        "logo_url": f"{base}/favicon.svg",
+        "contact_email": CONTACT_EMAIL,
+        "legal_info_url": base,
     })
 
 

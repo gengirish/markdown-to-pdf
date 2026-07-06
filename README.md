@@ -4,7 +4,7 @@
 
 Generate tamper-proof participation and **VTU-style internship completion** certificates as downloadable PDFs with shareable verification links. Certificate data is encoded in the URL itself — signed with HMAC-SHA256, cryptographically verifiable without a database. See [docs/certificate-internship-vtu.md](docs/certificate-internship-vtu.md) for internship fields and college workflow notes. **Offer letter (Word):** [docs/samples/IntelliForge_Internship_Offer_Letter.docx](docs/samples/IntelliForge_Internship_Offer_Letter.docx).
 
-**API docs:** `/docs` · **OpenAPI:** `/openapi.json` · **Agent discovery:** `/llms.txt`
+**API docs:** `/docs` · **OpenAPI:** `/openapi.json` · **Agent discovery:** `/llms.txt` · **Sitemap:** `/sitemap.xml`
 
 ---
 
@@ -147,6 +147,8 @@ See [`sdk/README.md`](sdk/README.md) for full SDK documentation.
 | `DATABASE_URL` | No | PostgreSQL for analytics & admin |
 | `AGENTMAIL_API_KEY` | No | AgentMail API key for email delivery |
 | `AGENTMAIL_INBOX_ID` | No | AgentMail inbox address |
+| `SITE_URL` | No | Canonical public URL (e.g. `https://certs.intelliforge.tech`) for sitemap, `llms.txt`, and Open Graph |
+| `CONTACT_EMAIL` | No | Contact email in AI plugin manifest (default: `support@intelliforge.tech`) |
 | `FOUNDER_NAME` | No | Signature name on certificates |
 | `FOUNDER_TITLE` | No | Signature title under the founder signature (default: `Founder, Intelliforge AI`) |
 | `CERT_ORG_TAGLINE` | No | Small org line on certificate header (default: `AN INTELLIFORGE AI INITIATIVE`) |

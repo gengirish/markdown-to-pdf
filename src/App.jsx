@@ -112,6 +112,85 @@ function useBranding(getApiUrl) {
   return branding
 }
 
+function setDocumentMeta(attr, key, value) {
+  if (!value) return
+  let el = document.querySelector(`meta[${attr}="${key}"]`)
+  if (!el) {
+    el = document.createElement('meta')
+    el.setAttribute(attr, key)
+    document.head.appendChild(el)
+  }
+  el.setAttribute('content', value)
+}
+
+function usePageSeo(branding, sitePath = '/') {
+  useEffect(() => {
+    const title = `${branding.brand_name} — Certificate Generator`
+    const description = (
+      `Issue and verify tamper-proof PDF certificates from ${branding.brand_name}. `
+      + 'Course participation and VTU internship credentials with HMAC-signed shareable verification links.'
+    )
+    const canonical = `${window.location.origin}${sitePath}`
+
+    document.title = title
+    setDocumentMeta('name', 'description', description)
+    setDocumentMeta('property', 'og:title', title)
+    setDocumentMeta('property', 'og:description', description)
+    setDocumentMeta('property', 'og:site_name', branding.brand_name)
+    setDocumentMeta('property', 'og:url', canonical)
+    setDocumentMeta('name', 'twitter:title', title)
+    setDocumentMeta('name', 'twitter:description', description)
+
+    let canonicalEl = document.querySelector('link[rel="canonical"]')
+    if (!canonicalEl) {
+      canonicalEl = document.createElement('link')
+      canonicalEl.setAttribute('rel', 'canonical')
+      document.head.appendChild(canonicalEl)
+    }
+    canonicalEl.setAttribute('href', canonical)
+
+    const jsonLdId = 'site-json-ld'
+    let script = document.getElementById(jsonLdId)
+    if (!script) {
+      script = document.createElement('script')
+      script.id = jsonLdId
+      script.type = 'application/ld+json'
+      document.head.appendChild(script)
+    }
+    script.textContent = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@graph': [
+        {
+          '@type': 'Organization',
+          '@id': `${canonical}#organization`,
+          name: branding.brand_name,
+          url: canonical,
+          email: 'support@intelliforge.tech',
+          slogan: branding.org_tagline,
+          knowsAbout: ['PDF certificates', 'credential verification', 'VTU internships'],
+        },
+        {
+          '@type': 'WebSite',
+          '@id': `${canonical}#website`,
+          name: `${branding.brand_name} Certificates`,
+          url: canonical,
+          description,
+          publisher: { '@id': `${canonical}#organization` },
+          inLanguage: 'en',
+        },
+        {
+          '@type': 'WebApplication',
+          name: `${branding.brand_name} Certificate Generator`,
+          url: canonical,
+          applicationCategory: 'BusinessApplication',
+          operatingSystem: 'Web',
+          offers: { '@type': 'Offer', price: '0', priceCurrency: 'INR' },
+        },
+      ],
+    })
+  }, [branding, sitePath])
+}
+
 function normSignatory(name) {
   return (name || '').trim().replace(/\s+/g, ' ').toLowerCase()
 }
@@ -847,6 +926,7 @@ function App() {
     import.meta.env.PROD ? path : `http://localhost:8000${path}`
 
   const branding = useBranding(getApiUrl)
+  usePageSeo(branding)
 
   useEffect(() => {
     fetch(getApiUrl('/api/courses'))

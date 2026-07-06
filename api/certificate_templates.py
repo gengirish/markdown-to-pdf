@@ -286,14 +286,19 @@ VIEWER_INTERNSHIP_HTML = """<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{participant_name} – IntelliForge Internship Certificate</title>
+    <title>{participant_name} – Internship Certificate</title>
+    <meta name="description" content="{meta_description}" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="{page_url}" />
     <meta property="og:title" content="{participant_name} – Internship completion (VTU-ready)" />
-    <meta property="og:description" content="Verified industry internship: {course_name} · USN {usn}" />
+    <meta property="og:description" content="{meta_description}" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="{page_url}" />
+    <meta property="og:site_name" content="{internship_org}" />
     <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="{participant_name} – IntelliForge Internship" />
-    <meta name="twitter:description" content="Verified internship certificate with USN, hours, and mentor attestation" />
+    <meta name="twitter:title" content="{participant_name} – {internship_brand_prefix} {internship_brand_accent} Internship" />
+    <meta name="twitter:description" content="{meta_description}" />
+    {json_ld}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
     <style>
