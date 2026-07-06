@@ -63,7 +63,11 @@ SEED_COURSES = [
 def _get_conn():
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL environment variable is not set")
-    return psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    return psycopg2.connect(
+        DATABASE_URL,
+        cursor_factory=psycopg2.extras.RealDictCursor,
+        connect_timeout=5,
+    )
 
 
 @contextmanager

@@ -1010,8 +1010,7 @@ function App() {
   const [courses, setCourses] = useState([])
   const [coursesLoading, setCoursesLoading] = useState(true)
 
-  const getApiUrl = (path) =>
-    import.meta.env.PROD ? path : `http://localhost:8000${path}`
+  const getApiUrl = (path) => path
 
   const branding = useBranding(getApiUrl)
   usePageSeo(branding)
@@ -1105,6 +1104,7 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(45000),
       })
 
       if (!response.ok) {
@@ -1123,7 +1123,13 @@ function App() {
       setCertResult(data)
     } catch (err) {
       console.error('Error generating certificate:', err)
-      setCertError(err.message)
+      if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+        setCertError('Request timed out. Check your connection and try again.')
+      } else if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+        setCertError('Could not reach the certificate API. If developing locally, start the backend on port 8000.')
+      } else {
+        setCertError(err.message)
+      }
     } finally {
       setIsGenerating(false)
     }

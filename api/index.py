@@ -46,6 +46,7 @@ from api.certificate_templates import (
 
 import uuid as uuid_mod
 import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 import qrcode
 from qrcode.image.pil import PilImage
@@ -56,16 +57,26 @@ logger = logging.getLogger(__name__)
 
 DB_AVAILABLE = bool(os.environ.get("DATABASE_URL", ""))
 db = None
+_db_ready = False
 if DB_AVAILABLE:
     from api import db as _db_mod
     db = _db_mod
+
+
+def _ensure_db_ready() -> bool:
+    """Lazy DB init so cold starts and requests are not blocked at import time."""
+    global DB_AVAILABLE, db, _db_ready
+    if not DB_AVAILABLE or _db_ready:
+        return DB_AVAILABLE
     try:
         db.init_schema()
+        _db_ready = True
         logger.info("Database connected and schema initialized")
     except Exception as e:
         logger.warning(f"Database initialization failed, running without DB: {e}")
         DB_AVAILABLE = False
         db = None
+    return DB_AVAILABLE
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -104,18 +115,14 @@ AGENTMAIL_INBOX_ID = _sanitize_env(
 ) or "support@intelliforge.tech"
 _agentmail_client = None
 _agentmail_ready = False
+_agentmail_inbox_cached: str = ""
+_email_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cert-email")
 if AGENTMAIL_API_KEY:
     try:
         from agentmail import AgentMail as AgentMailClient
-        from agentmail.core.api_error import ApiError as AgentMailApiError
 
         _agentmail_client = AgentMailClient(api_key=AGENTMAIL_API_KEY)
-        try:
-            _agentmail_client.inboxes.list(limit=1)
-            _agentmail_ready = True
-            logger.info(f"AgentMail ready (inbox {AGENTMAIL_INBOX_ID})")
-        except AgentMailApiError as e:
-            logger.warning(f"AgentMail auth/check failed: {e.status_code} {e.body}")
+        logger.info("AgentMail client configured (inbox check deferred)")
     except Exception as e:
         logger.warning(f"AgentMail initialization failed: {e}")
 
@@ -186,6 +193,18 @@ def _store_idempotency(key: str, response: dict):
 # ---------------------------------------------------------------------------
 # Webhook / callback helper
 # ---------------------------------------------------------------------------
+def _is_browser_same_origin(req: Request) -> bool:
+    """Allow browser UI requests without an API key when they come from this deployment."""
+    base = str(req.base_url).rstrip("/")
+    origin = req.headers.get("origin", "").rstrip("/")
+    referer = req.headers.get("referer", "").rstrip("/")
+    if origin and (origin == base or origin.startswith(base + "/")):
+        return True
+    if referer and (referer == base or referer.startswith(base + "/")):
+        return True
+    return False
+
+
 def _fire_webhook(callback_url: str, payload: dict):
     """POST payload to callback_url in a background thread. Best-effort."""
     def _do():
@@ -342,7 +361,7 @@ def _institution_clause_for_pdf(inst: str) -> str:
 
 def _certificate_is_revoked(token: str) -> bool:
     """True if the token exists in the DB and is revoked. False if not revoked or not in DB."""
-    if not DB_AVAILABLE or not db:
+    if not _ensure_db_ready() or not db:
         return False
     try:
         with db.get_db() as conn:
@@ -984,7 +1003,7 @@ COURSES_FALLBACK = [
 
 
 def _get_course_names() -> list[str]:
-    if DB_AVAILABLE and db:
+    if _ensure_db_ready() and db:
         try:
             return db.get_active_course_names()
         except Exception as e:
@@ -1149,6 +1168,9 @@ def _agentmail_error_message(exc: Exception) -> str:
 
 def _resolve_agentmail_inbox_id() -> str:
     """Resolve inbox id; AgentMail may use the email address as inbox_id."""
+    global _agentmail_inbox_cached, _agentmail_ready
+    if _agentmail_inbox_cached:
+        return _agentmail_inbox_cached
     if not _agentmail_client:
         return ""
     configured = AGENTMAIL_INBOX_ID
@@ -1158,21 +1180,38 @@ def _resolve_agentmail_inbox_id() -> str:
         page = _agentmail_client.inboxes.list(limit=50)
         inboxes = page.inboxes or []
         if not inboxes:
+            _agentmail_inbox_cached = configured
             return configured
         by_email = {ib.email.strip().lower(): ib.inbox_id for ib in inboxes if getattr(ib, "email", None)}
         by_id = {ib.inbox_id: ib.inbox_id for ib in inboxes}
         key = configured.strip().lower()
         if key in by_email:
-            return by_email[key]
+            _agentmail_inbox_cached = by_email[key]
+            _agentmail_ready = True
+            return _agentmail_inbox_cached
         if configured in by_id:
+            _agentmail_inbox_cached = configured
+            _agentmail_ready = True
             return configured
         if len(inboxes) == 1:
-            return inboxes[0].inbox_id
+            _agentmail_inbox_cached = inboxes[0].inbox_id
+            _agentmail_ready = True
+            return _agentmail_inbox_cached
     except AgentMailApiError:
         pass
     except Exception as e:
         logger.warning(f"AgentMail inbox lookup failed: {e}")
+    _agentmail_inbox_cached = configured
     return configured
+
+
+def _run_with_timeout(fn, timeout_sec: float, timeout_message: str):
+    future = _email_executor.submit(fn)
+    try:
+        return future.result(timeout=timeout_sec)
+    except FuturesTimeoutError:
+        logger.warning(timeout_message)
+        return None
 
 
 def _agentmail_deliver(
@@ -1321,10 +1360,7 @@ async def generate_certificate(request: CertificateRequest, req: Request):
 
         if CERT_API_KEYS:
             api_key = req.headers.get("X-API-Key", "")
-            origin = req.headers.get("origin", "")
-            base = str(req.base_url).rstrip("/")
-            is_same_origin = origin and base.startswith(origin)
-            if not is_same_origin and api_key not in CERT_API_KEYS:
+            if not _is_browser_same_origin(req) and api_key not in CERT_API_KEYS:
                 raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
         client_ip = req.client.host if req.client else "unknown"
@@ -1336,7 +1372,7 @@ async def generate_certificate(request: CertificateRequest, req: Request):
                 headers=rate_headers,
             )
 
-        valid_courses = _get_course_names()
+        valid_courses = _get_course_names() if request.certificate_kind != "appreciation" else []
         name = request.participant_name.strip()
         if not name:
             raise HTTPException(status_code=400, detail="Participant name is required")
@@ -1395,7 +1431,7 @@ async def generate_certificate(request: CertificateRequest, req: Request):
 
         participant_email = request.participant_email.strip() if request.participant_email else ""
 
-        if DB_AVAILABLE and db:
+        if _ensure_db_ready() and db:
             try:
                 db.store_certificate(
                     certificate_id=cert_id,
@@ -1417,28 +1453,28 @@ async def generate_certificate(request: CertificateRequest, req: Request):
         email_sent = False
         email_error = ""
         if participant_email:
-            if request.certificate_kind == "internship":
-                email_sent, email_error = _send_internship_certificate_email(
-                    to_email=participant_email,
-                    participant_name=name,
-                    course_name=course_for_db,
-                    completion_date=request.completion_date,
-                    instructor_name=lead,
-                    mentor_name=request.mentor_name.strip(),
-                    usn=request.usn.strip(),
-                    duration_text=request.internship_duration.strip(),
-                    hours_text=request.internship_hours.strip(),
-                    certificate_id=cert_id,
-                    view_url=shareable_url,
-                    download_url=download_url,
-                )
-            else:
+            def _send_email():
+                if request.certificate_kind == "internship":
+                    return _send_internship_certificate_email(
+                        to_email=participant_email,
+                        participant_name=name,
+                        course_name=course_for_db,
+                        completion_date=request.completion_date,
+                        instructor_name=lead,
+                        mentor_name=request.mentor_name.strip(),
+                        usn=request.usn.strip(),
+                        duration_text=request.internship_duration.strip(),
+                        hours_text=request.internship_hours.strip(),
+                        certificate_id=cert_id,
+                        view_url=shareable_url,
+                        download_url=download_url,
+                    )
                 email_label = (
                     recognition[:80] + "…"
                     if request.certificate_kind == "appreciation" and len(recognition) > 80
                     else course_for_db
                 )
-                email_sent, email_error = _send_certificate_email(
+                return _send_certificate_email(
                     to_email=participant_email,
                     participant_name=name,
                     course_name=email_label,
@@ -1448,6 +1484,17 @@ async def generate_certificate(request: CertificateRequest, req: Request):
                     view_url=shareable_url,
                     download_url=download_url,
                 )
+
+            email_result = _run_with_timeout(
+                _send_email,
+                12,
+                f"Email delivery timed out for {participant_email}",
+            )
+            if email_result is None:
+                email_sent = False
+                email_error = "Email delivery timed out. Share the certificate link instead."
+            else:
+                email_sent, email_error = email_result
 
         logger.info(f"Certificate issued for {name} – {course_for_db}")
 
@@ -2049,7 +2096,7 @@ def _require_admin(req: Request):
 
 
 def _require_db():
-    if not DB_AVAILABLE or not db:
+    if not _ensure_db_ready() or not db:
         raise HTTPException(status_code=503, detail="Database not available")
 
 
