@@ -2,6 +2,7 @@
 HTML sources for certificate PDFs (xhtml2pdf).
 Participation: general course completion.
 Internship (VTU-style): formal fields for institutional records + verifiable QR.
+Appreciation: sports / event participation (landscape, Decathlon Play-style layout).
 """
 
 # Landscape A4-style (matches existing participation certificate)
@@ -453,4 +454,231 @@ CERT_EMAIL_INTERNSHIP_HTML = """
     <p style="font-size:11px;color:#a0aec0;margin:0;">Intelliforge Digital Services &middot; <a href="mailto:support@intelliforge.tech" style="color:#667eea;text-decoration:none;">support@intelliforge.tech</a></p>
   </div>
 </div>
+"""
+
+# Landscape appreciation certificate (sports / event participation)
+CERTIFICATE_APPRECIATION_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page {{
+            size: 842pt 595pt;
+            margin: 0;
+        }}
+        body {{
+            font-family: Helvetica, Arial, sans-serif;
+            color: #1a202c;
+            margin: 0;
+            padding: 0;
+        }}
+        table {{
+            border-collapse: collapse;
+        }}
+        td {{
+            padding: 0;
+        }}
+    </style>
+</head>
+<body>
+
+<table width="100%" height="100%" style="background-color: #ffffff;">
+<tr>
+    <td width="5%" style="vertical-align: middle; padding: 18pt 0 18pt 14pt;">
+        {sports_icons}
+    </td>
+    <td width="70%" style="vertical-align: top; padding: 22pt 24pt 18pt 8pt;">
+        <table width="100%" cellspacing="0" cellpadding="0">
+            <tr>
+                <td align="right" style="text-align: right; padding-bottom: 28pt;">
+                    {logo_block}
+                </td>
+            </tr>
+            <tr>
+                <td style="padding-left: 8pt;">
+                    <table width="100%" cellspacing="0" cellpadding="0">
+                        <tr><td style="font-size: 9pt; color: #2d3748; padding-bottom: 10pt;">
+                            {presented_label}
+                        </td></tr>
+                        <tr><td style="font-size: 28pt; font-weight: bold; color: {accent_color}; padding: 2pt 0 6pt; border-bottom: 1px solid #cbd5e0;">
+                            {participant_name}
+                        </td></tr>
+                        <tr><td style="font-size: 11pt; color: #2d3748; line-height: 1.55; padding-top: 18pt; max-width: 420pt;">
+                            {recognition_text}
+                        </td></tr>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td style="padding-top: 36pt;">
+                    <table width="100%" cellspacing="0" cellpadding="0">
+                        <tr>
+                            <td width="40%" valign="bottom" style="vertical-align: bottom; padding-left: 8pt;">
+                                <table cellspacing="0" cellpadding="0">
+                                    <tr><td style="font-size: 12pt; color: {accent_color}; font-weight: bold; border-bottom: 1px solid #a0aec0; min-width: 100pt; padding-bottom: 2pt;">
+                                        {completion_date}
+                                    </td></tr>
+                                    <tr><td style="font-size: 8pt; color: #718096; padding-top: 4pt;">Date</td></tr>
+                                </table>
+                            </td>
+                            <td width="60%" align="right" valign="bottom" style="text-align: right; vertical-align: bottom; padding-right: 12pt;">
+                                {event_footer}
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td align="center" style="text-align: center; padding-top: 14pt;">
+                    <table align="center" cellspacing="0" cellpadding="0">
+                        <tr>
+                            <td align="center" style="text-align: center;">
+                                <img src="{qr_data_uri}" width="56" height="56" alt="QR" />
+                            </td>
+                            <td style="padding-left: 8pt; font-size: 7pt; color: #a0aec0; vertical-align: middle;">
+                                Scan to verify<br/>
+                                <span style="font-family: monospace; color: #718096;">{certificate_id}</span>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </td>
+    <td width="25%" style="background-color: {accent_color}; vertical-align: middle;">
+        {sidebar_block}
+    </td>
+</tr>
+</table>
+
+<table width="100%" cellspacing="0" cellpadding="0">
+<tr>
+    <td style="border-top: 1px solid #e2e8f0; font-size: 1pt;">&nbsp;</td>
+</tr>
+<tr>
+    <td style="border-top: 1px solid #e2e8f0; font-size: 1pt;">&nbsp;</td>
+</tr>
+<tr>
+    <td style="border-top: 1px solid #e2e8f0; font-size: 1pt;">&nbsp;</td>
+</tr>
+</table>
+
+</body>
+</html>
+"""
+
+VIEWER_APPRECIATION_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{participant_name} — Certificate of Appreciation</title>
+    <meta name="description" content="{meta_description}" />
+    <meta property="og:title" content="{participant_name} — Certificate of Appreciation" />
+    <meta property="og:description" content="{meta_description}" />
+    <meta property="og:url" content="{page_url}" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="{participant_name} — Certificate of Appreciation" />
+    <meta name="twitter:description" content="{meta_description}" />
+    {json_ld}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
+        body{{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f4f8;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem}}
+        .card{{position:relative;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.12);max-width:640px;width:100%;overflow:hidden;animation:up .5s ease-out}}
+        @keyframes up{{from{{opacity:0;transform:translateY(30px)}}to{{opacity:1;transform:translateY(0)}}}}
+        .layout{{display:flex;min-height:320px}}
+        .main{{flex:1;padding:1.8rem 1.6rem 1.4rem 1.4rem;position:relative}}
+        .sidebar{{width:72px;background:{accent_color};display:flex;align-items:center;justify-content:center;padding:.75rem .35rem}}
+        .sidebar-text{{color:#fff;font-weight:700;font-size:.42rem;letter-spacing:.15em;text-transform:uppercase;writing-mode:vertical-rl;transform:rotate(180deg);line-height:1.6}}
+        .logo-row{{display:flex;justify-content:flex-end;align-items:center;gap:.35rem;margin-bottom:1.2rem}}
+        .logo-mark{{width:28px;height:28px;border-radius:50%;background:{accent_color};color:#fff;font-weight:700;font-size:.85rem;display:flex;align-items:center;justify-content:center}}
+        .logo-text{{text-align:right;line-height:1.1}}
+        .logo-bold{{font-weight:800;font-size:.72rem;color:{accent_color};letter-spacing:.5px}}
+        .logo-light{{font-weight:500;font-size:.68rem;color:{accent_color}}}
+        .verified{{display:inline-flex;align-items:center;gap:.35rem;background:#ebf8ff;border:1px solid #90cdf4;color:#2c5282;font-size:.62rem;font-weight:600;padding:.25rem .7rem;border-radius:20px;margin-bottom:.9rem}}
+        .verified svg{{width:12px;height:12px}}
+        .label{{font-size:.62rem;color:#4a5568;margin-bottom:.5rem}}
+        .name{{font-size:1.65rem;font-weight:700;color:{accent_color};border-bottom:1px solid #cbd5e0;padding-bottom:.35rem;margin-bottom:.9rem;line-height:1.2}}
+        .recognition{{font-size:.82rem;color:#2d3748;line-height:1.55;margin-bottom:1.2rem}}
+        .footer-row{{display:flex;justify-content:space-between;align-items:flex-end;gap:1rem;margin-bottom:1rem;flex-wrap:wrap}}
+        .date-val{{font-size:.9rem;font-weight:600;color:{accent_color};border-bottom:1px solid #a0aec0;padding-bottom:.15rem}}
+        .date-lbl{{font-size:.55rem;color:#718096;margin-top:.2rem}}
+        .event-block{{text-align:right}}
+        .event-name{{font-size:.78rem;font-weight:700;color:#1a202c;letter-spacing:.5px}}
+        .sponsor{{font-size:.58rem;color:#718096;margin-top:.15rem;letter-spacing:.3px}}
+        .actions{{display:flex;flex-direction:column;gap:.55rem;align-items:center;padding-top:.5rem;border-top:1px solid #edf2f7}}
+        .btn-download{{display:inline-flex;align-items:center;gap:.5rem;background:{accent_color};color:#fff;border:none;padding:.7rem 1.6rem;border-radius:10px;font-size:.85rem;font-weight:600;cursor:pointer;text-decoration:none}}
+        .share-row{{display:flex;gap:.4rem;flex-wrap:wrap;justify-content:center}}
+        .btn-share{{display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;border-radius:8px;font-size:.7rem;font-weight:600;text-decoration:none;border:1.5px solid #e2e8f0;color:#4a5568;background:#fff}}
+        .btn-linkedin{{border-color:#0077b5;color:#0077b5}}
+        .btn-twitter{{border-color:#1da1f2;color:#1da1f2}}
+        .qr-section{{display:flex;align-items:center;justify-content:center;gap:.65rem;margin-top:.9rem;padding-top:.9rem;border-top:1px solid #f0f0f0}}
+        .qr-section img{{border-radius:6px;border:1px solid #e2e8f0}}
+        .qr-text{{font-size:.58rem;color:#a0aec0;text-align:left;line-height:1.4}}
+        .qr-text strong{{color:#4a5568;display:block;font-size:.64rem}}
+        .card-footer{{background:#f8fafc;border-top:1px solid #edf2f7;padding:.85rem 1.5rem;text-align:center}}
+        .card-footer p{{font-size:.62rem;color:#a0aec0}}
+        .card-footer a{{color:{accent_color};text-decoration:none}}
+        .sports-col{{position:absolute;left:.5rem;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:.35rem;opacity:.35}}
+        .sport-dot{{width:8px;height:8px;border-radius:50%;background:{accent_color}}}
+        @media(max-width:520px){{body{{padding:1rem}}.sidebar{{width:48px}}.main{{padding:1.2rem 1rem 1rem 1.2rem}}.name{{font-size:1.25rem}}}}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="layout">
+            <div class="main">
+                <div class="sports-col" aria-hidden="true">
+                    <div class="sport-dot"></div><div class="sport-dot"></div><div class="sport-dot"></div><div class="sport-dot"></div>
+                </div>
+                <div class="logo-row">
+                    <div class="logo-text">
+                        <div class="logo-bold">{appreciation_org_bold}</div>
+                        <div class="logo-light">{appreciation_org_light}</div>
+                    </div>
+                    <div class="logo-mark">D</div>
+                </div>
+                <div class="verified">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    Verified &amp; Authentic
+                </div>
+                <div class="label">{presented_label}</div>
+                <div class="name">{participant_name}</div>
+                <div class="recognition">{recognition_text}</div>
+                <div class="footer-row">
+                    <div>
+                        <div class="date-val">{completion_date}</div>
+                        <div class="date-lbl">Date</div>
+                    </div>
+                    {event_block}
+                </div>
+                <div class="qr-section">
+                    <img src="{qr_data_uri}" width="72" height="72" alt="Verification QR code" />
+                    <div class="qr-text">
+                        <strong>Scan to verify</strong>
+                        Certificate ID: {cert_id}
+                    </div>
+                </div>
+                <div class="actions">
+                    <a class="btn-download" href="{download_url}">Download PDF</a>
+                    <div class="share-row">
+                        <a class="btn-share btn-linkedin" href="{linkedin_url}" target="_blank" rel="noopener">LinkedIn</a>
+                        <a class="btn-share btn-twitter" href="{twitter_url}" target="_blank" rel="noopener">Share</a>
+                    </div>
+                </div>
+            </div>
+            <div class="sidebar" aria-hidden="true">
+                <div class="sidebar-text">{title_line1} {title_line2}</div>
+            </div>
+        </div>
+        <div class="card-footer">
+            <p>Issued by {issued_by} &middot; <a href="{page_url}">{website}</a></p>
+        </div>
+    </div>
+</body>
+</html>
 """

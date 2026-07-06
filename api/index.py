@@ -26,9 +26,11 @@ from typing import Literal
 import html as html_mod
 
 from api.certificate_templates import (
+    CERTIFICATE_APPRECIATION_HTML,
     CERTIFICATE_INTERNSHIP_VTU_HTML,
     CERTIFICATE_PARTICIPATION_HTML,
     CERT_EMAIL_INTERNSHIP_HTML,
+    VIEWER_APPRECIATION_HTML,
     VIEWER_INTERNSHIP_HTML,
 )
 
@@ -298,7 +300,7 @@ def _decode_cert(token: str) -> dict | None:
 
 def _cert_id(data: dict) -> str:
     """Generate a short deterministic certificate ID for display."""
-    if data.get("k") == "i":
+    if data.get("k") in ("i", "a"):
         raw = json.dumps(data, separators=(",", ":"), sort_keys=True)
     else:
         raw = f"{data['n']}-{data['c']}-{data['d']}"
@@ -307,6 +309,18 @@ def _cert_id(data: dict) -> str:
 
 def _is_internship_payload(data: dict) -> bool:
     return data.get("k") == "i"
+
+
+def _is_appreciation_payload(data: dict) -> bool:
+    return data.get("k") == "a"
+
+
+def _certificate_kind_from_payload(data: dict) -> str:
+    if _is_internship_payload(data):
+        return "internship"
+    if _is_appreciation_payload(data):
+        return "appreciation"
+    return "participation"
 
 
 def _institution_clause_for_pdf(inst: str) -> str:
@@ -368,6 +382,33 @@ CERT_INTERNSHIP_BRAND_PREFIX = _sanitize_env(
 CERT_INTERNSHIP_BRAND_ACCENT = _sanitize_env(
     os.environ.get("CERT_INTERNSHIP_BRAND_ACCENT", "Forge")
 ) or "Forge"
+CERT_APPRECIATION_ORG = _sanitize_env(
+    os.environ.get("CERT_APPRECIATION_ORG", "Decathlon Play")
+) or "Decathlon Play"
+CERT_APPRECIATION_ORG_BOLD = _sanitize_env(
+    os.environ.get("CERT_APPRECIATION_ORG_BOLD", "DECATHLON")
+) or "DECATHLON"
+CERT_APPRECIATION_ORG_LIGHT = _sanitize_env(
+    os.environ.get("CERT_APPRECIATION_ORG_LIGHT", "Play")
+) or "Play"
+CERT_APPRECIATION_TITLE_LINE1 = _sanitize_env(
+    os.environ.get("CERT_APPRECIATION_TITLE_LINE1", "CERTIFICATE")
+) or "CERTIFICATE"
+CERT_APPRECIATION_TITLE_LINE2 = _sanitize_env(
+    os.environ.get("CERT_APPRECIATION_TITLE_LINE2", "OF APPRECIATION")
+) or "OF APPRECIATION"
+CERT_APPRECIATION_PRESENTED_LABEL = _sanitize_env(
+    os.environ.get(
+        "CERT_APPRECIATION_PRESENTED_LABEL",
+        "This certificate is proudly presented to",
+    )
+) or "This certificate is proudly presented to"
+CERT_APPRECIATION_ACCENT = _sanitize_env(
+    os.environ.get("CERT_APPRECIATION_ACCENT", "#0082C3")
+) or "#0082C3"
+CERT_APPRECIATION_EVENT_COLOR = _sanitize_env(
+    os.environ.get("CERT_APPRECIATION_EVENT_COLOR", "#2E7D32")
+) or "#2E7D32"
 SITE_URL = _sanitize_env(os.environ.get("SITE_URL", "")).rstrip("/")
 CONTACT_EMAIL = _sanitize_env(os.environ.get("CONTACT_EMAIL", "support@intelliforge.tech")) or "support@intelliforge.tech"
 _signature_cache: dict[str, str] = {}
@@ -425,6 +466,14 @@ def certificate_branding() -> dict:
         "internship_org": CERT_INTERNSHIP_ORG,
         "internship_brand_prefix": CERT_INTERNSHIP_BRAND_PREFIX,
         "internship_brand_accent": CERT_INTERNSHIP_BRAND_ACCENT,
+        "appreciation_org": CERT_APPRECIATION_ORG,
+        "appreciation_org_bold": CERT_APPRECIATION_ORG_BOLD,
+        "appreciation_org_light": CERT_APPRECIATION_ORG_LIGHT,
+        "appreciation_title_line1": CERT_APPRECIATION_TITLE_LINE1,
+        "appreciation_title_line2": CERT_APPRECIATION_TITLE_LINE2,
+        "appreciation_presented_label": CERT_APPRECIATION_PRESENTED_LABEL,
+        "appreciation_accent": CERT_APPRECIATION_ACCENT,
+        "appreciation_event_color": CERT_APPRECIATION_EVENT_COLOR,
         "founder_name": FOUNDER_NAME,
         "founder_title": FOUNDER_TITLE,
         "founder_signature_data_uri": _generate_signature_data_uri(FOUNDER_NAME),
@@ -453,6 +502,100 @@ def _internship_branding_html() -> dict[str, str]:
         "issued_by": html_mod.escape(b["issued_by"]),
         "website": html_mod.escape(b["website"]),
     }
+
+
+def _appreciation_branding_html() -> dict[str, str]:
+    b = certificate_branding()
+    return {
+        "appreciation_org": html_mod.escape(b["appreciation_org"]),
+        "appreciation_org_bold": html_mod.escape(b["appreciation_org_bold"]),
+        "appreciation_org_light": html_mod.escape(b["appreciation_org_light"]),
+        "title_line1": html_mod.escape(b["appreciation_title_line1"]),
+        "title_line2": html_mod.escape(b["appreciation_title_line2"]),
+        "presented_label": html_mod.escape(b["appreciation_presented_label"]),
+        "issued_by": html_mod.escape(b["issued_by"]),
+        "website": html_mod.escape(b["website"]),
+        "accent_color": b["appreciation_accent"],
+        "event_color": b["appreciation_event_color"],
+    }
+
+
+def _stacked_vertical_letters(word: str) -> str:
+    return "<br/>".join(html_mod.escape(ch) for ch in word.upper() if ch != " ")
+
+
+def _appreciation_pdf_sidebar(line1: str, line2: str) -> str:
+    parts1 = _stacked_vertical_letters(line1)
+    parts2 = "<br/><br/>".join(_stacked_vertical_letters(w) for w in line2.upper().split())
+    return (
+        f'<table width="100%" height="100%"><tr><td align="center" valign="middle" '
+        f'style="text-align:center;vertical-align:middle;">'
+        f'<div style="color:#ffffff;font-weight:bold;font-size:12pt;line-height:1.1;">{parts1}</div>'
+        f'<div style="color:#ffffff;font-size:5.5pt;letter-spacing:1pt;margin-top:12pt;line-height:1.15;">'
+        f"{parts2}</div></td></tr></table>"
+    )
+
+
+def _appreciation_pdf_logo_block(accent: str, org_bold: str, org_light: str) -> str:
+    return (
+        f'<table align="right" cellspacing="0" cellpadding="0">'
+        f'<tr><td align="right" style="text-align:right;">'
+        f'<table cellspacing="0" cellpadding="0"><tr>'
+        f'<td style="padding-right:6pt;vertical-align:middle;">'
+        f'<table cellspacing="0" cellpadding="0"><tr><td align="center" '
+        f'style="width:22pt;height:22pt;background-color:{accent};color:#ffffff;'
+        f'font-weight:bold;font-size:11pt;text-align:center;vertical-align:middle;">D</td></tr></table>'
+        f"</td>"
+        f'<td style="vertical-align:middle;text-align:left;">'
+        f'<div style="font-size:9pt;font-weight:bold;color:{accent};letter-spacing:0.5pt;">'
+        f"{html_mod.escape(org_bold)}</div>"
+        f'<div style="font-size:8pt;color:{accent};font-weight:normal;">'
+        f"{html_mod.escape(org_light)}</div>"
+        f"</td></tr></table></td></tr></table>"
+    )
+
+
+def _appreciation_pdf_sports_icons(accent: str) -> str:
+    rows = "".join(
+        f'<tr><td align="center" style="text-align:center;color:{accent};font-size:11pt;padding:3pt 0;">'
+        f"&#9679;</td></tr>"
+        for _ in range(6)
+    )
+    return f"<table cellspacing='0' cellpadding='0'>{rows}</table>"
+
+
+def _appreciation_pdf_event_footer(event_name: str, sponsor: str, event_color: str) -> str:
+    if not event_name and not sponsor:
+        return "&nbsp;"
+    parts = []
+    if event_name:
+        parts.append(
+            f'<div style="font-size:10pt;font-weight:bold;color:#1a202c;letter-spacing:0.5pt;">'
+            f"{html_mod.escape(event_name)}</div>"
+        )
+    if sponsor:
+        parts.append(
+            f'<div style="font-size:7pt;color:{event_color};letter-spacing:0.5pt;margin-top:3pt;">'
+            f"{html_mod.escape(sponsor)}</div>"
+        )
+    return "".join(parts)
+
+
+def _appreciation_viewer_event_block(event_name: str, sponsor: str, event_color: str) -> str:
+    if not event_name and not sponsor:
+        return ""
+    inner = _appreciation_pdf_event_footer(event_name, sponsor, event_color)
+    return f'<div class="event-block">{inner}</div>'
+
+
+def _default_appreciation_recognition(venue_name: str) -> str:
+    venue = venue_name.strip()
+    if not venue:
+        return ""
+    return (
+        f"For your commendable participation in Sports events conducted by "
+        f"{CERT_APPRECIATION_ORG}, {venue}."
+    )
 
 
 def _resolve_site_url(req: Request | None = None) -> str:
@@ -709,21 +852,25 @@ def _internship_pdf_signatures_block(
 
 class CertificateRequest(BaseModel):
     participant_name: str
-    course_name: str
+    course_name: str = ""
     completion_date: str
     instructor_name: str = "Certificate Team"
     participant_email: str = ""
     callback_url: str = ""
     idempotency_key: str = ""
-    certificate_kind: Literal["participation", "internship"] = "participation"
+    certificate_kind: Literal["participation", "internship", "appreciation"] = "participation"
     usn: str = ""
     internship_duration: str = ""
     internship_hours: str = ""
     mentor_name: str = ""
     institution_name: str = ""
+    recognition_text: str = ""
+    event_name: str = ""
+    venue_name: str = ""
+    sponsor_label: str = ""
 
     @model_validator(mode="after")
-    def _internship_required_fields(self):
+    def _kind_required_fields(self):
         if self.certificate_kind == "internship":
             missing: list[str] = []
             if not self.usn.strip():
@@ -738,6 +885,13 @@ class CertificateRequest(BaseModel):
                 raise ValueError(
                     "Internship certificates require non-empty: " + ", ".join(missing)
                 )
+        elif self.certificate_kind == "appreciation":
+            if not self.recognition_text.strip() and not self.venue_name.strip():
+                raise ValueError(
+                    "Appreciation certificates require recognition_text or venue_name"
+                )
+        elif not self.course_name.strip():
+            raise ValueError("course_name is required for participation certificates")
         return self
 
 
@@ -790,6 +944,7 @@ async def get_info():
             "Public shareable certificate pages",
             "PDF certificate generation with QR codes",
             "VTU-style internship completion (USN, hours, mentor)",
+            "Sports/event appreciation certificates (landscape Decathlon-style layout)",
             "LinkedIn and X social sharing",
         ],
         "tech_stack": {
@@ -863,6 +1018,33 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
                 _generate_signature_data_uri(data["m"]),
                 _generate_signature_data_uri(data["i"]),
             ),
+        )
+    elif _is_appreciation_payload(data):
+        brand = certificate_branding()
+        accent = brand["appreciation_accent"]
+        event_color = brand["appreciation_event_color"]
+        event_name = (data.get("e") or "").strip()
+        sponsor = (data.get("p") or "").strip()
+        full_html = CERTIFICATE_APPRECIATION_HTML.format(
+            participant_name=html_mod.escape(data["n"]),
+            recognition_text=html_mod.escape(data["r"]),
+            completion_date=html_mod.escape(data["d"]),
+            certificate_id=html_mod.escape(cert_id),
+            qr_data_uri=qr_data_uri,
+            presented_label=html_mod.escape(brand["appreciation_presented_label"]),
+            accent_color=accent,
+            event_color=event_color,
+            sports_icons=_appreciation_pdf_sports_icons(accent),
+            logo_block=_appreciation_pdf_logo_block(
+                accent,
+                brand["appreciation_org_bold"],
+                brand["appreciation_org_light"],
+            ),
+            sidebar_block=_appreciation_pdf_sidebar(
+                brand["appreciation_title_line1"],
+                brand["appreciation_title_line2"],
+            ),
+            event_footer=_appreciation_pdf_event_footer(event_name, sponsor, event_color),
         )
     else:
         full_html = CERTIFICATE_PARTICIPATION_HTML.format(
@@ -1113,7 +1295,11 @@ async def generate_certificate(request: CertificateRequest, req: Request):
 
     **Internship (VTU / college records):** set `certificate_kind` to `"internship"` and include
     `usn`, `internship_duration`, `internship_hours`, and `mentor_name` (plus optional `institution_name`).
-    Same verification URLs and QR as participation certificates; PDF uses the Forge internship layout.
+
+    **Appreciation (sports / events):** set `certificate_kind` to `"appreciation"` with
+    `recognition_text` (or `venue_name` for auto-generated copy), plus optional `event_name`,
+    `sponsor_label`, and `venue_name`. Course list validation is skipped; PDF uses the landscape
+    appreciation layout with verifiable QR.
 
     **Idempotency:** Pass `idempotency_key` to safely retry without creating duplicates.
     The cached result is returned for 1 hour.
@@ -1147,27 +1333,59 @@ async def generate_certificate(request: CertificateRequest, req: Request):
             )
 
         valid_courses = _get_course_names()
-        if request.course_name not in valid_courses:
-            raise HTTPException(status_code=400, detail=f"Unknown course: {request.course_name}")
         name = request.participant_name.strip()
         if not name:
             raise HTTPException(status_code=400, detail="Participant name is required")
 
         lead = request.instructor_name.strip() or "IntelliForge AI Team"
-        cert_data: dict = {
-            "n": name,
-            "c": request.course_name,
-            "d": request.completion_date,
-            "i": lead,
-        }
-        if request.certificate_kind == "internship":
-            cert_data["k"] = "i"
-            cert_data["u"] = request.usn.strip()
-            cert_data["w"] = request.internship_duration.strip()
-            cert_data["h"] = request.internship_hours.strip()
-            cert_data["m"] = request.mentor_name.strip()
-            if request.institution_name.strip():
-                cert_data["s"] = request.institution_name.strip()
+
+        if request.certificate_kind == "appreciation":
+            recognition = request.recognition_text.strip()
+            if not recognition:
+                recognition = _default_appreciation_recognition(request.venue_name)
+            if not recognition:
+                raise HTTPException(
+                    status_code=400,
+                    detail="recognition_text or venue_name is required for appreciation certificates",
+                )
+            program = (
+                request.event_name.strip()
+                or request.course_name.strip()
+                or "Sports Event"
+            )
+            course_for_db = program
+            cert_data: dict = {
+                "k": "a",
+                "n": name,
+                "c": program,
+                "d": request.completion_date,
+                "r": recognition,
+                "i": lead,
+            }
+            if request.event_name.strip():
+                cert_data["e"] = request.event_name.strip()
+            if request.venue_name.strip():
+                cert_data["v"] = request.venue_name.strip()
+            if request.sponsor_label.strip():
+                cert_data["p"] = request.sponsor_label.strip()
+        else:
+            if request.course_name not in valid_courses:
+                raise HTTPException(status_code=400, detail=f"Unknown course: {request.course_name}")
+            course_for_db = request.course_name
+            cert_data = {
+                "n": name,
+                "c": request.course_name,
+                "d": request.completion_date,
+                "i": lead,
+            }
+            if request.certificate_kind == "internship":
+                cert_data["k"] = "i"
+                cert_data["u"] = request.usn.strip()
+                cert_data["w"] = request.internship_duration.strip()
+                cert_data["h"] = request.internship_hours.strip()
+                cert_data["m"] = request.mentor_name.strip()
+                if request.institution_name.strip():
+                    cert_data["s"] = request.institution_name.strip()
         token = _encode_cert(cert_data)
         cert_id = _cert_id(cert_data)
 
@@ -1179,7 +1397,7 @@ async def generate_certificate(request: CertificateRequest, req: Request):
                     certificate_id=cert_id,
                     token=token,
                     participant_name=name,
-                    course_name=request.course_name,
+                    course_name=course_for_db,
                     completion_date=request.completion_date,
                     instructor_name=lead,
                     client_ip=client_ip,
@@ -1199,7 +1417,7 @@ async def generate_certificate(request: CertificateRequest, req: Request):
                 email_sent, email_error = _send_internship_certificate_email(
                     to_email=participant_email,
                     participant_name=name,
-                    course_name=request.course_name,
+                    course_name=course_for_db,
                     completion_date=request.completion_date,
                     instructor_name=lead,
                     mentor_name=request.mentor_name.strip(),
@@ -1211,10 +1429,15 @@ async def generate_certificate(request: CertificateRequest, req: Request):
                     download_url=download_url,
                 )
             else:
+                email_label = (
+                    recognition[:80] + "…"
+                    if request.certificate_kind == "appreciation" and len(recognition) > 80
+                    else course_for_db
+                )
                 email_sent, email_error = _send_certificate_email(
                     to_email=participant_email,
                     participant_name=name,
-                    course_name=request.course_name,
+                    course_name=email_label,
                     completion_date=request.completion_date,
                     instructor_name=lead,
                     certificate_id=cert_id,
@@ -1222,7 +1445,7 @@ async def generate_certificate(request: CertificateRequest, req: Request):
                     download_url=download_url,
                 )
 
-        logger.info(f"Certificate issued for {name} – {request.course_name}")
+        logger.info(f"Certificate issued for {name} – {course_for_db}")
 
         response_data = {
             "certificate_id": cert_id,
@@ -1230,7 +1453,7 @@ async def generate_certificate(request: CertificateRequest, req: Request):
             "url": shareable_url,
             "download_url": download_url,
             "participant_name": name,
-            "course_name": request.course_name,
+            "course_name": course_for_db,
             "certificate_kind": request.certificate_kind,
             "email_sent": email_sent,
             "email_error": email_error,
@@ -1243,6 +1466,14 @@ async def generate_certificate(request: CertificateRequest, req: Request):
             response_data["mentor_name"] = request.mentor_name.strip()
             if request.institution_name.strip():
                 response_data["institution_name"] = request.institution_name.strip()
+        elif request.certificate_kind == "appreciation":
+            response_data["recognition_text"] = recognition
+            if request.event_name.strip():
+                response_data["event_name"] = request.event_name.strip()
+            if request.venue_name.strip():
+                response_data["venue_name"] = request.venue_name.strip()
+            if request.sponsor_label.strip():
+                response_data["sponsor_label"] = request.sponsor_label.strip()
 
         if request.idempotency_key:
             _store_idempotency(request.idempotency_key, response_data)
@@ -1472,6 +1703,44 @@ async def view_certificate(token: str, req: Request):
             ]),
             **_internship_branding_html(),
         )
+    elif _is_appreciation_payload(data):
+        cert_desc = f"I received a Certificate of Appreciation — {data['n']}!"
+        twitter_params = urlencode({"text": cert_desc, "url": page_url})
+        twitter_url = f"https://twitter.com/intent/tweet?{twitter_params}"
+        cert_id = _cert_id(data)
+        appreciation_brand = certificate_branding()
+        event_name = (data.get("e") or "").strip()
+        sponsor = (data.get("p") or "").strip()
+        meta_description = html_mod.escape(
+            f"Verified Certificate of Appreciation for {data['n']}: {data['r'][:120]}"
+        )
+        html = VIEWER_APPRECIATION_HTML.format(
+            participant_name=html_mod.escape(data["n"]),
+            recognition_text=html_mod.escape(data["r"]),
+            completion_date=html_mod.escape(data["d"]),
+            cert_id=html_mod.escape(cert_id),
+            event_block=_appreciation_viewer_event_block(
+                event_name, sponsor, appreciation_brand["appreciation_event_color"]
+            ),
+            page_url=page_url,
+            download_url=download_url,
+            linkedin_url=linkedin_url,
+            twitter_url=twitter_url,
+            qr_data_uri=_generate_qr_data_uri(page_url),
+            meta_description=meta_description,
+            json_ld=_json_ld_script({
+                "@context": "https://schema.org",
+                "@type": "EducationalOccupationalCredential",
+                "name": "Certificate of Appreciation",
+                "credentialCategory": "certificate",
+                "recognizedBy": {"@type": "Organization", "name": appreciation_brand["appreciation_org"]},
+                "about": data["r"],
+                "dateCreated": data["d"],
+                "identifier": cert_id,
+                "url": page_url,
+            }),
+            **_appreciation_branding_html(),
+        )
     else:
         cert_desc = f"I completed {data['c']} at {CERT_BRAND_NAME}!"
         twitter_params = urlencode({"text": cert_desc, "url": page_url})
@@ -1522,6 +1791,8 @@ async def download_certificate(token: str, req: Request):
     safe_name = data["n"].replace(" ", "_")
     if _is_internship_payload(data):
         filename = f"Internship_Certificate_{safe_name}.pdf"
+    elif _is_appreciation_payload(data):
+        filename = f"Appreciation_Certificate_{safe_name}.pdf"
     else:
         filename = f"Certificate_{safe_name}.pdf"
 
@@ -1538,6 +1809,7 @@ async def download_certificate(token: str, req: Request):
 
 def _certificate_verify_public(data: dict) -> dict:
     """Public fields returned by GET /certificate/{token}/verify (and batch verify)."""
+    kind = _certificate_kind_from_payload(data)
     out = {
         "valid": True,
         "certificate_id": _cert_id(data),
@@ -1545,7 +1817,7 @@ def _certificate_verify_public(data: dict) -> dict:
         "course_name": data["c"],
         "completion_date": data["d"],
         "instructor_name": data["i"],
-        "certificate_kind": "internship" if _is_internship_payload(data) else "participation",
+        "certificate_kind": kind,
     }
     if _is_internship_payload(data):
         out["usn"] = data["u"]
@@ -1554,6 +1826,14 @@ def _certificate_verify_public(data: dict) -> dict:
         out["mentor_name"] = data["m"]
         if data.get("s"):
             out["institution_name"] = data["s"]
+    elif _is_appreciation_payload(data):
+        out["recognition_text"] = data["r"]
+        if data.get("e"):
+            out["event_name"] = data["e"]
+        if data.get("v"):
+            out["venue_name"] = data["v"]
+        if data.get("p"):
+            out["sponsor_label"] = data["p"]
     return out
 
 
@@ -1624,7 +1904,7 @@ def _build_llms_txt(base_url: str) -> str:
     brand = b["brand_name"]
     return f"""# {brand} Certificate Platform
 
-> Issue and verify tamper-proof PDF certificates with HMAC-signed shareable URLs — course participation and VTU-style internship credentials.
+> Issue and verify tamper-proof PDF certificates with HMAC-signed shareable URLs — course participation, VTU-style internship credentials, and sports/event appreciation certificates.
 
 {brand} ({b['website']}) provides API-first certificate generation for training completions and industry internships. Each certificate is a cryptographically signed URL with a downloadable PDF and public verification page. No database is required for verification.
 
@@ -1636,7 +1916,7 @@ def _build_llms_txt(base_url: str) -> str:
 
 ## Pages
 
-- [Certificate generator]({base_url}/): Web UI to issue participation and internship certificates.
+- [Certificate generator]({base_url}/): Web UI to issue participation, internship, and appreciation certificates.
 - [List courses]({base_url}/api/courses): Active courses available for certificate issuance.
 
 ## Verification
@@ -1657,6 +1937,8 @@ Participation body:
 
 Internship body adds: `certificate_kind`, `usn`, `internship_duration`, `internship_hours`, `mentor_name`, `institution_name`.
 
+Appreciation body adds: `certificate_kind` `"appreciation"`, `recognition_text` (or `venue_name`), optional `event_name`, `sponsor_label`, `venue_name`.
+
 ## Automation
 
 - Webhooks: pass `callback_url` on create to receive `certificate.created` events.
@@ -1670,6 +1952,7 @@ Internship body adds: `certificate_kind`, `usn`, `internship_duration`, `interns
 - Brand: {brand}
 - Participation title: {b['participation_title']}
 - Internship org: {b['internship_org']}
+- Appreciation org: {b['appreciation_org']}
 - Contact: {CONTACT_EMAIL}
 
 ## Optional
@@ -1730,11 +2013,12 @@ async def ai_plugin(req: Request):
         "name_for_human": f"{b['brand_name']} Certificates",
         "name_for_model": "intelliforge_certificates",
         "description_for_human": (
-            f"Generate and verify tamper-proof course and VTU internship certificates from {b['brand_name']}."
+            f"Generate and verify tamper-proof course, internship, and appreciation certificates from {b['brand_name']}."
         ),
         "description_for_model": (
             f"API for HMAC-signed verifiable certificates at {base}. "
-            "Use POST /api/certificate to create (participation or internship with USN, hours, mentor). "
+            "Use POST /api/certificate to create (participation, internship with USN/hours/mentor, "
+            "or appreciation with recognition_text/venue/event). "
             "Use GET /certificate/{{token}}/verify or POST /api/certificates/verify for verification. "
             "Supports idempotency_key, callback_url webhooks, and email delivery. "
             "See /llms.txt and /openapi.json for full documentation."
@@ -1793,16 +2077,20 @@ async def admin_revoke_certificate(cert_db_id: int, req: Request):
 
 class BulkCertificateEntry(BaseModel):
     participant_name: str
-    course_name: str
+    course_name: str = ""
     completion_date: str
     instructor_name: str = "Certificate Team"
     participant_email: str = ""
-    certificate_kind: Literal["participation", "internship"] = "participation"
+    certificate_kind: Literal["participation", "internship", "appreciation"] = "participation"
     usn: str = ""
     internship_duration: str = ""
     internship_hours: str = ""
     mentor_name: str = ""
     institution_name: str = ""
+    recognition_text: str = ""
+    event_name: str = ""
+    venue_name: str = ""
+    sponsor_label: str = ""
 
 
 class BulkCertificateRequest(BaseModel):
@@ -1826,13 +2114,33 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
     results = []
 
     for i, entry in enumerate(request.entries):
+        recognition = ""
         name = entry.participant_name.strip()
         if not name:
             results.append({"index": i, "status": "error", "error": "Participant name is required"})
             continue
-        if entry.course_name not in valid_courses:
+
+        if entry.certificate_kind == "appreciation":
+            recognition = entry.recognition_text.strip()
+            if not recognition:
+                recognition = _default_appreciation_recognition(entry.venue_name)
+            if not recognition:
+                results.append({
+                    "index": i,
+                    "status": "error",
+                    "error": "Appreciation entry requires recognition_text or venue_name",
+                })
+                continue
+            course_for_db = (
+                entry.event_name.strip()
+                or entry.course_name.strip()
+                or "Sports Event"
+            )
+        elif entry.course_name not in valid_courses:
             results.append({"index": i, "status": "error", "error": f"Unknown course: {entry.course_name}"})
             continue
+        else:
+            course_for_db = entry.course_name
 
         if entry.certificate_kind == "internship":
             miss = []
@@ -1854,20 +2162,36 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
 
         try:
             lead = entry.instructor_name.strip() or "IntelliForge AI Team"
-            cert_data: dict = {
-                "n": name,
-                "c": entry.course_name,
-                "d": entry.completion_date,
-                "i": lead,
-            }
-            if entry.certificate_kind == "internship":
-                cert_data["k"] = "i"
-                cert_data["u"] = entry.usn.strip()
-                cert_data["w"] = entry.internship_duration.strip()
-                cert_data["h"] = entry.internship_hours.strip()
-                cert_data["m"] = entry.mentor_name.strip()
-                if entry.institution_name.strip():
-                    cert_data["s"] = entry.institution_name.strip()
+            if entry.certificate_kind == "appreciation":
+                cert_data = {
+                    "k": "a",
+                    "n": name,
+                    "c": course_for_db,
+                    "d": entry.completion_date,
+                    "r": recognition,
+                    "i": lead,
+                }
+                if entry.event_name.strip():
+                    cert_data["e"] = entry.event_name.strip()
+                if entry.venue_name.strip():
+                    cert_data["v"] = entry.venue_name.strip()
+                if entry.sponsor_label.strip():
+                    cert_data["p"] = entry.sponsor_label.strip()
+            else:
+                cert_data = {
+                    "n": name,
+                    "c": course_for_db,
+                    "d": entry.completion_date,
+                    "i": lead,
+                }
+                if entry.certificate_kind == "internship":
+                    cert_data["k"] = "i"
+                    cert_data["u"] = entry.usn.strip()
+                    cert_data["w"] = entry.internship_duration.strip()
+                    cert_data["h"] = entry.internship_hours.strip()
+                    cert_data["m"] = entry.mentor_name.strip()
+                    if entry.institution_name.strip():
+                        cert_data["s"] = entry.institution_name.strip()
             token = _encode_cert(cert_data)
             cert_id = _cert_id(cert_data)
             p_email = entry.participant_email.strip() if entry.participant_email else ""
@@ -1877,7 +2201,7 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
                     certificate_id=cert_id,
                     token=token,
                     participant_name=name,
-                    course_name=entry.course_name,
+                    course_name=course_for_db,
                     completion_date=entry.completion_date,
                     instructor_name=lead,
                     client_ip=client_ip,
@@ -1896,7 +2220,7 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
                     email_sent, email_error = _send_internship_certificate_email(
                         to_email=p_email,
                         participant_name=name,
-                        course_name=entry.course_name,
+                        course_name=course_for_db,
                         completion_date=entry.completion_date,
                         instructor_name=lead,
                         mentor_name=entry.mentor_name.strip(),
@@ -1908,10 +2232,15 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
                         download_url=download_url,
                     )
                 else:
+                    email_label = (
+                        recognition[:80] + "…"
+                        if entry.certificate_kind == "appreciation" and len(recognition) > 80
+                        else course_for_db
+                    )
                     email_sent, email_error = _send_certificate_email(
                         to_email=p_email,
                         participant_name=name,
-                        course_name=entry.course_name,
+                        course_name=email_label,
                         completion_date=entry.completion_date,
                         instructor_name=lead,
                         certificate_id=cert_id,
@@ -1924,7 +2253,7 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
                 "status": "success",
                 "certificate_id": cert_id,
                 "participant_name": name,
-                "course_name": entry.course_name,
+                "course_name": course_for_db,
                 "certificate_kind": entry.certificate_kind,
                 "url": shareable_url,
                 "download_url": download_url,
@@ -1933,6 +2262,8 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
             }
             if entry.certificate_kind == "internship":
                 row["usn"] = entry.usn.strip()
+            elif entry.certificate_kind == "appreciation":
+                row["recognition_text"] = recognition
             results.append(row)
         except Exception as e:
             results.append({"index": i, "status": "error", "error": str(e)})

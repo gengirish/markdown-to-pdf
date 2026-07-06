@@ -94,7 +94,14 @@ function useBranding(getApiUrl) {
     website: 'learning.intelliforge.tech',
     internship_org: 'Intelliforge Digital Services',
     internship_brand_prefix: 'IntelliForge',
-    internship_brand_accent: 'Forge',
+    appreciation_org: 'Decathlon Play',
+    appreciation_org_bold: 'DECATHLON',
+    appreciation_org_light: 'Play',
+    appreciation_title_line1: 'CERTIFICATE',
+    appreciation_title_line2: 'OF APPRECIATION',
+    appreciation_presented_label: 'This certificate is proudly presented to',
+    appreciation_accent: '#0082C3',
+    appreciation_event_color: '#2E7D32',
     founder_name: 'Girish Hiremath',
     founder_title: 'Founder, Intelliforge AI',
     founder_signature_data_uri: '',
@@ -128,7 +135,7 @@ function usePageSeo(branding, sitePath = '/') {
     const title = `${branding.brand_name} — Certificate Generator`
     const description = (
       `Issue and verify tamper-proof PDF certificates from ${branding.brand_name}. `
-      + 'Course participation and VTU internship credentials with HMAC-signed shareable verification links.'
+      + 'Course participation, sports appreciation, and VTU internship credentials with HMAC-signed shareable verification links.'
     )
     const canonical = `${window.location.origin}${sitePath}`
 
@@ -253,11 +260,73 @@ function CertificatePreviewCard({
   const previewUrl = certResult?.url || PREVIEW_CERT_URL
   const certId = certResult?.certificate_id || 'CERT-XXXXXXXXXXXX'
   const participantName = certForm.participant_name || 'Participant Name'
-  const courseName = certForm.course_name || (kind === 'internship' ? 'Internship programme' : 'Select a course')
+  const courseName = certForm.course_name || (
+    kind === 'internship'
+      ? 'Internship programme'
+      : kind === 'appreciation'
+        ? certForm.event_name || 'Sports Event'
+        : 'Select a course'
+  )
   const completionDate = certForm.completion_date || '\u2014'
   const qrSubtitle = certResult?.url
     ? 'QR code links to the permanent verification page.'
     : 'Sample QR — your certificate link appears after generation.'
+
+  if (kind === 'appreciation') {
+    const recognition =
+      certForm.recognition_text?.trim()
+      || (certForm.venue_name?.trim()
+        ? `For your commendable participation in Sports events conducted by ${branding.appreciation_org}, ${certForm.venue_name.trim()}.`
+        : 'Recognition text for participation in sports events.')
+    const eventName = certForm.event_name?.trim()
+    const sponsor = certForm.sponsor_label?.trim()
+    const accent = branding.appreciation_accent || '#0082C3'
+
+    return (
+      <div className="cert-card cert-card-appreciation" style={{ '--appreciation-accent': accent }}>
+        <div className="cert-appreciation-layout">
+          <div className="cert-appreciation-main">
+            <div className="cert-appreciation-sports" aria-hidden="true">
+              <span /><span /><span /><span /><span />
+            </div>
+            <div className="cert-appreciation-logo">
+              <div className="cert-appreciation-logo-text">
+                <strong>{branding.appreciation_org_bold}</strong>
+                <span>{branding.appreciation_org_light}</span>
+              </div>
+              <div className="cert-appreciation-logo-mark">D</div>
+            </div>
+            <VerifiedBadge />
+            <p className="cert-appreciation-label">{branding.appreciation_presented_label}</p>
+            <p className="cert-appreciation-name">{participantName}</p>
+            <p className="cert-appreciation-recognition">{recognition}</p>
+            <div className="cert-appreciation-footer">
+              <div className="cert-appreciation-date">
+                <span className="cert-appreciation-date-val">{completionDate}</span>
+                <span className="cert-appreciation-date-lbl">Date</span>
+              </div>
+              {(eventName || sponsor) && (
+                <div className="cert-appreciation-event">
+                  {eventName ? <strong>{eventName}</strong> : null}
+                  {sponsor ? <span>{sponsor}</span> : null}
+                </div>
+              )}
+            </div>
+            <PreviewQrBlock
+              getApiUrl={getApiUrl}
+              url={previewUrl}
+              title="Scan to verify"
+              subtitle={`${qrSubtitle} ID: ${certId}`}
+            />
+          </div>
+          <div className="cert-appreciation-sidebar" aria-hidden="true">
+            <span>{branding.appreciation_title_line1}</span>
+            <span>{branding.appreciation_title_line2}</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (kind === 'internship') {
     const mentorName = certForm.mentor_name || 'Industry mentor'
@@ -948,6 +1017,10 @@ function App() {
     internship_hours: '',
     mentor_name: '',
     institution_name: '',
+    recognition_text: '',
+    event_name: '',
+    venue_name: '',
+    sponsor_label: '',
   })
   const [isGenerating, setIsGenerating] = useState(false)
   const [certError, setCertError] = useState(null)
@@ -963,8 +1036,15 @@ function App() {
 
     try {
       if (!certForm.participant_name.trim()) throw new Error('Please enter participant name')
-      if (!certForm.course_name) throw new Error('Please select a course')
       if (!certForm.completion_date) throw new Error('Please select a date')
+      if (certForm.certificate_kind === 'participation' && !certForm.course_name) {
+        throw new Error('Please select a course')
+      }
+      if (certForm.certificate_kind === 'appreciation') {
+        if (!certForm.recognition_text?.trim() && !certForm.venue_name?.trim()) {
+          throw new Error('Recognition text or venue is required for appreciation certificates')
+        }
+      }
       if (certForm.certificate_kind === 'internship') {
         if (!certForm.usn?.trim()) throw new Error('USN is required for internship certificates')
         if (!certForm.internship_duration?.trim()) throw new Error('Internship duration is required')
@@ -974,14 +1054,24 @@ function App() {
 
       const payload = {
         participant_name: certForm.participant_name.trim(),
-        course_name: certForm.course_name,
         completion_date: certForm.completion_date,
         instructor_name: (certForm.instructor_name || 'Certificate Team').trim(),
+      }
+      if (certForm.certificate_kind !== 'appreciation') {
+        payload.course_name = certForm.course_name
       }
       if (certForm.participant_email?.trim()) {
         payload.participant_email = certForm.participant_email.trim()
       }
-      if (certForm.certificate_kind === 'internship') {
+      if (certForm.certificate_kind === 'appreciation') {
+        payload.certificate_kind = 'appreciation'
+        if (certForm.recognition_text?.trim()) {
+          payload.recognition_text = certForm.recognition_text.trim()
+        }
+        if (certForm.venue_name?.trim()) payload.venue_name = certForm.venue_name.trim()
+        if (certForm.event_name?.trim()) payload.event_name = certForm.event_name.trim()
+        if (certForm.sponsor_label?.trim()) payload.sponsor_label = certForm.sponsor_label.trim()
+      } else if (certForm.certificate_kind === 'internship') {
         payload.certificate_kind = 'internship'
         payload.usn = certForm.usn.trim()
         payload.internship_duration = certForm.internship_duration.trim()
@@ -1030,7 +1120,11 @@ function App() {
       const a = document.createElement('a')
       a.href = url
       const prefix =
-        certResult.certificate_kind === 'internship' ? 'Internship_Certificate_' : 'Certificate_'
+        certResult.certificate_kind === 'internship'
+          ? 'Internship_Certificate_'
+          : certResult.certificate_kind === 'appreciation'
+            ? 'Appreciation_Certificate_'
+            : 'Certificate_'
       a.download = `${prefix}${certResult.participant_name.replace(/\s+/g, '_')}.pdf`
       document.body.appendChild(a)
       a.click()
@@ -1130,9 +1224,21 @@ function App() {
                   >
                     VTU internship completion
                   </button>
+                  <button
+                    type="button"
+                    className={certForm.certificate_kind === 'appreciation' ? 'active' : ''}
+                    onClick={() => updateCertField('certificate_kind', 'appreciation')}
+                    aria-pressed={certForm.certificate_kind === 'appreciation'}
+                  >
+                    Sports appreciation
+                  </button>
                 </div>
                 <p className="form-hint">
-                  Internship mode adds USN, duration, hours, and mentor for the Forge PDF and verify link.
+                  {certForm.certificate_kind === 'internship'
+                    ? 'Internship mode adds USN, duration, hours, and mentor for the Forge PDF and verify link.'
+                    : certForm.certificate_kind === 'appreciation'
+                      ? 'Appreciation mode uses a landscape sports-event layout — recognition text, venue, and optional event branding.'
+                      : 'Standard course completion certificate with instructor signature and verification QR.'}
                 </p>
               </fieldset>
 
@@ -1159,25 +1265,77 @@ function App() {
                 />
               </div>
 
-              <div className="form-group">
-                <label htmlFor="course_name">
-                  {certForm.certificate_kind === 'internship'
-                    ? 'Internship programme / course'
-                    : 'Training course'}
-                </label>
-                <select
-                  id="course_name"
-                  value={certForm.course_name}
-                  onChange={(e) => updateCertField('course_name', e.target.value)}
-                  required
-                  disabled={coursesLoading}
-                >
-                  <option value="">{coursesLoading ? 'Loading courses...' : 'Select a course'}</option>
-                  {courses.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
+              {certForm.certificate_kind !== 'appreciation' && (
+                <div className="form-group">
+                  <label htmlFor="course_name">
+                    {certForm.certificate_kind === 'internship'
+                      ? 'Internship programme / course'
+                      : 'Training course'}
+                  </label>
+                  <select
+                    id="course_name"
+                    value={certForm.course_name}
+                    onChange={(e) => updateCertField('course_name', e.target.value)}
+                    required={certForm.certificate_kind === 'participation'}
+                    disabled={coursesLoading}
+                  >
+                    <option value="">{coursesLoading ? 'Loading courses...' : 'Select a course'}</option>
+                    {courses.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {certForm.certificate_kind === 'appreciation' && (
+                <>
+                  <div className="form-group">
+                    <label htmlFor="recognition_text">
+                      Recognition text
+                      <span className="form-optional"> (or leave blank to auto-generate from venue)</span>
+                    </label>
+                    <textarea
+                      id="recognition_text"
+                      rows={3}
+                      placeholder="For your commendable participation in Sports events conducted by Decathlon Play, Hennur Road store."
+                      value={certForm.recognition_text}
+                      onChange={(e) => updateCertField('recognition_text', e.target.value)}
+                    />
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label htmlFor="venue_name">Venue / store</label>
+                      <input
+                        id="venue_name"
+                        type="text"
+                        placeholder="e.g. Hennur Road store"
+                        value={certForm.venue_name}
+                        onChange={(e) => updateCertField('venue_name', e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="event_name">Event name</label>
+                      <input
+                        id="event_name"
+                        type="text"
+                        placeholder="e.g. ONAM FESTIVAL 2025"
+                        value={certForm.event_name}
+                        onChange={(e) => updateCertField('event_name', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="sponsor_label">Sponsor / location label</label>
+                    <input
+                      id="sponsor_label"
+                      type="text"
+                      placeholder="e.g. SOBHA DREAM GARDENS"
+                      value={certForm.sponsor_label}
+                      onChange={(e) => updateCertField('sponsor_label', e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
 
               <div className="form-row">
                 <div className="form-group">
@@ -1190,22 +1348,24 @@ function App() {
                     required
                   />
                 </div>
-                <div className="form-group">
-                  <label htmlFor="instructor_name">
-                    {certForm.certificate_kind === 'internship' ? 'Program lead' : 'Instructor name'}
-                  </label>
-                  <input
-                    id="instructor_name"
-                    type="text"
-                    placeholder={
-                      certForm.certificate_kind === 'internship'
-                        ? 'e.g. Program Lead'
-                        : 'Certificate Team'
-                    }
-                    value={certForm.instructor_name}
-                    onChange={(e) => updateCertField('instructor_name', e.target.value)}
-                  />
-                </div>
+                {certForm.certificate_kind !== 'appreciation' && (
+                  <div className="form-group">
+                    <label htmlFor="instructor_name">
+                      {certForm.certificate_kind === 'internship' ? 'Program lead' : 'Instructor name'}
+                    </label>
+                    <input
+                      id="instructor_name"
+                      type="text"
+                      placeholder={
+                        certForm.certificate_kind === 'internship'
+                          ? 'e.g. Program Lead'
+                          : 'Certificate Team'
+                      }
+                      value={certForm.instructor_name}
+                      onChange={(e) => updateCertField('instructor_name', e.target.value)}
+                    />
+                  </div>
+                )}
               </div>
 
               {certForm.certificate_kind === 'internship' && (
@@ -1288,7 +1448,9 @@ function App() {
                     ? 'Generating...'
                     : certForm.certificate_kind === 'internship'
                       ? 'Generate internship certificate'
-                      : 'Generate certificate'}
+                      : certForm.certificate_kind === 'appreciation'
+                        ? 'Generate appreciation certificate'
+                        : 'Generate certificate'}
                 </span>
               </button>
             </form>
@@ -1300,6 +1462,9 @@ function App() {
                   Certificate issued for <strong>{certResult.participant_name}</strong>
                   {certResult.certificate_kind === 'internship' && (
                     <span className="cert-kind-badge">VTU internship</span>
+                  )}
+                  {certResult.certificate_kind === 'appreciation' && (
+                    <span className="cert-kind-badge cert-kind-badge-appreciation">Appreciation</span>
                   )}
                   <span className="cert-id-badge">{certResult.certificate_id}</span>
                 </div>

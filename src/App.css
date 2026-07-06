@@ -529,6 +529,211 @@
   padding: 1rem 1.2rem 1.2rem 1.4rem;
 }
 
+.cert-card-appreciation {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0;
+  max-width: 720px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+}
+
+.cert-appreciation-layout {
+  display: flex;
+  min-height: 280px;
+}
+
+.cert-appreciation-main {
+  flex: 1;
+  padding: 1.2rem 1rem 1rem 1.4rem;
+  position: relative;
+  color: #1a202c;
+}
+
+.cert-appreciation-sidebar {
+  width: 56px;
+  background: var(--appreciation-accent, #0082c3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.75rem 0.25rem;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.38rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  line-height: 1.5;
+  border-radius: 0 8px 8px 0;
+}
+
+.cert-appreciation-sports {
+  position: absolute;
+  left: 0.35rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  opacity: 0.35;
+}
+
+.cert-appreciation-sports span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--appreciation-accent, #0082c3);
+  display: block;
+}
+
+.cert-appreciation-logo {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+  padding-right: 0.25rem;
+}
+
+.cert-appreciation-logo-text {
+  text-align: right;
+  line-height: 1.1;
+}
+
+.cert-appreciation-logo-text strong {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--appreciation-accent, #0082c3);
+  letter-spacing: 0.5px;
+}
+
+.cert-appreciation-logo-text span {
+  font-size: 0.62rem;
+  color: var(--appreciation-accent, #0082c3);
+  font-weight: 500;
+}
+
+.cert-appreciation-logo-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--appreciation-accent, #0082c3);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cert-appreciation-label {
+  font-size: 0.68rem;
+  color: #4a5568;
+  margin: 0.5rem 0 0.35rem;
+}
+
+.cert-appreciation-name {
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--appreciation-accent, #0082c3);
+  border-bottom: 1px solid #cbd5e0;
+  padding-bottom: 0.3rem;
+  margin: 0 0 0.75rem;
+  line-height: 1.2;
+}
+
+.cert-appreciation-recognition {
+  font-size: 0.78rem;
+  color: #2d3748;
+  line-height: 1.55;
+  margin: 0 0 1rem;
+  max-width: 92%;
+}
+
+.cert-appreciation-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.cert-appreciation-date-val {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--appreciation-accent, #0082c3);
+  border-bottom: 1px solid #a0aec0;
+  padding-bottom: 0.1rem;
+}
+
+.cert-appreciation-date-lbl {
+  font-size: 0.55rem;
+  color: #718096;
+  margin-top: 0.15rem;
+  display: block;
+}
+
+.cert-appreciation-event {
+  text-align: right;
+  font-size: 0.72rem;
+}
+
+.cert-appreciation-event strong {
+  display: block;
+  letter-spacing: 0.5px;
+  color: #1a202c;
+}
+
+.cert-appreciation-event span {
+  display: block;
+  font-size: 0.58rem;
+  color: #2e7d32;
+  margin-top: 0.15rem;
+  letter-spacing: 0.3px;
+}
+
+.cert-card-appreciation .cert-qr-placeholder {
+  border-top: 1px solid #edf2f7;
+  padding-top: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.cert-card-appreciation .cert-verified {
+  background: #ebf8ff;
+  border-color: #90cdf4;
+  color: #2c5282;
+}
+
+.cert-kind-badge-appreciation {
+  background: #ebf8ff;
+  border-color: #90cdf4;
+  color: #2c5282;
+}
+
+.cert-form textarea {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  line-height: 1.45;
+  resize: vertical;
+  min-height: 4.5rem;
+}
+
+.cert-form textarea:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
 .cert-forge-bar {
   position: absolute;
   left: 0;
