@@ -2552,35 +2552,41 @@
   color: var(--text-secondary);
 }
 
+.invoice-card-wrap {
+  padding: 1rem;
+  background: var(--inv-frame, #0f0f23);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+}
+
 .invoice-card {
-  --inv-primary: #1e293b;
-  --inv-accent: #0284c7;
-  --inv-secondary: #6366f1;
-  --inv-amount: #4338ca;
-  --inv-frame: #e2e8f0;
-  --inv-text: #1a202c;
-  --inv-muted: #64748b;
+  --inv-frame: #0f0f23;
+  --inv-primary: #15155e;
+  --inv-accent: #d4af37;
+  --inv-highlight: #553c9a;
+  --inv-secondary: #a0aec0;
+  --inv-text: #2d3748;
+  --inv-muted: #718096;
   --inv-header-text: #ffffff;
-  --inv-header-label: #cbd5e1;
+  --inv-header-label: #d4af37;
   --inv-table-header-bg: #f8fafc;
-  --inv-table-border: #e2e8f0;
-  --inv-due-bg: #f0f9ff;
+  --inv-table-border: #edf2f7;
+  --inv-due-bg: #ffffff;
+  --inv-footer-bg: #f8fafc;
   background: #ffffff;
   color: var(--inv-text);
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
   min-width: 520px;
-  font-family: Helvetica, Arial, sans-serif;
-  border: 1px solid color-mix(in srgb, var(--inv-secondary) 12%, transparent);
+  font-family: 'Inter', Helvetica, Arial, sans-serif;
 }
 
 .invoice-card-brand-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: 1rem;
-  padding: 1.25rem 1.35rem 1rem;
+  padding: 1.35rem 1.5rem 1.15rem;
   background: var(--inv-primary);
 }
 
@@ -2589,13 +2595,31 @@
   min-width: 0;
 }
 
+.invoice-brand-eyebrow {
+  margin: 0 0 0.2rem;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--inv-accent);
+}
+
+.invoice-brand-vendor {
+  margin: 0 0 0.65rem;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--inv-header-text);
+  line-height: 1.2;
+}
+
 .invoice-brand-badge {
   display: inline-block;
-  padding: 0.35rem 0.95rem;
+  padding: 0.3rem 0.85rem;
   border: 2px solid var(--inv-accent);
-  font-size: 0.72rem;
+  font-size: 0.58rem;
   font-weight: 700;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.22em;
   color: var(--inv-accent);
 }
 
@@ -2606,51 +2630,13 @@
 
 .invoice-card-brand-meta .invoice-meta-row span {
   color: var(--inv-header-label);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
 }
 
 .invoice-card-brand-meta .invoice-meta-row strong {
   color: var(--inv-header-text);
-}
-
-.invoice-gold-rule {
-  height: 3px;
-  background: var(--inv-accent);
-}
-
-.invoice-card > .invoice-parties,
-.invoice-card > .invoice-table,
-.invoice-card > .invoice-totals,
-.invoice-card > .invoice-words,
-.invoice-card > .invoice-due-wrap,
-.invoice-card > .invoice-signature {
-  margin-left: 1.35rem;
-  margin-right: 1.35rem;
-}
-
-.invoice-card > .invoice-parties {
-  margin-top: 1.1rem;
-}
-
-.invoice-card-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1.25rem;
-}
-
-.invoice-card-header-spacer {
-  flex: 1;
-}
-
-.invoice-card-header-meta {
-  text-align: right;
-}
-
-.invoice-title {
-  margin: 0 0 0.5rem;
-  font-size: 1.45rem;
-  letter-spacing: 0.03em;
-  color: var(--inv-primary);
+  font-size: 0.78rem;
 }
 
 .invoice-meta-row {
@@ -2658,11 +2644,10 @@
   justify-content: flex-end;
   gap: 0.65rem;
   font-size: 0.78rem;
-  color: #4a5568;
 }
 
-.invoice-meta-row strong {
-  color: #111827;
+.invoice-card-body {
+  padding: 1.25rem 1.5rem 1.35rem;
 }
 
 .invoice-parties {
@@ -2674,22 +2659,23 @@
 
 .invoice-party-label {
   margin: 0 0 0.45rem;
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
   color: var(--inv-secondary);
 }
 
 .invoice-party-name {
   margin: 0 0 0.35rem;
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   font-weight: 700;
-  color: var(--inv-primary);
+  color: #1a202c;
 }
 
 .invoice-party-line {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   line-height: 1.45;
   color: var(--inv-muted);
 }
@@ -2697,9 +2683,8 @@
 .invoice-table {
   width: 100%;
   border-collapse: collapse;
-  border: 1px solid var(--inv-table-border);
-  margin-bottom: 0.75rem;
-  font-size: 0.78rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.76rem;
 }
 
 .invoice-table th,
@@ -2712,104 +2697,104 @@
 
 .invoice-table th {
   background: var(--inv-table-header-bg);
-  color: var(--inv-primary);
-  font-size: 0.72rem;
+  color: var(--inv-secondary);
+  font-size: 0.62rem;
   font-weight: 700;
-  border-bottom: 2px solid var(--inv-accent);
+  letter-spacing: 0.12em;
+  border-top: 1px solid var(--inv-table-border);
 }
 
 .invoice-table th:last-child,
 .invoice-table td.invoice-amount {
   text-align: right;
-  color: var(--inv-amount);
+  color: var(--inv-highlight);
   font-weight: 700;
 }
 
-.invoice-totals {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 0.75rem;
+.invoice-gold-divider {
+  height: 2px;
+  background: linear-gradient(to right, transparent, var(--inv-accent), transparent);
+  margin: 0.75rem auto 1rem;
+  width: 60%;
 }
 
-.invoice-totals-spacer {
+.invoice-summary-row {
+  display: flex;
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.invoice-words-block {
   flex: 1;
+  min-width: 0;
+}
+
+.invoice-words-label {
+  margin: 0 0 0.25rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--inv-secondary);
+}
+
+.invoice-words-value {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #1a202c;
+  line-height: 1.45;
 }
 
 .invoice-totals-body {
   width: 42%;
   min-width: 180px;
+  border-top: 1px solid var(--inv-table-border);
+  border-bottom: 1px solid var(--inv-table-border);
 }
 
 .invoice-total-row {
   display: flex;
   justify-content: space-between;
   gap: 0.75rem;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--inv-muted);
-  padding: 0.25rem 0;
+  padding: 0.45rem 0.35rem;
 }
 
 .invoice-total-row strong {
-  color: var(--inv-amount);
+  color: var(--inv-highlight);
 }
 
 .invoice-total-inr strong {
-  font-size: 0.95rem;
+  font-size: 0.92rem;
 }
 
 .invoice-total-inr small {
   display: block;
-  margin-top: 0.2rem;
-  font-size: 0.68rem;
-  line-height: 1.35;
-  color: var(--inv-muted);
+  margin-top: 0.15rem;
+  font-size: 0.65rem;
+  color: var(--inv-secondary);
 }
 
-.invoice-words {
-  margin: 0 0 1rem;
-  font-size: 0.78rem;
-  color: var(--inv-muted);
-}
-
-.invoice-words strong {
-  color: var(--inv-primary);
-}
-
-.invoice-due-wrap {
+.invoice-bottom-row {
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 1.25rem;
-}
-
-.invoice-due-box {
-  border: 2px solid var(--inv-accent);
-  background: var(--inv-due-bg);
-  padding: 0.85rem 1.4rem;
-  text-align: center;
-}
-
-.invoice-due-label {
-  display: block;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  color: var(--inv-accent);
-  margin-bottom: 0.35rem;
-}
-
-.invoice-due-value {
-  font-size: 1.1rem;
-  color: var(--inv-primary);
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
 }
 
 .invoice-signature {
-  margin-bottom: 1rem;
+  flex: 1;
 }
 
-.invoice-signature p {
-  margin: 0 0 1.5rem;
-  font-size: 0.78rem;
-  color: var(--inv-muted);
+.invoice-sig-label {
+  margin: 0 0 1.35rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--inv-secondary);
 }
 
 .invoice-signature span {
@@ -2817,9 +2802,41 @@
   padding-top: 0.35rem;
   border-top: 1px solid var(--inv-accent);
   min-width: 160px;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #1a202c;
+}
+
+.invoice-due-box {
+  border: 2px solid var(--inv-accent);
+  background: var(--inv-due-bg);
+  padding: 0.75rem 1.25rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.invoice-due-label {
+  display: block;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--inv-accent);
+  margin-bottom: 0.3rem;
+}
+
+.invoice-due-value {
+  font-size: 1.05rem;
   font-weight: 700;
   color: var(--inv-primary);
+}
+
+.invoice-card-footer {
+  padding: 0.6rem 1.5rem;
+  text-align: center;
+  font-size: 0.65rem;
+  color: var(--inv-secondary);
+  background: var(--inv-footer-bg);
+  border-top: 1px solid var(--inv-table-border);
 }
 
 @media (max-width: 900px) {
@@ -2831,11 +2848,20 @@
     min-width: 0;
   }
 
-  .invoice-totals {
+  .invoice-summary-row {
     flex-direction: column;
   }
 
   .invoice-totals-body {
     width: 100%;
+  }
+
+  .invoice-bottom-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .invoice-due-box {
+    align-self: flex-end;
   }
 }

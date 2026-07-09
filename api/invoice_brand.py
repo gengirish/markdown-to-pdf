@@ -1,30 +1,33 @@
-"""Invoice brand colors — independent from certificate / IntelliForge branding."""
+"""Invoice brand colors — matched to participation certificate visual system."""
 
 from __future__ import annotations
 
 import os
 
+# Same palette as participation certificate PDFs / public viewer
 INVOICE_BRAND_DEFAULTS: dict[str, str] = {
-    "primary": "#1e293b",
-    "accent": "#0284c7",
-    "secondary": "#6366f1",
-    "amount": "#4338ca",
-    "frame": "#e2e8f0",
-    "text": "#1a202c",
-    "muted": "#64748b",
+    "frame": "#0f0f23",
+    "primary": "#15155e",
+    "accent": "#d4af37",
+    "highlight": "#553c9a",
+    "secondary": "#a0aec0",
+    "text": "#2d3748",
+    "muted": "#718096",
     "header_text": "#ffffff",
-    "header_label": "#cbd5e1",
+    "header_label": "#d4af37",
     "table_header_bg": "#f8fafc",
-    "table_border": "#e2e8f0",
-    "due_bg": "#f0f9ff",
+    "table_border": "#edf2f7",
+    "due_bg": "#ffffff",
+    "party_bg": "#ffffff",
+    "footer_bg": "#f8fafc",
 }
 
 _ENV_KEYS: dict[str, str] = {
+    "frame": "INVOICE_COLOR_FRAME",
     "primary": "INVOICE_COLOR_PRIMARY",
     "accent": "INVOICE_COLOR_ACCENT",
+    "highlight": "INVOICE_COLOR_HIGHLIGHT",
     "secondary": "INVOICE_COLOR_SECONDARY",
-    "amount": "INVOICE_COLOR_AMOUNT",
-    "frame": "INVOICE_COLOR_FRAME",
     "text": "INVOICE_COLOR_TEXT",
     "muted": "INVOICE_COLOR_MUTED",
     "header_text": "INVOICE_COLOR_HEADER_TEXT",
@@ -32,6 +35,8 @@ _ENV_KEYS: dict[str, str] = {
     "table_header_bg": "INVOICE_COLOR_TABLE_HEADER_BG",
     "table_border": "INVOICE_COLOR_TABLE_BORDER",
     "due_bg": "INVOICE_COLOR_DUE_BG",
+    "party_bg": "INVOICE_COLOR_PARTY_BG",
+    "footer_bg": "INVOICE_COLOR_FOOTER_BG",
 }
 
 
@@ -62,7 +67,7 @@ def invoice_pdf_color_tokens() -> dict[str, str]:
         "color_header_bg": c["primary"],
         "color_gold": c["accent"],
         "color_indigo": c["secondary"],
-        "color_purple": c["amount"],
+        "color_purple": c["highlight"],
         "color_text": c["text"],
         "color_muted": c["muted"],
         "color_header_text": c["header_text"],
@@ -70,4 +75,6 @@ def invoice_pdf_color_tokens() -> dict[str, str]:
         "color_table_header_bg": c["table_header_bg"],
         "color_table_border": c["table_border"],
         "color_due_bg": c["due_bg"],
+        "color_party_bg": c["party_bg"],
+        "color_footer_bg": c["footer_bg"],
     }

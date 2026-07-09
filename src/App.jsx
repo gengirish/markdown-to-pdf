@@ -134,18 +134,20 @@ function useBranding(getApiUrl) {
 }
 
 const INVOICE_BRAND_DEFAULTS = {
-  primary: '#1e293b',
-  accent: '#0284c7',
-  secondary: '#6366f1',
-  amount: '#4338ca',
-  frame: '#e2e8f0',
-  text: '#1a202c',
-  muted: '#64748b',
+  frame: '#0f0f23',
+  primary: '#15155e',
+  accent: '#d4af37',
+  highlight: '#553c9a',
+  secondary: '#a0aec0',
+  text: '#2d3748',
+  muted: '#718096',
   header_text: '#ffffff',
-  header_label: '#cbd5e1',
+  header_label: '#d4af37',
   table_header_bg: '#f8fafc',
-  table_border: '#e2e8f0',
-  due_bg: '#f0f9ff',
+  table_border: '#edf2f7',
+  due_bg: '#ffffff',
+  party_bg: '#ffffff',
+  footer_bg: '#f8fafc',
 }
 
 function useInvoiceBrand(getApiUrl) {
@@ -167,11 +169,11 @@ function useInvoiceBrand(getApiUrl) {
 
 function invoiceBrandStyle(brand) {
   return {
+    '--inv-frame': brand.frame,
     '--inv-primary': brand.primary,
     '--inv-accent': brand.accent,
+    '--inv-highlight': brand.highlight,
     '--inv-secondary': brand.secondary,
-    '--inv-amount': brand.amount,
-    '--inv-frame': brand.frame,
     '--inv-text': brand.text,
     '--inv-muted': brand.muted,
     '--inv-header-text': brand.header_text,
@@ -179,6 +181,7 @@ function invoiceBrandStyle(brand) {
     '--inv-table-header-bg': brand.table_header_bg,
     '--inv-table-border': brand.table_border,
     '--inv-due-bg': brand.due_bg,
+    '--inv-footer-bg': brand.footer_bg || '#f8fafc',
   }
 }
 
@@ -678,110 +681,121 @@ function InvoicePreviewCard({ invoiceForm, invoiceResult, invoiceBrand }) {
   const addressLines = (text) => (text || '').split(/\r?\n/).filter(Boolean)
 
   return (
-    <div className="invoice-card" style={invoiceBrandStyle(invoiceBrand)}>
-      <div className="invoice-card-brand-header">
-        <div className="invoice-card-brand-left">
-          <span className="invoice-brand-badge">TAX INVOICE</span>
-        </div>
-        <div className="invoice-card-brand-meta">
-          <div className="invoice-meta-row">
-            <span>Invoice #</span>
-            <strong>{invoiceForm.invoice_number || 'INV-2026-1'}</strong>
+    <div className="invoice-card-wrap" style={{ '--inv-frame': invoiceBrand.frame }}>
+      <div className="invoice-card" style={invoiceBrandStyle(invoiceBrand)}>
+        <div className="invoice-card-brand-header">
+          <div className="invoice-card-brand-left">
+            <p className="invoice-brand-eyebrow">INVOICE</p>
+            <p className="invoice-brand-vendor">{invoiceForm.bill_from_name || 'Vendor name'}</p>
+            <span className="invoice-brand-badge">TAX INVOICE</span>
           </div>
-          <div className="invoice-meta-row">
-            <span>Invoice date</span>
-            <strong>{formatInvoiceDatePreview(invoiceForm.invoice_date)}</strong>
+          <div className="invoice-card-brand-meta">
+            <div className="invoice-meta-row">
+              <span>Invoice #</span>
+              <strong>{invoiceForm.invoice_number || 'INV-2026-1'}</strong>
+            </div>
+            <div className="invoice-meta-row">
+              <span>Invoice date</span>
+              <strong>{formatInvoiceDatePreview(invoiceForm.invoice_date)}</strong>
+            </div>
           </div>
         </div>
-      </div>
-      <div className="invoice-gold-rule" aria-hidden="true" />
 
-      <div className="invoice-parties">
-        <div className="invoice-party">
-          <p className="invoice-party-label">BILL FROM:</p>
-          <p className="invoice-party-name">{invoiceForm.bill_from_name || 'Vendor name'}</p>
-          {addressLines(invoiceForm.bill_from_address).map((line) => (
-            <p key={`from-${line}`} className="invoice-party-line">{line}</p>
-          ))}
-          {invoiceForm.bill_from_email ? (
-            <p className="invoice-party-line">email : {invoiceForm.bill_from_email}</p>
-          ) : null}
-          {invoiceForm.bill_from_pan ? (
-            <p className="invoice-party-line">Pan: {invoiceForm.bill_from_pan}</p>
-          ) : null}
-        </div>
-        <div className="invoice-party">
-          <p className="invoice-party-label">BILL TO:</p>
-          <p className="invoice-party-name">{invoiceForm.bill_to_name || 'Client name'}</p>
-          {addressLines(invoiceForm.bill_to_address).map((line) => (
-            <p key={`to-${line}`} className="invoice-party-line">{line}</p>
-          ))}
-          {invoiceForm.bill_to_gstin ? (
-            <p className="invoice-party-line">GSTIN: {invoiceForm.bill_to_gstin}</p>
-          ) : null}
-          {invoiceForm.bill_to_email ? (
-            <p className="invoice-party-line">Email : {invoiceForm.bill_to_email}</p>
-          ) : null}
-        </div>
-      </div>
+        <div className="invoice-card-body">
+          <div className="invoice-parties">
+            <div className="invoice-party">
+              <p className="invoice-party-label">Bill from</p>
+              <p className="invoice-party-name">{invoiceForm.bill_from_name || 'Vendor name'}</p>
+              {addressLines(invoiceForm.bill_from_address).map((line) => (
+                <p key={`from-${line}`} className="invoice-party-line">{line}</p>
+              ))}
+              {invoiceForm.bill_from_email ? (
+                <p className="invoice-party-line">Email: {invoiceForm.bill_from_email}</p>
+              ) : null}
+              {invoiceForm.bill_from_pan ? (
+                <p className="invoice-party-line">PAN: {invoiceForm.bill_from_pan}</p>
+              ) : null}
+            </div>
+            <div className="invoice-party">
+              <p className="invoice-party-label">Bill to</p>
+              <p className="invoice-party-name">{invoiceForm.bill_to_name || 'Client name'}</p>
+              {addressLines(invoiceForm.bill_to_address).map((line) => (
+                <p key={`to-${line}`} className="invoice-party-line">{line}</p>
+              ))}
+              {invoiceForm.bill_to_gstin ? (
+                <p className="invoice-party-line">GSTIN: {invoiceForm.bill_to_gstin}</p>
+              ) : null}
+              {invoiceForm.bill_to_email ? (
+                <p className="invoice-party-line">Email: {invoiceForm.bill_to_email}</p>
+              ) : null}
+            </div>
+          </div>
 
-      <table className="invoice-table">
-        <thead>
-          <tr>
-            <th>Description</th>
-            <th>Rate</th>
-            <th>Quantity</th>
-            <th>Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(invoiceForm.line_items || []).map((item, idx) => {
-            const amount = (Number(item.rate) || 0) * (Number(item.quantity) || 0)
-            const rateLabel = item.rate_label?.trim() || formatUsdPreview(item.rate)
-            const qtyLabel = item.quantity_label?.trim() || String(item.quantity ?? '')
-            return (
-              <tr key={`line-${idx}`}>
-                <td>{item.description || 'Line item description'}</td>
-                <td>{rateLabel}</td>
-                <td>{qtyLabel}</td>
-                <td className="invoice-amount">{formatUsdPreview(amount)}</td>
+          <table className="invoice-table">
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th>Rate</th>
+                <th>Qty</th>
+                <th>Amount</th>
               </tr>
-            )
-          })}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {(invoiceForm.line_items || []).map((item, idx) => {
+                const amount = (Number(item.rate) || 0) * (Number(item.quantity) || 0)
+                const rateLabel = item.rate_label?.trim() || formatUsdPreview(item.rate)
+                const qtyLabel = item.quantity_label?.trim() || String(item.quantity ?? '')
+                return (
+                  <tr key={`line-${idx}`}>
+                    <td>{item.description || 'Line item description'}</td>
+                    <td>{rateLabel}</td>
+                    <td>{qtyLabel}</td>
+                    <td className="invoice-amount">{formatUsdPreview(amount)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
 
-      <div className="invoice-totals">
-        <div className="invoice-totals-spacer" />
-        <div className="invoice-totals-body">
-          <div className="invoice-total-row">
-            <span>Total in (USD)</span>
-            <strong>{formatUsdPreview(totals.totalUsd)}</strong>
+          <div className="invoice-gold-divider" aria-hidden="true" />
+
+          <div className="invoice-summary-row">
+            <div className="invoice-words-block">
+              <p className="invoice-words-label">Amount in words</p>
+              <p className="invoice-words-value">{amountWords}</p>
+            </div>
+            <div className="invoice-totals-body">
+              <div className="invoice-total-row">
+                <span>Total (USD)</span>
+                <strong>{formatUsdPreview(totals.totalUsd)}</strong>
+              </div>
+              <div className="invoice-total-row invoice-total-inr">
+                <span>
+                  Total (INR)
+                  <small>1 USD = {invoiceForm.exchange_rate || 90} INR</small>
+                </span>
+                <strong>{formatInrPreview(totals.totalInr)}</strong>
+              </div>
+            </div>
           </div>
-          <div className="invoice-total-row invoice-total-inr">
-            <span>
-              Total in (INR)
-              <small>Exchange rate:<br />1 USD = {invoiceForm.exchange_rate || 90} INR</small>
-            </span>
-            <strong>{formatInrPreview(totals.totalInr)}</strong>
+
+          <div className="invoice-bottom-row">
+            <div className="invoice-signature">
+              <p className="invoice-sig-label">Authorized signatory</p>
+              <span>{invoiceForm.signature_name || invoiceForm.bill_from_name || 'Signature'}</span>
+            </div>
+            <div className="invoice-due-box">
+              <span className="invoice-due-label">TOTAL DUE</span>
+              <strong className="invoice-due-value">INR {formatInrPreview(totals.totalInr)}</strong>
+            </div>
           </div>
         </div>
-      </div>
 
-      <p className="invoice-words">
-        Amount in words : <strong>{amountWords}</strong>
-      </p>
-
-      <div className="invoice-due-wrap">
-        <div className="invoice-due-box">
-          <span className="invoice-due-label">TOTAL DUE</span>
-          <strong className="invoice-due-value">INR {formatInrPreview(totals.totalInr)}</strong>
+        <div className="invoice-card-footer">
+          Invoice {invoiceForm.invoice_number || 'INV-2026-1'}
+          {' · '}
+          {formatInvoiceDatePreview(invoiceForm.invoice_date)}
         </div>
-      </div>
-
-      <div className="invoice-signature">
-        <p>For: {invoiceForm.signature_name || invoiceForm.bill_from_name || '—'}</p>
-        <span>{invoiceForm.signature_name || invoiceForm.bill_from_name || 'Signature'}</span>
       </div>
     </div>
   )

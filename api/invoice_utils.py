@@ -108,13 +108,13 @@ def escape_text(value: str) -> str:
     return html_mod.escape(value or "", quote=False)
 
 
-def party_address_html(lines: Iterable[str]) -> str:
+def party_address_html(lines: Iterable[str], *, muted: str = "#64748b") -> str:
     rows = []
     for line in lines:
         text = (line or "").strip()
         if text:
             rows.append(
-                f'<tr><td style="font-size: 9.5pt; color: #1a202c; line-height: 1.45; padding: 0;">'
+                f'<tr><td style="font-size: 9pt; color: {muted}; line-height: 1.5; padding: 0;">'
                 f"{escape_text(text)}</td></tr>"
             )
     return "".join(rows)
@@ -143,16 +143,16 @@ def build_line_items_rows(items: list[dict], *, colors: dict | None = None) -> t
         rows.append(
             f"""
             <tr>
-                <td style="padding: 10pt 8pt; border-bottom: 1px solid {border}; font-size: 9.5pt; color: {text}; vertical-align: top; width: 52%;">
+                <td style="padding: 11pt 10pt; border-bottom: 1px solid {border}; font-size: 9pt; color: {text}; line-height: 1.45; vertical-align: top; width: 52%;">
                     {desc}
                 </td>
-                <td style="padding: 10pt 8pt; border-bottom: 1px solid {border}; font-size: 9.5pt; color: {text}; vertical-align: top; width: 16%;">
+                <td style="padding: 11pt 10pt; border-bottom: 1px solid {border}; font-size: 9pt; color: {text}; vertical-align: top; width: 16%;">
                     {escape_text(rate_label)}
                 </td>
-                <td style="padding: 10pt 8pt; border-bottom: 1px solid {border}; font-size: 9.5pt; color: {text}; vertical-align: top; width: 16%;">
+                <td style="padding: 11pt 10pt; border-bottom: 1px solid {border}; font-size: 9pt; color: {text}; vertical-align: top; width: 16%;">
                     {escape_text(qty_label)}
                 </td>
-                <td align="right" style="padding: 10pt 8pt; border-bottom: 1px solid {border}; font-size: 9.5pt; font-weight: bold; color: {purple}; vertical-align: top; width: 16%; text-align: right;">
+                <td align="right" style="padding: 11pt 10pt; border-bottom: 1px solid {border}; font-size: 9pt; font-weight: bold; color: {purple}; vertical-align: top; width: 16%; text-align: right;">
                     {format_usd(amount)}
                 </td>
             </tr>
@@ -203,13 +203,13 @@ def build_invoice_html(data: dict) -> str:
         invoice_number=escape_text(data.get("invoice_number", "")),
         invoice_date=escape_text(format_invoice_date(data.get("invoice_date", ""))),
         bill_from_name=escape_text(data.get("bill_from_name", "")),
-        bill_from_address_rows=party_address_html(bill_from_lines),
-        bill_from_email_row=_optional_party_row("email :", data.get("bill_from_email", ""), muted=muted),
-        bill_from_pan_row=_optional_party_row("Pan:", data.get("bill_from_pan", ""), prefix="", muted=muted),
+        bill_from_address_rows=party_address_html(bill_from_lines, muted=muted),
+        bill_from_email_row=_optional_party_row("Email:", data.get("bill_from_email", ""), muted=muted),
+        bill_from_pan_row=_optional_party_row("PAN:", data.get("bill_from_pan", ""), muted=muted),
         bill_to_name=escape_text(data.get("bill_to_name", "")),
-        bill_to_address_rows=party_address_html(bill_to_lines),
+        bill_to_address_rows=party_address_html(bill_to_lines, muted=muted),
         bill_to_gstin_row=_optional_party_row("GSTIN:", data.get("bill_to_gstin", ""), muted=muted),
-        bill_to_email_row=_optional_party_row("Email :", data.get("bill_to_email", ""), muted=muted),
+        bill_to_email_row=_optional_party_row("Email:", data.get("bill_to_email", ""), muted=muted),
         line_items_rows=line_rows,
         total_usd=format_usd(total_usd),
         total_inr=format_inr(total_inr),
