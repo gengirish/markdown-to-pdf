@@ -3,52 +3,11 @@
 from __future__ import annotations
 
 import html as html_mod
-import os
 import re
 from datetime import datetime
 from typing import Iterable
 
-
-def _sanitize_env(value: str) -> str:
-    if not value:
-        return ""
-    v = value.strip()
-    while v.endswith("\\r\\n"):
-        v = v[:-4].rstrip()
-    return v
-
-
-# IntelliForge palette — aligned with participation certificate PDFs
-INVOICE_BRAND_COLORS = {
-    "color_frame": "#0f0f23",
-    "color_header_bg": "#15155e",
-    "color_gold": "#d4af37",
-    "color_indigo": "#6366F1",
-    "color_purple": "#553c9a",
-    "color_text": "#1a202c",
-    "color_muted": "#64748b",
-    "color_table_header_bg": "#f5f3ff",
-    "color_table_border": "#ddd6fe",
-}
-
-
-def invoice_brand_tokens() -> dict[str, str]:
-    """Branding fields and colors for invoice PDF HTML."""
-    brand_name = _sanitize_env(os.environ.get("CERT_BRAND_NAME", "IntelliForge Learning")) or "IntelliForge Learning"
-    issued_by = _sanitize_env(os.environ.get("CERT_ISSUED_BY", "")) or brand_name
-    return {
-        **INVOICE_BRAND_COLORS,
-        "org_tagline": html_mod.escape(
-            _sanitize_env(os.environ.get("CERT_ORG_TAGLINE", "AN INTELLIFORGE AI INITIATIVE"))
-            or "AN INTELLIFORGE AI INITIATIVE"
-        ),
-        "brand_name": html_mod.escape(brand_name),
-        "issued_by": html_mod.escape(issued_by),
-        "website": html_mod.escape(
-            _sanitize_env(os.environ.get("CERT_WEBSITE", "learning.intelliforge.tech"))
-            or "learning.intelliforge.tech"
-        ),
-    }
+from api.invoice_brand import invoice_brand_colors, invoice_pdf_color_tokens
 
 
 _ONES = (
@@ -167,9 +126,9 @@ def line_item_amount_usd(rate: float, quantity: float) -> float:
 
 def build_line_items_rows(items: list[dict], *, colors: dict | None = None) -> tuple[str, float]:
     """Return HTML rows and USD subtotal."""
-    palette = colors or INVOICE_BRAND_COLORS
-    border = palette.get("color_table_border", "#ddd6fe")
-    purple = palette.get("color_purple", "#553c9a")
+    palette = colors or invoice_pdf_color_tokens()
+    border = palette.get("color_table_border", "#e2e8f0")
+    purple = palette.get("color_purple", "#4338ca")
     text = palette.get("color_text", "#1a202c")
     rows: list[str] = []
     subtotal = 0.0
@@ -227,7 +186,7 @@ def build_invoice_html(data: dict) -> str:
     """Render invoice dict into HTML for xhtml2pdf."""
     from api.invoice_templates import INVOICE_TAX_HTML
 
-    brand = invoice_brand_tokens()
+    brand = invoice_pdf_color_tokens()
     items = data.get("items") or []
     line_rows, total_usd = build_line_items_rows(items, colors=brand)
     exchange_rate = float(data.get("exchange_rate") or 90)

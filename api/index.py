@@ -50,6 +50,7 @@ from api.certificate_templates import (
     VIEWER_APPRECIATION_HTML,
     VIEWER_INTERNSHIP_HTML,
 )
+from api.invoice_brand import invoice_brand_colors
 from api.invoice_utils import (
     amount_in_words_inr,
     build_invoice_pdf,
@@ -1118,6 +1119,7 @@ async def get_info():
         "version": "2.0.0",
         "description": "Generate and verify tamper-proof PDF certificates with shareable URLs",
         "branding": certificate_branding(),
+        "invoice_brand": invoice_brand_colors(),
         "features": [
             "HMAC-SHA256 signed certificate tokens",
             "Stateless verification (no database)",

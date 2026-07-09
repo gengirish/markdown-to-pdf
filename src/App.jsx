@@ -133,6 +133,55 @@ function useBranding(getApiUrl) {
   return branding
 }
 
+const INVOICE_BRAND_DEFAULTS = {
+  primary: '#1e293b',
+  accent: '#0284c7',
+  secondary: '#6366f1',
+  amount: '#4338ca',
+  frame: '#e2e8f0',
+  text: '#1a202c',
+  muted: '#64748b',
+  header_text: '#ffffff',
+  header_label: '#cbd5e1',
+  table_header_bg: '#f8fafc',
+  table_border: '#e2e8f0',
+  due_bg: '#f0f9ff',
+}
+
+function useInvoiceBrand(getApiUrl) {
+  const [invoiceBrand, setInvoiceBrand] = useState(INVOICE_BRAND_DEFAULTS)
+
+  useEffect(() => {
+    fetch(getApiUrl('/api/info'))
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.invoice_brand) {
+          setInvoiceBrand((prev) => ({ ...prev, ...data.invoice_brand }))
+        }
+      })
+      .catch(() => {})
+  }, [getApiUrl])
+
+  return invoiceBrand
+}
+
+function invoiceBrandStyle(brand) {
+  return {
+    '--inv-primary': brand.primary,
+    '--inv-accent': brand.accent,
+    '--inv-secondary': brand.secondary,
+    '--inv-amount': brand.amount,
+    '--inv-frame': brand.frame,
+    '--inv-text': brand.text,
+    '--inv-muted': brand.muted,
+    '--inv-header-text': brand.header_text,
+    '--inv-header-label': brand.header_label,
+    '--inv-table-header-bg': brand.table_header_bg,
+    '--inv-table-border': brand.table_border,
+    '--inv-due-bg': brand.due_bg,
+  }
+}
+
 function setDocumentMeta(attr, key, value) {
   if (!value) return
   let el = document.querySelector(`meta[${attr}="${key}"]`)
@@ -623,17 +672,15 @@ function calcInvoiceTotals(lineItems, exchangeRate) {
   }
 }
 
-function InvoicePreviewCard({ invoiceForm, invoiceResult, branding }) {
+function InvoicePreviewCard({ invoiceForm, invoiceResult, invoiceBrand }) {
   const totals = calcInvoiceTotals(invoiceForm.line_items, invoiceForm.exchange_rate)
   const amountWords = invoiceResult?.amount_in_words || '—'
   const addressLines = (text) => (text || '').split(/\r?\n/).filter(Boolean)
 
   return (
-    <div className="invoice-card">
+    <div className="invoice-card" style={invoiceBrandStyle(invoiceBrand)}>
       <div className="invoice-card-brand-header">
         <div className="invoice-card-brand-left">
-          <p className="invoice-brand-tagline">{branding.org_tagline}</p>
-          <p className="invoice-brand-name">{branding.brand_name}</p>
           <span className="invoice-brand-badge">TAX INVOICE</span>
         </div>
         <div className="invoice-card-brand-meta">
@@ -735,10 +782,6 @@ function InvoicePreviewCard({ invoiceForm, invoiceResult, branding }) {
       <div className="invoice-signature">
         <p>For: {invoiceForm.signature_name || invoiceForm.bill_from_name || '—'}</p>
         <span>{invoiceForm.signature_name || invoiceForm.bill_from_name || 'Signature'}</span>
-      </div>
-
-      <div className="invoice-card-footer">
-        Issued by {branding.issued_by || branding.brand_name} &middot; {branding.website}
       </div>
     </div>
   )
@@ -1253,6 +1296,7 @@ function App() {
   const getApiUrl = (path) => path
 
   const branding = useBranding(getApiUrl)
+  const invoiceBrand = useInvoiceBrand(getApiUrl)
   usePageSeo(branding)
 
   useEffect(() => {
@@ -2268,7 +2312,7 @@ function App() {
               <InvoicePreviewCard
                 invoiceForm={invoiceForm}
                 invoiceResult={invoiceResult}
-                branding={branding}
+                invoiceBrand={invoiceBrand}
               />
             </div>
           </div>

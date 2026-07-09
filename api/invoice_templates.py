@@ -1,6 +1,6 @@
 """
 HTML source for tax invoice PDFs (xhtml2pdf).
-IntelliForge-branded layout aligned with participation certificate styling.
+Vendor-neutral layout with configurable brand colors (see api/invoice_brand.py).
 """
 
 INVOICE_TAX_HTML = """
@@ -39,32 +39,22 @@ INVOICE_TAX_HTML = """
     <tr><td style="padding: 22pt 28pt 20pt;">
         <table width="100%" cellspacing="0" cellpadding="0">
             <tr>
-                <td style="vertical-align: top; width: 58%;">
-                    <table cellspacing="0" cellpadding="0">
-                        <tr><td style="font-size: 7.5pt; letter-spacing: 3pt; color: {color_gold}; font-weight: bold; padding-bottom: 4pt;">
-                            {org_tagline}
-                        </td></tr>
-                        <tr><td style="font-size: 18pt; font-weight: bold; color: #ffffff; padding-bottom: 10pt;">
-                            {brand_name}
-                        </td></tr>
-                        <tr><td>
-                            <table cellspacing="0" cellpadding="0" style="border: 2px solid {color_gold};">
-                                <tr><td style="padding: 5pt 18pt; font-size: 8pt; letter-spacing: 2.5pt; color: {color_gold}; font-weight: bold;">
-                                    TAX INVOICE
-                                </td></tr>
-                            </table>
+                <td style="vertical-align: middle; width: 50%;">
+                    <table cellspacing="0" cellpadding="0" style="border: 2px solid {color_gold};">
+                        <tr><td style="padding: 6pt 20pt; font-size: 11pt; letter-spacing: 2pt; color: {color_gold}; font-weight: bold;">
+                            TAX INVOICE
                         </td></tr>
                     </table>
                 </td>
-                <td align="right" style="vertical-align: top; text-align: right; width: 42%;">
+                <td align="right" style="vertical-align: middle; text-align: right; width: 50%;">
                     <table cellspacing="0" cellpadding="0" align="right">
                         <tr>
-                            <td style="font-size: 8.5pt; color: #c7d2fe; padding-right: 10pt; text-align: right;">Invoice #</td>
-                            <td style="font-size: 9.5pt; font-weight: bold; color: #ffffff; text-align: right;">{invoice_number}</td>
+                            <td style="font-size: 8.5pt; color: {color_header_label}; padding-right: 10pt; text-align: right;">Invoice #</td>
+                            <td style="font-size: 9.5pt; font-weight: bold; color: {color_header_text}; text-align: right;">{invoice_number}</td>
                         </tr>
                         <tr>
-                            <td style="font-size: 8.5pt; color: #c7d2fe; padding-right: 10pt; padding-top: 5pt; text-align: right;">Invoice date</td>
-                            <td style="font-size: 9.5pt; font-weight: bold; color: #ffffff; padding-top: 5pt; text-align: right;">{invoice_date}</td>
+                            <td style="font-size: 8.5pt; color: {color_header_label}; padding-right: 10pt; padding-top: 5pt; text-align: right;">Invoice date</td>
+                            <td style="font-size: 9.5pt; font-weight: bold; color: {color_header_text}; padding-top: 5pt; text-align: right;">{invoice_date}</td>
                         </tr>
                     </table>
                 </td>
@@ -76,7 +66,7 @@ INVOICE_TAX_HTML = """
     <table width="100%"><tr><td style="height: 3pt; background-color: {color_gold}; font-size: 1pt;">&nbsp;</td></tr></table>
 
     <table width="100%">
-    <tr><td style="padding: 20pt 28pt 18pt;">
+    <tr><td style="padding: 20pt 28pt 22pt;">
 
         <table width="100%" cellspacing="0" cellpadding="0">
         <tr>
@@ -134,7 +124,7 @@ INVOICE_TAX_HTML = """
                     </tr>
                     <tr>
                         <td style="font-size: 9pt; color: {color_muted}; padding: 5pt 0; vertical-align: top;">Total in (INR)<br/>
-                            <span style="font-size: 7.5pt; color: #94a3b8;">Exchange rate:<br/>1 USD = {exchange_rate} INR</span>
+                            <span style="font-size: 7.5pt; color: {color_muted};">Exchange rate:<br/>1 USD = {exchange_rate} INR</span>
                         </td>
                         <td align="right" style="font-size: 11pt; font-weight: bold; color: {color_purple}; padding: 5pt 0; text-align: right; vertical-align: top;">{total_inr}</td>
                     </tr>
@@ -159,7 +149,7 @@ INVOICE_TAX_HTML = """
         <tr>
             <td style="vertical-align: top; width: 52%;">&nbsp;</td>
             <td align="right" style="vertical-align: top; text-align: right; width: 48%;">
-                <table cellspacing="0" cellpadding="0" align="right" style="border: 2px solid {color_gold}; background-color: #fffdf5;">
+                <table cellspacing="0" cellpadding="0" align="right" style="border: 2px solid {color_gold}; background-color: {color_due_bg};">
                     <tr>
                         <td align="center" style="padding: 11pt 22pt; text-align: center;">
                             <table cellspacing="0" cellpadding="0" align="center">
@@ -192,12 +182,6 @@ INVOICE_TAX_HTML = """
         </tr>
         </table>
 
-    </td></tr>
-    </table>
-
-    <table width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; border-top: 1px solid #edf2f7;">
-    <tr><td align="center" style="padding: 9pt 28pt; text-align: center; font-size: 7pt; color: #a0aec0;">
-        Issued by {issued_by} &nbsp;&middot;&nbsp; {website}
     </td></tr>
     </table>
 
