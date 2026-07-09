@@ -2554,12 +2554,84 @@
 
 .invoice-card {
   background: #ffffff;
-  color: #111827;
+  color: #1a202c;
   border-radius: 12px;
-  padding: 1.75rem 1.5rem 1.5rem;
+  overflow: hidden;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
   min-width: 520px;
   font-family: Helvetica, Arial, sans-serif;
+  border: 1px solid rgba(99, 102, 241, 0.12);
+}
+
+.invoice-card-brand-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.35rem 1rem;
+  background: #15155e;
+}
+
+.invoice-card-brand-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.invoice-brand-tagline {
+  margin: 0 0 0.25rem;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #d4af37;
+}
+
+.invoice-brand-name {
+  margin: 0 0 0.65rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.invoice-brand-badge {
+  display: inline-block;
+  padding: 0.28rem 0.85rem;
+  border: 2px solid #d4af37;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: #d4af37;
+}
+
+.invoice-card-brand-meta {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.invoice-card-brand-meta .invoice-meta-row span {
+  color: #c7d2fe;
+}
+
+.invoice-card-brand-meta .invoice-meta-row strong {
+  color: #ffffff;
+}
+
+.invoice-gold-rule {
+  height: 3px;
+  background: #d4af37;
+}
+
+.invoice-card > .invoice-parties,
+.invoice-card > .invoice-table,
+.invoice-card > .invoice-totals,
+.invoice-card > .invoice-words,
+.invoice-card > .invoice-due-wrap,
+.invoice-card > .invoice-signature {
+  margin-left: 1.35rem;
+  margin-right: 1.35rem;
+}
+
+.invoice-card > .invoice-parties {
+  margin-top: 1.1rem;
 }
 
 .invoice-card-header {
@@ -2581,6 +2653,7 @@
   margin: 0 0 0.5rem;
   font-size: 1.45rem;
   letter-spacing: 0.03em;
+  color: #15155e;
 }
 
 .invoice-meta-row {
@@ -2607,26 +2680,27 @@
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.12em;
-  color: #4a5568;
+  color: #6366F1;
 }
 
 .invoice-party-name {
   margin: 0 0 0.35rem;
   font-size: 0.95rem;
   font-weight: 700;
+  color: #15155e;
 }
 
 .invoice-party-line {
   margin: 0;
   font-size: 0.78rem;
   line-height: 1.45;
-  color: #1a202c;
+  color: #64748b;
 }
 
 .invoice-table {
   width: 100%;
   border-collapse: collapse;
-  border: 1px solid #cbd5e0;
+  border: 1px solid #ddd6fe;
   margin-bottom: 0.75rem;
   font-size: 0.78rem;
 }
@@ -2634,21 +2708,24 @@
 .invoice-table th,
 .invoice-table td {
   padding: 0.55rem 0.5rem;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid #ddd6fe;
   text-align: left;
   vertical-align: top;
 }
 
 .invoice-table th {
-  background: #f7fafc;
-  color: #4a5568;
+  background: #f5f3ff;
+  color: #15155e;
   font-size: 0.72rem;
   font-weight: 700;
+  border-bottom: 2px solid #d4af37;
 }
 
 .invoice-table th:last-child,
 .invoice-table td.invoice-amount {
   text-align: right;
+  color: #553c9a;
+  font-weight: 700;
 }
 
 .invoice-totals {
@@ -2671,12 +2748,12 @@
   justify-content: space-between;
   gap: 0.75rem;
   font-size: 0.8rem;
-  color: #4a5568;
+  color: #64748b;
   padding: 0.25rem 0;
 }
 
 .invoice-total-row strong {
-  color: #111827;
+  color: #553c9a;
 }
 
 .invoice-total-inr strong {
@@ -2688,23 +2765,28 @@
   margin-top: 0.2rem;
   font-size: 0.68rem;
   line-height: 1.35;
-  color: #718096;
+  color: #94a3b8;
 }
 
 .invoice-words {
   margin: 0 0 1rem;
   font-size: 0.78rem;
-  color: #4a5568;
+  color: #64748b;
+}
+
+.invoice-words strong {
+  color: #15155e;
 }
 
 .invoice-due-wrap {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
 }
 
 .invoice-due-box {
-  border: 2px solid #111827;
+  border: 2px solid #d4af37;
+  background: #fffdf5;
   padding: 0.85rem 1.4rem;
   text-align: center;
 }
@@ -2714,28 +2796,42 @@
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.14em;
-  color: #4a5568;
+  color: #d4af37;
   margin-bottom: 0.35rem;
 }
 
 .invoice-due-value {
   font-size: 1.1rem;
-  color: #111827;
+  color: #15155e;
+}
+
+.invoice-signature {
+  margin-bottom: 1rem;
 }
 
 .invoice-signature p {
   margin: 0 0 1.5rem;
   font-size: 0.78rem;
-  color: #4a5568;
+  color: #64748b;
 }
 
 .invoice-signature span {
   display: inline-block;
   padding-top: 0.35rem;
-  border-top: 1px solid #a0aec0;
+  border-top: 1px solid #d4af37;
   min-width: 160px;
   font-size: 0.9rem;
   font-weight: 700;
+  color: #15155e;
+}
+
+.invoice-card-footer {
+  padding: 0.65rem 1.35rem;
+  text-align: center;
+  font-size: 0.68rem;
+  color: #a0aec0;
+  background: #f8fafc;
+  border-top: 1px solid #edf2f7;
 }
 
 @media (max-width: 900px) {

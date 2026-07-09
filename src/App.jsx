@@ -623,17 +623,20 @@ function calcInvoiceTotals(lineItems, exchangeRate) {
   }
 }
 
-function InvoicePreviewCard({ invoiceForm, invoiceResult }) {
+function InvoicePreviewCard({ invoiceForm, invoiceResult, branding }) {
   const totals = calcInvoiceTotals(invoiceForm.line_items, invoiceForm.exchange_rate)
   const amountWords = invoiceResult?.amount_in_words || '—'
   const addressLines = (text) => (text || '').split(/\r?\n/).filter(Boolean)
 
   return (
     <div className="invoice-card">
-      <div className="invoice-card-header">
-        <div className="invoice-card-header-spacer" />
-        <div className="invoice-card-header-meta">
-          <h3 className="invoice-title">TAX INVOICE</h3>
+      <div className="invoice-card-brand-header">
+        <div className="invoice-card-brand-left">
+          <p className="invoice-brand-tagline">{branding.org_tagline}</p>
+          <p className="invoice-brand-name">{branding.brand_name}</p>
+          <span className="invoice-brand-badge">TAX INVOICE</span>
+        </div>
+        <div className="invoice-card-brand-meta">
           <div className="invoice-meta-row">
             <span>Invoice #</span>
             <strong>{invoiceForm.invoice_number || 'INV-2026-1'}</strong>
@@ -644,6 +647,7 @@ function InvoicePreviewCard({ invoiceForm, invoiceResult }) {
           </div>
         </div>
       </div>
+      <div className="invoice-gold-rule" aria-hidden="true" />
 
       <div className="invoice-parties">
         <div className="invoice-party">
@@ -731,6 +735,10 @@ function InvoicePreviewCard({ invoiceForm, invoiceResult }) {
       <div className="invoice-signature">
         <p>For: {invoiceForm.signature_name || invoiceForm.bill_from_name || '—'}</p>
         <span>{invoiceForm.signature_name || invoiceForm.bill_from_name || 'Signature'}</span>
+      </div>
+
+      <div className="invoice-card-footer">
+        Issued by {branding.issued_by || branding.brand_name} &middot; {branding.website}
       </div>
     </div>
   )
@@ -2257,7 +2265,11 @@ function App() {
               <h2>Invoice Preview</h2>
             </div>
             <div className="cert-preview invoice-preview">
-              <InvoicePreviewCard invoiceForm={invoiceForm} invoiceResult={invoiceResult} />
+              <InvoicePreviewCard
+                invoiceForm={invoiceForm}
+                invoiceResult={invoiceResult}
+                branding={branding}
+              />
             </div>
           </div>
         </div>

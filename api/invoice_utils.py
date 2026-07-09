@@ -3,9 +3,52 @@
 from __future__ import annotations
 
 import html as html_mod
+import os
 import re
 from datetime import datetime
 from typing import Iterable
+
+
+def _sanitize_env(value: str) -> str:
+    if not value:
+        return ""
+    v = value.strip()
+    while v.endswith("\\r\\n"):
+        v = v[:-4].rstrip()
+    return v
+
+
+# IntelliForge palette — aligned with participation certificate PDFs
+INVOICE_BRAND_COLORS = {
+    "color_frame": "#0f0f23",
+    "color_header_bg": "#15155e",
+    "color_gold": "#d4af37",
+    "color_indigo": "#6366F1",
+    "color_purple": "#553c9a",
+    "color_text": "#1a202c",
+    "color_muted": "#64748b",
+    "color_table_header_bg": "#f5f3ff",
+    "color_table_border": "#ddd6fe",
+}
+
+
+def invoice_brand_tokens() -> dict[str, str]:
+    """Branding fields and colors for invoice PDF HTML."""
+    brand_name = _sanitize_env(os.environ.get("CERT_BRAND_NAME", "IntelliForge Learning")) or "IntelliForge Learning"
+    issued_by = _sanitize_env(os.environ.get("CERT_ISSUED_BY", "")) or brand_name
+    return {
+        **INVOICE_BRAND_COLORS,
+        "org_tagline": html_mod.escape(
+            _sanitize_env(os.environ.get("CERT_ORG_TAGLINE", "AN INTELLIFORGE AI INITIATIVE"))
+            or "AN INTELLIFORGE AI INITIATIVE"
+        ),
+        "brand_name": html_mod.escape(brand_name),
+        "issued_by": html_mod.escape(issued_by),
+        "website": html_mod.escape(
+            _sanitize_env(os.environ.get("CERT_WEBSITE", "learning.intelliforge.tech"))
+            or "learning.intelliforge.tech"
+        ),
+    }
 
 
 _ONES = (
@@ -122,8 +165,12 @@ def line_item_amount_usd(rate: float, quantity: float) -> float:
     return round(float(rate) * float(quantity), 2)
 
 
-def build_line_items_rows(items: list[dict]) -> tuple[str, float]:
+def build_line_items_rows(items: list[dict], *, colors: dict | None = None) -> tuple[str, float]:
     """Return HTML rows and USD subtotal."""
+    palette = colors or INVOICE_BRAND_COLORS
+    border = palette.get("color_table_border", "#ddd6fe")
+    purple = palette.get("color_purple", "#553c9a")
+    text = palette.get("color_text", "#1a202c")
     rows: list[str] = []
     subtotal = 0.0
     for item in items:
@@ -137,16 +184,16 @@ def build_line_items_rows(items: list[dict]) -> tuple[str, float]:
         rows.append(
             f"""
             <tr>
-                <td style="padding: 10pt 8pt; border-bottom: 1px solid #e2e8f0; font-size: 9.5pt; color: #1a202c; vertical-align: top; width: 52%;">
+                <td style="padding: 10pt 8pt; border-bottom: 1px solid {border}; font-size: 9.5pt; color: {text}; vertical-align: top; width: 52%;">
                     {desc}
                 </td>
-                <td style="padding: 10pt 8pt; border-bottom: 1px solid #e2e8f0; font-size: 9.5pt; color: #1a202c; vertical-align: top; width: 16%;">
+                <td style="padding: 10pt 8pt; border-bottom: 1px solid {border}; font-size: 9.5pt; color: {text}; vertical-align: top; width: 16%;">
                     {escape_text(rate_label)}
                 </td>
-                <td style="padding: 10pt 8pt; border-bottom: 1px solid #e2e8f0; font-size: 9.5pt; color: #1a202c; vertical-align: top; width: 16%;">
+                <td style="padding: 10pt 8pt; border-bottom: 1px solid {border}; font-size: 9.5pt; color: {text}; vertical-align: top; width: 16%;">
                     {escape_text(qty_label)}
                 </td>
-                <td align="right" style="padding: 10pt 8pt; border-bottom: 1px solid #e2e8f0; font-size: 9.5pt; color: #1a202c; vertical-align: top; width: 16%; text-align: right;">
+                <td align="right" style="padding: 10pt 8pt; border-bottom: 1px solid {border}; font-size: 9.5pt; font-weight: bold; color: {purple}; vertical-align: top; width: 16%; text-align: right;">
                     {format_usd(amount)}
                 </td>
             </tr>
@@ -165,13 +212,13 @@ def split_address_lines(address: str) -> list[str]:
     return [ln.strip() for ln in re.split(r"[\r\n]+", address or "") if ln.strip()]
 
 
-def _optional_party_row(label: str, value: str, *, prefix: str = "") -> str:
+def _optional_party_row(label: str, value: str, *, prefix: str = "", muted: str = "#64748b") -> str:
     text = (value or "").strip()
     if not text:
         return ""
     display = f"{prefix}{escape_text(text)}" if prefix else escape_text(text)
     return (
-        f'<tr><td style="font-size: 9.5pt; color: #1a202c; line-height: 1.45; padding-top: 4pt;">'
+        f'<tr><td style="font-size: 9.5pt; color: {muted}; line-height: 1.45; padding-top: 4pt;">'
         f"{escape_text(label)} {display}</td></tr>"
     )
 
@@ -180,8 +227,9 @@ def build_invoice_html(data: dict) -> str:
     """Render invoice dict into HTML for xhtml2pdf."""
     from api.invoice_templates import INVOICE_TAX_HTML
 
+    brand = invoice_brand_tokens()
     items = data.get("items") or []
-    line_rows, total_usd = build_line_items_rows(items)
+    line_rows, total_usd = build_line_items_rows(items, colors=brand)
     exchange_rate = float(data.get("exchange_rate") or 90)
     total_inr = int(round(total_usd * exchange_rate))
     words = amount_in_words_inr(total_inr)
@@ -190,18 +238,19 @@ def build_invoice_html(data: dict) -> str:
     bill_to_lines = split_address_lines(data.get("bill_to_address", ""))
 
     signature_name = (data.get("signature_name") or data.get("bill_from_name") or "").strip()
+    muted = brand["color_muted"]
 
     return INVOICE_TAX_HTML.format(
         invoice_number=escape_text(data.get("invoice_number", "")),
         invoice_date=escape_text(format_invoice_date(data.get("invoice_date", ""))),
         bill_from_name=escape_text(data.get("bill_from_name", "")),
         bill_from_address_rows=party_address_html(bill_from_lines),
-        bill_from_email_row=_optional_party_row("email :", data.get("bill_from_email", "")),
-        bill_from_pan_row=_optional_party_row("Pan:", data.get("bill_from_pan", ""), prefix=""),
+        bill_from_email_row=_optional_party_row("email :", data.get("bill_from_email", ""), muted=muted),
+        bill_from_pan_row=_optional_party_row("Pan:", data.get("bill_from_pan", ""), prefix="", muted=muted),
         bill_to_name=escape_text(data.get("bill_to_name", "")),
         bill_to_address_rows=party_address_html(bill_to_lines),
-        bill_to_gstin_row=_optional_party_row("GSTIN:", data.get("bill_to_gstin", "")),
-        bill_to_email_row=_optional_party_row("Email :", data.get("bill_to_email", "")),
+        bill_to_gstin_row=_optional_party_row("GSTIN:", data.get("bill_to_gstin", ""), muted=muted),
+        bill_to_email_row=_optional_party_row("Email :", data.get("bill_to_email", ""), muted=muted),
         line_items_rows=line_rows,
         total_usd=format_usd(total_usd),
         total_inr=format_inr(total_inr),
@@ -209,6 +258,7 @@ def build_invoice_html(data: dict) -> str:
         amount_in_words=escape_text(words),
         total_inr_due=format_inr(total_inr),
         signature_name=escape_text(signature_name),
+        **brand,
     )
 
 
