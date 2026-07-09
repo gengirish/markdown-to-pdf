@@ -81,6 +81,15 @@ const Icon = {
       <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
     </svg>
   ),
+  Invoice: () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+      <polyline points="10 9 9 9 8 9" />
+    </svg>
+  ),
 }
 
 const PREVIEW_CERT_URL = '/certificate/preview'
@@ -579,6 +588,150 @@ function DeliveryStatus({ success, successText, failureText, detail }) {
     <div className="cert-delivery-failed" role="alert">
       <strong>{failureText}</strong>
       {detail ? <span>{detail}</span> : null}
+    </div>
+  )
+}
+
+function formatUsdPreview(amount) {
+  const n = Number(amount)
+  if (!Number.isFinite(n)) return '$0'
+  if (Math.abs(n - Math.round(n)) < 0.001) return `$${Math.round(n).toLocaleString('en-US')}`
+  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function formatInrPreview(amount) {
+  const n = Math.round(Number(amount) || 0)
+  return `₹${n.toLocaleString('en-IN')}`
+}
+
+function formatInvoiceDatePreview(isoDate) {
+  if (!isoDate) return '—'
+  const dt = new Date(`${isoDate}T12:00:00`)
+  if (Number.isNaN(dt.getTime())) return isoDate
+  return dt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+}
+
+function calcInvoiceTotals(lineItems, exchangeRate) {
+  const totalUsd = (lineItems || []).reduce(
+    (sum, item) => sum + (Number(item.rate) || 0) * (Number(item.quantity) || 0),
+    0,
+  )
+  const rate = Number(exchangeRate) || 90
+  return {
+    totalUsd: Math.round(totalUsd * 100) / 100,
+    totalInr: Math.round(totalUsd * rate),
+  }
+}
+
+function InvoicePreviewCard({ invoiceForm, invoiceResult }) {
+  const totals = calcInvoiceTotals(invoiceForm.line_items, invoiceForm.exchange_rate)
+  const amountWords = invoiceResult?.amount_in_words || '—'
+  const addressLines = (text) => (text || '').split(/\r?\n/).filter(Boolean)
+
+  return (
+    <div className="invoice-card">
+      <div className="invoice-card-header">
+        <div className="invoice-card-header-spacer" />
+        <div className="invoice-card-header-meta">
+          <h3 className="invoice-title">TAX INVOICE</h3>
+          <div className="invoice-meta-row">
+            <span>Invoice #</span>
+            <strong>{invoiceForm.invoice_number || 'INV-2026-1'}</strong>
+          </div>
+          <div className="invoice-meta-row">
+            <span>Invoice date</span>
+            <strong>{formatInvoiceDatePreview(invoiceForm.invoice_date)}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div className="invoice-parties">
+        <div className="invoice-party">
+          <p className="invoice-party-label">BILL FROM:</p>
+          <p className="invoice-party-name">{invoiceForm.bill_from_name || 'Vendor name'}</p>
+          {addressLines(invoiceForm.bill_from_address).map((line) => (
+            <p key={`from-${line}`} className="invoice-party-line">{line}</p>
+          ))}
+          {invoiceForm.bill_from_email ? (
+            <p className="invoice-party-line">email : {invoiceForm.bill_from_email}</p>
+          ) : null}
+          {invoiceForm.bill_from_pan ? (
+            <p className="invoice-party-line">Pan: {invoiceForm.bill_from_pan}</p>
+          ) : null}
+        </div>
+        <div className="invoice-party">
+          <p className="invoice-party-label">BILL TO:</p>
+          <p className="invoice-party-name">{invoiceForm.bill_to_name || 'Client name'}</p>
+          {addressLines(invoiceForm.bill_to_address).map((line) => (
+            <p key={`to-${line}`} className="invoice-party-line">{line}</p>
+          ))}
+          {invoiceForm.bill_to_gstin ? (
+            <p className="invoice-party-line">GSTIN: {invoiceForm.bill_to_gstin}</p>
+          ) : null}
+          {invoiceForm.bill_to_email ? (
+            <p className="invoice-party-line">Email : {invoiceForm.bill_to_email}</p>
+          ) : null}
+        </div>
+      </div>
+
+      <table className="invoice-table">
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th>Rate</th>
+            <th>Quantity</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(invoiceForm.line_items || []).map((item, idx) => {
+            const amount = (Number(item.rate) || 0) * (Number(item.quantity) || 0)
+            const rateLabel = item.rate_label?.trim() || formatUsdPreview(item.rate)
+            const qtyLabel = item.quantity_label?.trim() || String(item.quantity ?? '')
+            return (
+              <tr key={`line-${idx}`}>
+                <td>{item.description || 'Line item description'}</td>
+                <td>{rateLabel}</td>
+                <td>{qtyLabel}</td>
+                <td className="invoice-amount">{formatUsdPreview(amount)}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+
+      <div className="invoice-totals">
+        <div className="invoice-totals-spacer" />
+        <div className="invoice-totals-body">
+          <div className="invoice-total-row">
+            <span>Total in (USD)</span>
+            <strong>{formatUsdPreview(totals.totalUsd)}</strong>
+          </div>
+          <div className="invoice-total-row invoice-total-inr">
+            <span>
+              Total in (INR)
+              <small>Exchange rate:<br />1 USD = {invoiceForm.exchange_rate || 90} INR</small>
+            </span>
+            <strong>{formatInrPreview(totals.totalInr)}</strong>
+          </div>
+        </div>
+      </div>
+
+      <p className="invoice-words">
+        Amount in words : <strong>{amountWords}</strong>
+      </p>
+
+      <div className="invoice-due-wrap">
+        <div className="invoice-due-box">
+          <span className="invoice-due-label">TOTAL DUE</span>
+          <strong className="invoice-due-value">INR {formatInrPreview(totals.totalInr)}</strong>
+        </div>
+      </div>
+
+      <div className="invoice-signature">
+        <p>For: {invoiceForm.signature_name || invoiceForm.bill_from_name || '—'}</p>
+        <span>{invoiceForm.signature_name || invoiceForm.bill_from_name || 'Signature'}</span>
+      </div>
     </div>
   )
 }
@@ -1123,6 +1276,35 @@ function App() {
   const [certError, setCertError] = useState(null)
   const [certResult, setCertResult] = useState(null)
 
+  const [invoiceForm, setInvoiceForm] = useState({
+    invoice_number: 'INV-2026-1',
+    invoice_date: new Date().toISOString().split('T')[0],
+    bill_from_name: 'Naveen Katiyar',
+    bill_from_address: '68, Vijaynagar, Kanpur\nUttar Pradesh',
+    bill_from_email: '',
+    bill_from_pan: 'XXXXXXX30A',
+    bill_to_name: 'Cognyzer',
+    bill_to_address:
+      'Building No.3, Sukan Mall\nBeside Rajasthan Hospital, Shahibaug,\nAhmedabad,\nGujarat - 380004',
+    bill_to_gstin: '24AAWFC3808N1ZX',
+    bill_to_email: 'team@cognyzer.com',
+    exchange_rate: 90,
+    signature_name: 'Naveen Katiyar',
+    line_items: [
+      {
+        description:
+          'Dataset preparation and validation services as per agreed specifications for Project : Terminus (Terminal Bench 2.0)',
+        rate: 22,
+        rate_label: '$22 / Task',
+        quantity: 10,
+        quantity_label: '10 task',
+      },
+    ],
+  })
+  const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false)
+  const [invoiceError, setInvoiceError] = useState(null)
+  const [invoiceResult, setInvoiceResult] = useState(null)
+
   const previewInstructorName = certForm.instructor_name || 'Certificate Team'
 
   const generateCertificate = async (e) => {
@@ -1265,6 +1447,137 @@ function App() {
     setCertResult(null)
   }
 
+  const updateInvoiceField = (field, value) => {
+    setInvoiceForm((prev) => ({ ...prev, [field]: value }))
+    setInvoiceError(null)
+    setInvoiceResult(null)
+  }
+
+  const updateInvoiceLineItem = (index, field, value) => {
+    setInvoiceForm((prev) => ({
+      ...prev,
+      line_items: prev.line_items.map((item, i) =>
+        i === index ? { ...item, [field]: value } : item,
+      ),
+    }))
+    setInvoiceError(null)
+    setInvoiceResult(null)
+  }
+
+  const addInvoiceLineItem = () => {
+    setInvoiceForm((prev) => ({
+      ...prev,
+      line_items: [
+        ...prev.line_items,
+        { description: '', rate: 0, rate_label: '', quantity: 1, quantity_label: '' },
+      ],
+    }))
+    setInvoiceResult(null)
+  }
+
+  const removeInvoiceLineItem = (index) => {
+    setInvoiceForm((prev) => ({
+      ...prev,
+      line_items: prev.line_items.filter((_, i) => i !== index),
+    }))
+    setInvoiceResult(null)
+  }
+
+  const generateInvoice = async (e) => {
+    e.preventDefault()
+    setIsGeneratingInvoice(true)
+    setInvoiceError(null)
+    setInvoiceResult(null)
+
+    try {
+      if (!invoiceForm.bill_from_name.trim()) throw new Error('Bill from name is required')
+      if (!invoiceForm.bill_to_name.trim()) throw new Error('Bill to name is required')
+      if (!invoiceForm.invoice_date) throw new Error('Invoice date is required')
+      if (!invoiceForm.line_items.length) throw new Error('Add at least one line item')
+
+      const payload = {
+        invoice_number: invoiceForm.invoice_number.trim(),
+        invoice_date: invoiceForm.invoice_date,
+        bill_from_name: invoiceForm.bill_from_name.trim(),
+        bill_from_address: invoiceForm.bill_from_address.trim(),
+        bill_from_email: invoiceForm.bill_from_email.trim(),
+        bill_from_pan: invoiceForm.bill_from_pan.trim(),
+        bill_to_name: invoiceForm.bill_to_name.trim(),
+        bill_to_address: invoiceForm.bill_to_address.trim(),
+        bill_to_gstin: invoiceForm.bill_to_gstin.trim(),
+        bill_to_email: invoiceForm.bill_to_email.trim(),
+        exchange_rate: Number(invoiceForm.exchange_rate) || 90,
+        signature_name: (invoiceForm.signature_name || invoiceForm.bill_from_name).trim(),
+        line_items: invoiceForm.line_items.map((item) => ({
+          description: item.description.trim(),
+          rate: Number(item.rate) || 0,
+          rate_label: item.rate_label?.trim() || '',
+          quantity: Number(item.quantity) || 0,
+          quantity_label: item.quantity_label?.trim() || '',
+        })),
+      }
+
+      for (const [idx, item] of payload.line_items.entries()) {
+        if (!item.description) throw new Error(`Line item ${idx + 1}: description is required`)
+      }
+
+      const response = await fetch(getApiUrl('/api/invoice'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(45000),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
+        const detail = errorData.detail || errorData.error?.message
+        const msg =
+          typeof detail === 'string'
+            ? detail
+            : Array.isArray(detail)
+              ? detail.map((x) => (x && typeof x === 'object' && x.msg ? x.msg : JSON.stringify(x))).join(' ')
+              : `Server error: ${response.status}`
+        throw new Error(msg)
+      }
+
+      const data = await response.json()
+      setInvoiceResult(data)
+      if (!invoiceForm.invoice_number.trim() && data.invoice_number) {
+        setInvoiceForm((prev) => ({ ...prev, invoice_number: data.invoice_number }))
+      }
+    } catch (err) {
+      console.error('Error generating invoice:', err)
+      if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+        setInvoiceError('Request timed out. Check your connection and try again.')
+      } else if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+        setInvoiceError('Could not reach the API. If developing locally, start the backend on port 8000.')
+      } else {
+        setInvoiceError(err.message)
+      }
+    } finally {
+      setIsGeneratingInvoice(false)
+    }
+  }
+
+  const downloadInvoicePdf = async () => {
+    if (!invoiceResult?.download_url) return
+    try {
+      const response = await fetch(invoiceResult.download_url)
+      if (!response.ok) throw new Error('Download failed')
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Invoice_${(invoiceResult.invoice_number || 'invoice').replace(/\s+/g, '_')}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch {
+      window.open(invoiceResult.download_url, '_blank')
+    }
+  }
+
   return (
     <div className="app">
       <header className="header">
@@ -1278,7 +1591,9 @@ function App() {
         <p className="header-subtitle">
           {activeTab === 'admin'
             ? 'Manage courses, bulk certificates, and platform analytics'
-            : 'Create tamper-proof PDF certificates and VTU internship credentials with shareable verification links'}
+            : activeTab === 'invoice'
+              ? 'Create tax invoices with USD line items, INR conversion, and downloadable PDFs'
+              : 'Create tamper-proof PDF certificates and VTU internship credentials with shareable verification links'}
         </p>
         <nav className="tab-nav" role="tablist">
           <button
@@ -1289,6 +1604,15 @@ function App() {
           >
             <Icon.CertTab />
             <span>Generate Certificate</span>
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'invoice' ? 'active' : ''}`}
+            onClick={() => setActiveTab('invoice')}
+            role="tab"
+            aria-selected={activeTab === 'invoice'}
+          >
+            <Icon.Invoice />
+            <span>Generate Invoice</span>
           </button>
           <button
             className={`tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
@@ -1664,6 +1988,276 @@ function App() {
                 getApiUrl={getApiUrl}
                 previewInstructorName={previewInstructorName}
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'invoice' && (
+        <div className="cert-container invoice-container">
+          <div className="cert-form-section">
+            <div className="section-header">
+              <h2>Invoice Details</h2>
+            </div>
+            <form className="cert-form" onSubmit={generateInvoice}>
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="invoice_number">Invoice #</label>
+                  <input
+                    id="invoice_number"
+                    type="text"
+                    placeholder="Auto-generated if blank"
+                    value={invoiceForm.invoice_number}
+                    onChange={(e) => updateInvoiceField('invoice_number', e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="invoice_date">Invoice date</label>
+                  <input
+                    id="invoice_date"
+                    type="date"
+                    value={invoiceForm.invoice_date}
+                    onChange={(e) => updateInvoiceField('invoice_date', e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="exchange_rate">USD → INR exchange rate</label>
+                  <input
+                    id="exchange_rate"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={invoiceForm.exchange_rate}
+                    onChange={(e) => updateInvoiceField('exchange_rate', e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="signature_name">Signature name</label>
+                  <input
+                    id="signature_name"
+                    type="text"
+                    placeholder="Defaults to bill-from name"
+                    value={invoiceForm.signature_name}
+                    onChange={(e) => updateInvoiceField('signature_name', e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <fieldset className="form-group invoice-party-fieldset">
+                <legend>Bill from</legend>
+                <div className="form-group">
+                  <label htmlFor="bill_from_name">Name</label>
+                  <input
+                    id="bill_from_name"
+                    type="text"
+                    value={invoiceForm.bill_from_name}
+                    onChange={(e) => updateInvoiceField('bill_from_name', e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="bill_from_address">Address</label>
+                  <textarea
+                    id="bill_from_address"
+                    rows={3}
+                    value={invoiceForm.bill_from_address}
+                    onChange={(e) => updateInvoiceField('bill_from_address', e.target.value)}
+                  />
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label htmlFor="bill_from_email">Email</label>
+                    <input
+                      id="bill_from_email"
+                      type="email"
+                      value={invoiceForm.bill_from_email}
+                      onChange={(e) => updateInvoiceField('bill_from_email', e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="bill_from_pan">PAN</label>
+                    <input
+                      id="bill_from_pan"
+                      type="text"
+                      value={invoiceForm.bill_from_pan}
+                      onChange={(e) => updateInvoiceField('bill_from_pan', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </fieldset>
+
+              <fieldset className="form-group invoice-party-fieldset">
+                <legend>Bill to</legend>
+                <div className="form-group">
+                  <label htmlFor="bill_to_name">Name</label>
+                  <input
+                    id="bill_to_name"
+                    type="text"
+                    value={invoiceForm.bill_to_name}
+                    onChange={(e) => updateInvoiceField('bill_to_name', e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="bill_to_address">Address</label>
+                  <textarea
+                    id="bill_to_address"
+                    rows={4}
+                    value={invoiceForm.bill_to_address}
+                    onChange={(e) => updateInvoiceField('bill_to_address', e.target.value)}
+                  />
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label htmlFor="bill_to_gstin">GSTIN</label>
+                    <input
+                      id="bill_to_gstin"
+                      type="text"
+                      value={invoiceForm.bill_to_gstin}
+                      onChange={(e) => updateInvoiceField('bill_to_gstin', e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="bill_to_email">Email</label>
+                    <input
+                      id="bill_to_email"
+                      type="email"
+                      value={invoiceForm.bill_to_email}
+                      onChange={(e) => updateInvoiceField('bill_to_email', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </fieldset>
+
+              <div className="invoice-line-items">
+                <div className="invoice-line-items-header">
+                  <h3>Line items</h3>
+                  <button type="button" className="admin-action-btn" onClick={addInvoiceLineItem}>
+                    + Add line
+                  </button>
+                </div>
+                {invoiceForm.line_items.map((item, idx) => (
+                  <div className="invoice-line-item" key={`invoice-line-${idx}`}>
+                    <div className="form-group">
+                      <label htmlFor={`line_desc_${idx}`}>Description</label>
+                      <textarea
+                        id={`line_desc_${idx}`}
+                        rows={3}
+                        value={item.description}
+                        onChange={(e) => updateInvoiceLineItem(idx, 'description', e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label htmlFor={`line_rate_${idx}`}>Rate (USD)</label>
+                        <input
+                          id={`line_rate_${idx}`}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.rate}
+                          onChange={(e) => updateInvoiceLineItem(idx, 'rate', e.target.value)}
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor={`line_rate_label_${idx}`}>Rate label</label>
+                        <input
+                          id={`line_rate_label_${idx}`}
+                          type="text"
+                          placeholder="$22 / Task"
+                          value={item.rate_label}
+                          onChange={(e) => updateInvoiceLineItem(idx, 'rate_label', e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label htmlFor={`line_qty_${idx}`}>Quantity</label>
+                        <input
+                          id={`line_qty_${idx}`}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.quantity}
+                          onChange={(e) => updateInvoiceLineItem(idx, 'quantity', e.target.value)}
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor={`line_qty_label_${idx}`}>Quantity label</label>
+                        <input
+                          id={`line_qty_label_${idx}`}
+                          type="text"
+                          placeholder="10 task"
+                          value={item.quantity_label}
+                          onChange={(e) => updateInvoiceLineItem(idx, 'quantity_label', e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    {invoiceForm.line_items.length > 1 ? (
+                      <button
+                        type="button"
+                        className="admin-action-btn danger invoice-remove-line"
+                        onClick={() => removeInvoiceLineItem(idx)}
+                      >
+                        Remove line
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+
+              {invoiceError && (
+                <div className="error-message" role="alert">
+                  <strong>Error:</strong> {invoiceError}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="download-btn cert-submit-btn"
+                disabled={isGeneratingInvoice}
+              >
+                {isGeneratingInvoice ? <Icon.Loader /> : <Icon.Invoice />}
+                <span>{isGeneratingInvoice ? 'Generating...' : 'Generate invoice PDF'}</span>
+              </button>
+            </form>
+
+            {invoiceResult && (
+              <div className="cert-result">
+                <div className="cert-result-header">
+                  <span className="cert-result-check"><Icon.CheckCircle /></span>
+                  Invoice <strong>{invoiceResult.invoice_number}</strong> ready
+                  <span className="cert-id-badge">{invoiceResult.total_inr_formatted}</span>
+                </div>
+                <p className="invoice-result-words">{invoiceResult.amount_in_words}</p>
+                <div className="cert-result-actions">
+                  <button
+                    className="download-btn cert-action-btn"
+                    onClick={downloadInvoicePdf}
+                    type="button"
+                  >
+                    <Icon.Download />
+                    <span>Download PDF</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="cert-preview-section">
+            <div className="section-header">
+              <h2>Invoice Preview</h2>
+            </div>
+            <div className="cert-preview invoice-preview">
+              <InvoicePreviewCard invoiceForm={invoiceForm} invoiceResult={invoiceResult} />
             </div>
           </div>
         </div>

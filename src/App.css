@@ -2488,3 +2488,270 @@
     display: none;
   }
 }
+
+/* ── Invoice generator ── */
+
+.invoice-container .cert-preview-section {
+  min-width: 0;
+}
+
+.invoice-preview {
+  overflow-x: auto;
+}
+
+.invoice-party-fieldset {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.1rem 0.25rem;
+  margin: 0 0 1rem;
+}
+
+.invoice-party-fieldset legend {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 0 0.35rem;
+}
+
+.invoice-line-items {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.invoice-line-items-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.invoice-line-items-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.invoice-line-item {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.invoice-remove-line {
+  margin-top: 0.25rem;
+}
+
+.invoice-result-words {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.invoice-card {
+  background: #ffffff;
+  color: #111827;
+  border-radius: 12px;
+  padding: 1.75rem 1.5rem 1.5rem;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+  min-width: 520px;
+  font-family: Helvetica, Arial, sans-serif;
+}
+
+.invoice-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.invoice-card-header-spacer {
+  flex: 1;
+}
+
+.invoice-card-header-meta {
+  text-align: right;
+}
+
+.invoice-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.45rem;
+  letter-spacing: 0.03em;
+}
+
+.invoice-meta-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  font-size: 0.78rem;
+  color: #4a5568;
+}
+
+.invoice-meta-row strong {
+  color: #111827;
+}
+
+.invoice-parties {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.invoice-party-label {
+  margin: 0 0 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #4a5568;
+}
+
+.invoice-party-name {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.invoice-party-line {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #1a202c;
+}
+
+.invoice-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #cbd5e0;
+  margin-bottom: 0.75rem;
+  font-size: 0.78rem;
+}
+
+.invoice-table th,
+.invoice-table td {
+  padding: 0.55rem 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.invoice-table th {
+  background: #f7fafc;
+  color: #4a5568;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.invoice-table th:last-child,
+.invoice-table td.invoice-amount {
+  text-align: right;
+}
+
+.invoice-totals {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.invoice-totals-spacer {
+  flex: 1;
+}
+
+.invoice-totals-body {
+  width: 42%;
+  min-width: 180px;
+}
+
+.invoice-total-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  color: #4a5568;
+  padding: 0.25rem 0;
+}
+
+.invoice-total-row strong {
+  color: #111827;
+}
+
+.invoice-total-inr strong {
+  font-size: 0.95rem;
+}
+
+.invoice-total-inr small {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: #718096;
+}
+
+.invoice-words {
+  margin: 0 0 1rem;
+  font-size: 0.78rem;
+  color: #4a5568;
+}
+
+.invoice-due-wrap {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1.5rem;
+}
+
+.invoice-due-box {
+  border: 2px solid #111827;
+  padding: 0.85rem 1.4rem;
+  text-align: center;
+}
+
+.invoice-due-label {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #4a5568;
+  margin-bottom: 0.35rem;
+}
+
+.invoice-due-value {
+  font-size: 1.1rem;
+  color: #111827;
+}
+
+.invoice-signature p {
+  margin: 0 0 1.5rem;
+  font-size: 0.78rem;
+  color: #4a5568;
+}
+
+.invoice-signature span {
+  display: inline-block;
+  padding-top: 0.35rem;
+  border-top: 1px solid #a0aec0;
+  min-width: 160px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .invoice-parties {
+    grid-template-columns: 1fr;
+  }
+
+  .invoice-card {
+    min-width: 0;
+  }
+
+  .invoice-totals {
+    flex-direction: column;
+  }
+
+  .invoice-totals-body {
+    width: 100%;
+  }
+}

@@ -122,6 +122,49 @@ def test_internship_certificate():
     record("Internship PDF filename hint", "attachment" in pdf.headers.get("Content-Disposition", "").lower())
 
 
+# ── Invoice generation ────────────────────────────────────────────────
+
+def _create_invoice(**overrides) -> requests.Response:
+    body = {
+        "invoice_number": "INV-TEST-1",
+        "invoice_date": "2026-07-09",
+        "bill_from_name": "Naveen Katiyar",
+        "bill_from_address": "68, Vijaynagar, Kanpur\nUttar Pradesh",
+        "bill_from_pan": "XXXXXXX30A",
+        "bill_to_name": "Cognyzer",
+        "bill_to_address": "Building No.3, Sukan Mall, Ahmedabad",
+        "bill_to_gstin": "24AAWFC3808N1ZX",
+        "bill_to_email": "team@cognyzer.com",
+        "exchange_rate": 90,
+        "signature_name": "Naveen Katiyar",
+        "line_items": [
+            {
+                "description": "Dataset preparation and validation services",
+                "rate": 22,
+                "rate_label": "$22 / Task",
+                "quantity": 10,
+                "quantity_label": "10 task",
+            }
+        ],
+        **overrides,
+    }
+    return requests.post(f"{BASE_URL}/api/invoice", json=body)
+
+
+def test_invoice_creation():
+    r = _create_invoice()
+    data = r.json()
+    record("POST /api/invoice returns 200", r.status_code == 200)
+    record("Invoice response has token", bool(data.get("token")))
+    record("Invoice response has download_url", bool(data.get("download_url")))
+    record("Invoice total INR is 19800", data.get("total_inr") == 19800)
+    record("Invoice amount in words present", "Nineteen Thousand Eight Hundred Only" in data.get("amount_in_words", ""))
+    pdf = requests.get(data.get("download_url", ""))
+    record("Invoice PDF returns 200", pdf.status_code == 200)
+    record("Invoice PDF is application/pdf", "application/pdf" in pdf.headers.get("Content-Type", ""))
+    record("Invoice PDF is non-empty", len(pdf.content) > 500)
+
+
 # ── Public viewer page ────────────────────────────────────────────────
 
 def test_viewer_page(cert_data: dict):
@@ -216,6 +259,9 @@ def run_all():
 
     print("\n[Internship / VTU certificate]")
     test_internship_certificate()
+
+    print("\n[Invoice generation]")
+    test_invoice_creation()
 
     print("\n[Public Viewer]")
     test_viewer_page(cert)

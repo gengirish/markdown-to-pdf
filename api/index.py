@@ -50,6 +50,16 @@ from api.certificate_templates import (
     VIEWER_APPRECIATION_HTML,
     VIEWER_INTERNSHIP_HTML,
 )
+from api.invoice_utils import (
+    amount_in_words_inr,
+    build_invoice_pdf,
+    build_line_items_rows,
+    compact_invoice_token_payload,
+    default_invoice_number,
+    expand_invoice_token_payload,
+    format_inr,
+    format_usd,
+)
 
 import uuid as uuid_mod
 import threading
@@ -232,6 +242,7 @@ def _fire_webhook(callback_url: str, payload: dict):
 
 API_TAGS = [
     {"name": "Certificates", "description": "Create, view, download, and verify tamper-proof certificates"},
+    {"name": "Invoices", "description": "Generate tax invoices as downloadable PDFs"},
     {"name": "Verification", "description": "Verify certificate authenticity (single and batch)"},
     {"name": "Courses", "description": "List available courses"},
     {"name": "Admin", "description": "Admin endpoints for certificate and course management (requires X-Admin-Key)"},
@@ -972,6 +983,97 @@ class CertificateRequest(BaseModel):
         return self
 
 
+class InvoiceLineItemRequest(BaseModel):
+    description: str
+    rate: float
+    rate_label: str = ""
+    quantity: float
+    quantity_label: str = ""
+
+
+class InvoiceRequest(BaseModel):
+    invoice_number: str = ""
+    invoice_date: str
+    bill_from_name: str
+    bill_from_address: str = ""
+    bill_from_email: str = ""
+    bill_from_pan: str = ""
+    bill_to_name: str
+    bill_to_address: str = ""
+    bill_to_gstin: str = ""
+    bill_to_email: str = ""
+    exchange_rate: float = 90.0
+    signature_name: str = ""
+    line_items: list[InvoiceLineItemRequest]
+    idempotency_key: str = ""
+
+    @model_validator(mode="after")
+    def _invoice_required_fields(self):
+        if not self.bill_from_name.strip():
+            raise ValueError("bill_from_name is required")
+        if not self.bill_to_name.strip():
+            raise ValueError("bill_to_name is required")
+        if not self.invoice_date.strip():
+            raise ValueError("invoice_date is required")
+        if not self.line_items:
+            raise ValueError("At least one line item is required")
+        for idx, item in enumerate(self.line_items, start=1):
+            if not item.description.strip():
+                raise ValueError(f"line_items[{idx}].description is required")
+            if item.rate < 0 or item.quantity < 0:
+                raise ValueError(f"line_items[{idx}] rate and quantity must be non-negative")
+        if self.exchange_rate <= 0:
+            raise ValueError("exchange_rate must be positive")
+        return self
+
+
+def _is_invoice_payload(data: dict) -> bool:
+    return data.get("k") == "inv"
+
+
+def _invoice_request_to_dict(request: InvoiceRequest) -> dict:
+    invoice_number = request.invoice_number.strip() or default_invoice_number()
+    signature_name = request.signature_name.strip() or request.bill_from_name.strip()
+    items = []
+    for item in request.line_items:
+        items.append(
+            {
+                "description": item.description.strip(),
+                "rate": float(item.rate),
+                "rate_label": item.rate_label.strip(),
+                "quantity": float(item.quantity),
+                "quantity_label": item.quantity_label.strip(),
+            }
+        )
+    return {
+        "invoice_number": invoice_number,
+        "invoice_date": request.invoice_date.strip(),
+        "bill_from_name": request.bill_from_name.strip(),
+        "bill_from_address": request.bill_from_address.strip(),
+        "bill_from_email": request.bill_from_email.strip(),
+        "bill_from_pan": request.bill_from_pan.strip(),
+        "bill_to_name": request.bill_to_name.strip(),
+        "bill_to_address": request.bill_to_address.strip(),
+        "bill_to_gstin": request.bill_to_gstin.strip(),
+        "bill_to_email": request.bill_to_email.strip(),
+        "exchange_rate": float(request.exchange_rate),
+        "signature_name": signature_name,
+        "items": items,
+    }
+
+
+def _invoice_totals(data: dict) -> dict:
+    _, total_usd = build_line_items_rows(data.get("items") or [])
+    exchange_rate = float(data.get("exchange_rate") or 90)
+    total_inr = int(round(total_usd * exchange_rate))
+    return {
+        "total_usd": total_usd,
+        "total_inr": total_inr,
+        "amount_in_words": amount_in_words_inr(total_inr),
+        "total_usd_formatted": format_usd(total_usd),
+        "total_inr_formatted": format_inr(total_inr),
+    }
+
 
 def _escape(value: str) -> str:
     return html_mod.escape(value or "", quote=True)
@@ -987,6 +1089,7 @@ async def root():
         "version": "2.0.0",
         "endpoints": {
             "certificate": "/api/certificate",
+            "invoice": "/api/invoice",
             "courses": "/api/courses",
             "health": "/api/health",
         }
@@ -1022,12 +1125,13 @@ async def get_info():
             "PDF certificate generation with QR codes",
             "VTU-style internship completion (USN, hours, mentor)",
             "Sports/event appreciation certificates (IntelliForge / maidaan poster theme)",
+            "Tax invoice PDF generation (USD line items with INR conversion)",
             "LinkedIn and X social sharing",
         ],
         "tech_stack": {
             "framework": "FastAPI",
             "language": "Python",
-            "pdf": "xhtml2pdf (certificate PDFs)",
+            "pdf": "xhtml2pdf (certificate and invoice PDFs)",
             "crypto": "HMAC-SHA256",
         }
     }
@@ -1677,6 +1781,95 @@ async def generate_certificate(request: CertificateRequest, req: Request):
     except Exception as e:
         logger.error(f"Error generating certificate: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate certificate: {e}")
+
+
+@app.post("/api/invoice", tags=["Invoices"])
+async def generate_invoice(request: InvoiceRequest, req: Request):
+    """
+    Generate a signed tax invoice and return shareable download URL + totals.
+
+    Line items are priced in USD; INR total uses `exchange_rate` (default 90).
+    Pass `idempotency_key` to safely retry without creating duplicate tokens.
+    """
+    try:
+        if request.idempotency_key:
+            cached = _check_idempotency(request.idempotency_key)
+            if cached:
+                return JSONResponse(cached)
+
+        if CERT_API_KEYS:
+            api_key = req.headers.get("X-API-Key", "")
+            if not _is_browser_same_origin(req) and api_key not in CERT_API_KEYS:
+                raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+        client_ip = req.client.host if req.client else "unknown"
+        allowed, rate_headers = _check_rate_limit(client_ip)
+        if not allowed:
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded. Try again later.",
+                headers=rate_headers,
+            )
+
+        invoice_data = _invoice_request_to_dict(request)
+        compact = compact_invoice_token_payload(invoice_data)
+        token = _encode_cert(compact)
+        base_url = str(req.base_url).rstrip("/")
+        download_url = f"{base_url}/invoice/{token}/download"
+        totals = _invoice_totals(invoice_data)
+
+        response_data = {
+            "invoice_number": invoice_data["invoice_number"],
+            "token": token,
+            "download_url": download_url,
+            "bill_from_name": invoice_data["bill_from_name"],
+            "bill_to_name": invoice_data["bill_to_name"],
+            "invoice_date": invoice_data["invoice_date"],
+            "exchange_rate": invoice_data["exchange_rate"],
+            "total_usd": totals["total_usd"],
+            "total_inr": totals["total_inr"],
+            "total_usd_formatted": totals["total_usd_formatted"],
+            "total_inr_formatted": totals["total_inr_formatted"],
+            "amount_in_words": totals["amount_in_words"],
+            "request_id": str(uuid_mod.uuid4()),
+        }
+
+        if request.idempotency_key:
+            _store_idempotency(request.idempotency_key, response_data)
+
+        logger.info(
+            f"Invoice issued {invoice_data['invoice_number']} — "
+            f"{invoice_data['bill_to_name']} ({totals['total_inr_formatted']})"
+        )
+        return JSONResponse(response_data, headers=rate_headers)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating invoice: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate invoice: {e}")
+
+
+@app.get("/invoice/{token}/download", tags=["Invoices"])
+async def download_invoice(token: str):
+    """Download a tax invoice PDF from a signed token."""
+    data = _decode_cert(token)
+    if not data or not _is_invoice_payload(data):
+        raise HTTPException(status_code=404, detail="Invoice not found or invalid token")
+
+    invoice_data = expand_invoice_token_payload(data)
+    pdf_bytes = build_invoice_pdf(invoice_data)
+    safe_number = invoice_data["invoice_number"].replace(" ", "_").replace("/", "-")
+    filename = f"Invoice_{safe_number}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(pdf_bytes)),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
