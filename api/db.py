@@ -57,6 +57,10 @@ SEED_COURSES = [
         "VTU Industry Internship – IntelliForge AI Programme",
         "Formal internship completion credential for VTU / college records (USN, hours, mentor)",
     ),
+    (
+        "RAG Systems & Architecture Masterclass",
+        "Masterclass on retrieval-augmented generation (RAG) systems and architecture",
+    ),
 ]
 
 
@@ -98,15 +102,12 @@ def init_schema():
             cur.execute("ALTER TABLE certificates ADD COLUMN participant_email VARCHAR(255) DEFAULT ''")
             logger.info("Migrated: added participant_email column to certificates")
 
-        cur.execute("SELECT COUNT(*) as cnt FROM courses")
-        row = cur.fetchone()
-        if row["cnt"] == 0:
-            for name, desc in SEED_COURSES:
-                cur.execute(
-                    "INSERT INTO courses (name, description) VALUES (%s, %s) ON CONFLICT (name) DO NOTHING",
-                    (name, desc),
-                )
-            logger.info(f"Seeded {len(SEED_COURSES)} courses")
+        for name, desc in SEED_COURSES:
+            cur.execute(
+                "INSERT INTO courses (name, description) VALUES (%s, %s) ON CONFLICT (name) DO NOTHING",
+                (name, desc),
+            )
+        logger.info(f"Ensured {len(SEED_COURSES)} seed courses exist")
         logger.info("Database schema initialized")
 
 

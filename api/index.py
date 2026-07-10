@@ -1156,6 +1156,7 @@ COURSES_FALLBACK = [
     "Deploying AI Solutions",
     "AI Code Reviewer Course",
     "VTU Industry Internship – IntelliForge AI Programme",
+    "RAG Systems & Architecture Masterclass",
 ]
 
 
