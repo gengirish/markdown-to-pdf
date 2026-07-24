@@ -110,6 +110,14 @@ def qr_data_uri(url: str, box_size: int = 4) -> str:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
+FLAG_PATH = REPO_ROOT / "public" / "branding" / "india-flag.png"
+
+
+def image_data_uri(path: Path) -> str:
+    """Base64 PNG data URI (xhtml2pdf cannot fetch remote images)."""
+    return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode()
+
+
 def esc(value: str) -> str:
     return html_mod.escape(value or "")
 
@@ -198,23 +206,33 @@ def sidebar_block() -> str:
 
 
 def india_independence_badge() -> str:
-    """India Independence Day emblem: a mini tricolour with an Ashoka-chakra
-    stand-in glyph (the true wheel U+2638 is tofu in xhtml2pdf's base fonts, so
-    U+2742 — a circled spoked star — carries the wheel), sized for the dark
-    sidebar foot. Uses the official flag saffron/green rather than the doc's
-    poster orange."""
+    """India Independence Day emblem for the dark sidebar foot: the real Flag
+    of India PNG (24-spoke Ashoka Chakra, rendered by
+    scripts/build_india_flag_asset.py) above a 'Celebrating Independence Day'
+    caption. Falls back to a typographic tricolour with a chakra-stand-in glyph
+    if the asset is missing (the true wheel U+2638 is tofu in xhtml2pdf's base
+    fonts, so U+2742 — a circled spoked star — carries the wheel)."""
     saffron, green, navy = "#FF9933", "#138808", "#000080"
-    flag = (
-        f'<table width="58" align="center" cellspacing="0" cellpadding="0" '
-        f'style="border:0.75pt solid #ffffff;">'
-        f'<tr><td style="background-color:{saffron};height:10pt;font-size:1pt;'
-        f'line-height:10pt;">&nbsp;</td></tr>'
-        f'<tr><td align="center" style="background-color:#ffffff;height:14pt;'
-        f'text-align:center;vertical-align:middle;color:{navy};font-size:12pt;'
-        f'line-height:14pt;">&#10050;</td></tr>'
-        f'<tr><td style="background-color:{green};height:10pt;font-size:1pt;'
-        f'line-height:10pt;">&nbsp;</td></tr></table>'
-    )
+    if FLAG_PATH.exists():
+        # Real Flag of India PNG (24-spoke Ashoka Chakra); see
+        # scripts/build_india_flag_asset.py.
+        flag = (
+            f'<img src="{image_data_uri(FLAG_PATH)}" width="60" height="40" '
+            f'alt="Flag of India"/>'
+        )
+    else:
+        # Fallback: typographic tricolour with a chakra-stand-in glyph.
+        flag = (
+            f'<table width="58" align="center" cellspacing="0" cellpadding="0" '
+            f'style="border:0.75pt solid #ffffff;">'
+            f'<tr><td style="background-color:{saffron};height:10pt;font-size:1pt;'
+            f'line-height:10pt;">&nbsp;</td></tr>'
+            f'<tr><td align="center" style="background-color:#ffffff;height:14pt;'
+            f'text-align:center;vertical-align:middle;color:{navy};font-size:12pt;'
+            f'line-height:14pt;">&#10050;</td></tr>'
+            f'<tr><td style="background-color:{green};height:10pt;font-size:1pt;'
+            f'line-height:10pt;">&nbsp;</td></tr></table>'
+        )
     return (
         f'{flag}'
         f'<div style="font-size:5.5pt;color:{saffron};letter-spacing:2.2pt;'
@@ -368,11 +386,11 @@ def build_front(event_name: str, event_date: str) -> str:
     <td width="25%" style="background-color:{SIDEBAR};vertical-align:top;
                border-left:3pt solid {SECONDARY};">
         {appreciation_pdf_sidebar_stripes(accent=ACCENT, secondary=SECONDARY)}
-        <table width="100%" height="100%" cellspacing="0" cellpadding="0">
-            <tr><td align="center" valign="middle" style="text-align:center;
-                       vertical-align:middle;padding:16pt 6pt;">
+        <table width="100%" cellspacing="0" cellpadding="0">
+            <tr><td align="center" style="text-align:center;
+                       vertical-align:top;padding:20pt 6pt 0;">
                 {sidebar_block()}
-                <div style="height:40pt;font-size:1pt;line-height:40pt;">&nbsp;</div>
+                <div style="height:30pt;font-size:1pt;line-height:30pt;">&nbsp;</div>
                 {india_independence_badge()}
             </td></tr>
         </table>
