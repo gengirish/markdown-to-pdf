@@ -1175,6 +1175,53 @@ async def get_courses():
     return {"courses": _get_course_names()}
 
 
+# ---------------------------------------------------------------------------
+# Serif display font for the participation certificate (EB Garamond, SIL OFL).
+# Bundled as a subset TTF under api/fonts/. xhtml2pdf embeds it via @font-face;
+# if the file is missing at runtime (e.g. pruned from a deploy), the template
+# falls back to Helvetica rather than failing. Family name must be a single
+# unquoted token — xhtml2pdf does not strip quotes from a td's font-family, so
+# a quoted name silently falls back to the body font.
+# ---------------------------------------------------------------------------
+_CERT_FONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts", "EBGaramond-SemiBold.ttf")
+_CERT_DISPLAY_FONT_FAMILY = "GaramondPDF"
+_CERT_FONT_AVAILABLE = os.path.exists(_CERT_FONT_PATH)
+
+if _CERT_FONT_AVAILABLE:
+    try:
+        from reportlab.pdfbase import pdfmetrics as _pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont as _RLTTFont
+
+        _pdfmetrics.registerFont(_RLTTFont(_CERT_DISPLAY_FONT_FAMILY, _CERT_FONT_PATH))
+    except Exception as e:  # pragma: no cover - non-fatal, degrades to Helvetica
+        logger.warning("Certificate display font registration failed: %s", e)
+        _CERT_FONT_AVAILABLE = False
+
+
+def _participation_font_face() -> str:
+    """@font-face CSS registering the serif under both weights (name/brand/course
+    tds carry font-weight:bold, so a normal-only face would fall back to bold
+    Helvetica). Empty string when the font is unavailable."""
+    if not _CERT_FONT_AVAILABLE:
+        return ""
+    url = _CERT_FONT_PATH.replace("\\", "/")
+    return (
+        f"@font-face {{ font-family: {_CERT_DISPLAY_FONT_FAMILY}; font-weight: normal;"
+        f' src: url("{url}"); }}'
+        f"@font-face {{ font-family: {_CERT_DISPLAY_FONT_FAMILY}; font-weight: bold;"
+        f' src: url("{url}"); }}'
+    )
+
+
+def _pdf_link_callback(uri: str, rel: str) -> str:
+    """Resolve local file paths (bundled fonts) for xhtml2pdf; pass through the
+    base64 data: URIs used for QR codes and signatures unchanged."""
+    if uri.startswith("data:"):
+        return uri
+    path = uri[7:] if uri.startswith("file://") else uri
+    return path if os.path.isfile(path) else uri
+
+
 def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
     """Render certificate compact data into PDF bytes."""
     qr_data_uri = _generate_qr_data_uri(verify_url) if verify_url else ""
@@ -1261,10 +1308,14 @@ def _build_cert_pdf(data: dict, verify_url: str = "") -> bytes:
                 _generate_signature_data_uri(),
                 _generate_signature_data_uri(data["i"]),
             ),
+            font_face=_participation_font_face(),
+            display_font=_CERT_DISPLAY_FONT_FAMILY if _CERT_FONT_AVAILABLE else "Helvetica",
             **_participation_branding_html(),
         )
     pdf_buffer = BytesIO()
-    pisa_status = pisa.CreatePDF(src=full_html, dest=pdf_buffer, encoding="UTF-8")
+    pisa_status = pisa.CreatePDF(
+        src=full_html, dest=pdf_buffer, encoding="UTF-8", link_callback=_pdf_link_callback
+    )
     if pisa_status.err:
         logging.error("PDF generation failed: %s", pisa_status.log)
         raise Exception("Error generating certificate PDF")

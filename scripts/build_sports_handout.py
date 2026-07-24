@@ -115,54 +115,56 @@ def stacked_letters(word: str) -> str:
 def header_bar() -> str:
     """Sponsor header.
 
-    Local copy rather than appreciation_header_html(): that helper lets its
-    right-hand logo table expand to the full 50% cell, so the mark drifts to
-    the middle of the sheet. Giving the logo table an explicit width lets
-    align="right" actually float it to the right edge.
+    Local copy rather than appreciation_header_html(). xhtml2pdf resolves
+    align="right" against the enclosing cell rather than the table, so a
+    right-hand group built from stacked tables comes apart - the label flies
+    to the margin while the logo stays put. Instead the row is three columns
+    with a narrow right-hand cell, and everything inside it aligns left.
     """
     label = (
         f"font-size:5.5pt;color:{ACCENT};letter-spacing:1.2pt;"
         f"text-transform:uppercase;font-weight:bold;"
     )
-    rule = f"border-top:1px solid {ACCENT};font-size:1pt;line-height:1pt;width:46pt;"
+    # Underline sits in its own table - as a second row under the label it set
+    # the shared column width and wrapped the label onto two lines.
+    rule = f"border-top:1px solid {ACCENT};font-size:1pt;line-height:1pt;"
     return f"""
 <table width="100%" cellspacing="0" cellpadding="0" style="background-color:{HEADER_BG};">
 <tr>
-    <td width="50%" style="padding:9pt 0 10pt 20pt;vertical-align:bottom;">
+    <td width="55%" style="padding:9pt 0 10pt 20pt;vertical-align:bottom;">
         <table cellspacing="0" cellpadding="0">
             <tr><td style="{label}">Sponsored by</td></tr>
+        </table>
+        <table width="46" cellspacing="0" cellpadding="0">
             <tr><td style="{rule}">&nbsp;</td></tr>
         </table>
-        <table cellspacing="0" cellpadding="0" style="margin-top:5pt;"><tr>
-            <td style="background-color:{AI_COLOR};color:#ffffff;font-weight:bold;font-size:9pt;
-                       width:15pt;height:15pt;text-align:center;vertical-align:middle;">I</td>
-            <td style="background-color:{ACCENT};color:#ffffff;font-weight:bold;font-size:9pt;
-                       width:15pt;height:15pt;text-align:center;vertical-align:middle;">F</td>
+        <table width="118" cellspacing="0" cellpadding="0" style="margin-top:5pt;"><tr>
+            <td width="15" style="background-color:{AI_COLOR};color:#ffffff;font-weight:bold;
+                       font-size:9pt;height:15pt;text-align:center;vertical-align:middle;">I</td>
+            <td width="15" style="background-color:{ACCENT};color:#ffffff;font-weight:bold;
+                       font-size:9pt;height:15pt;text-align:center;vertical-align:middle;">F</td>
             <td style="padding-left:6pt;vertical-align:middle;">
                 <div style="font-size:10pt;font-weight:bold;color:#ffffff;line-height:1.15;">
                     IntelliForge <span style="color:{AI_COLOR};">AI</span></div>
             </td>
         </tr></table>
     </td>
-    <td width="50%" align="right" style="padding:9pt 20pt 10pt 0;vertical-align:bottom;
-               text-align:right;">
-        <table width="112" align="right" cellspacing="0" cellpadding="0"><tr><td>
-            <table width="100%" cellspacing="0" cellpadding="0">
-                <tr><td align="right" style="{label}text-align:right;">Event technology by</td></tr>
-                <tr><td align="right" style="{rule}">&nbsp;</td></tr>
-            </table>
-            <table width="100%" cellspacing="0" cellpadding="0" style="margin-top:5pt;">
-                <tr>
-                    <td width="15" style="background-color:{SECONDARY};color:{HEADER_BG};
-                               font-weight:bold;font-size:9pt;height:15pt;text-align:center;
-                               vertical-align:middle;">M</td>
-                    <td style="padding-left:6pt;vertical-align:middle;">
-                        <div style="font-size:10pt;font-weight:bold;color:#ffffff;line-height:1.15;"
-                            >maidaan<span style="color:{SECONDARY};">.academy</span></div>
-                    </td>
-                </tr>
-            </table>
-        </td></tr></table>
+    <td width="29%">&nbsp;</td>
+    <td width="16%" style="padding:9pt 20pt 10pt 0;vertical-align:bottom;">
+        <table cellspacing="0" cellpadding="0">
+            <tr><td style="{label}">Event technology by</td></tr>
+        </table>
+        <table width="46" cellspacing="0" cellpadding="0">
+            <tr><td style="{rule}">&nbsp;</td></tr>
+        </table>
+        <table width="112" cellspacing="0" cellpadding="0" style="margin-top:5pt;"><tr>
+            <td width="15" style="background-color:{SECONDARY};color:{HEADER_BG};font-weight:bold;
+                       font-size:9pt;height:15pt;text-align:center;vertical-align:middle;">M</td>
+            <td style="padding-left:6pt;vertical-align:middle;">
+                <div style="font-size:10pt;font-weight:bold;color:#ffffff;line-height:1.15;"
+                    >maidaan<span style="color:{SECONDARY};">.academy</span></div>
+            </td>
+        </tr></table>
     </td>
 </tr>
 </table>

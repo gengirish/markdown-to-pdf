@@ -12,6 +12,7 @@ CERTIFICATE_PARTICIPATION_HTML = """
 <head>
     <meta charset="UTF-8">
     <style>
+        {font_face}
         @page {{
             size: 842pt 595pt;
             margin: 0;
@@ -44,7 +45,7 @@ CERTIFICATE_PARTICIPATION_HTML = """
             <tr><td align="center" style="font-size: 8pt; letter-spacing: 4pt; color: #d4af37; font-weight: bold; padding-bottom: 4pt; text-align: center;">
                 {org_tagline}
             </td></tr>
-            <tr><td align="center" style="font-size: 24pt; font-weight: bold; color: #ffffff; padding: 6pt 0 12pt; text-align: center;">
+            <tr><td align="center" style="font-size: 25pt; font-weight: bold; color: #ffffff; padding: 6pt 0 12pt; text-align: center; font-family: {display_font};">
                 {brand_name}
             </td></tr>
             <tr><td align="center" style="text-align: center; padding: 0;">
@@ -75,7 +76,7 @@ CERTIFICATE_PARTICIPATION_HTML = """
             <tr><td align="center" style="text-align: center; font-size: 8pt; letter-spacing: 3pt; color: #a0aec0; padding-bottom: 6pt;">
                 THIS CERTIFICATE IS AWARDED TO
             </td></tr>
-            <tr><td align="center" style="text-align: center; font-size: 32pt; font-weight: bold; color: #1a202c; padding: 4pt 0 2pt;">
+            <tr><td align="center" style="text-align: center; font-size: 34pt; font-weight: bold; color: #1a202c; padding: 4pt 0 2pt; font-family: {display_font};">
                 {participant_name}
             </td></tr>
         </table>
@@ -86,7 +87,7 @@ CERTIFICATE_PARTICIPATION_HTML = """
 
         <table width="100%" cellspacing="0" cellpadding="0">
             <tr><td align="center" style="text-align: center; font-size: 1pt; padding-top: 10pt;">&nbsp;</td></tr>
-            <tr><td align="center" style="text-align: center; font-size: 15pt; font-weight: bold; color: #553c9a; padding-bottom: 20pt;">
+            <tr><td align="center" style="text-align: center; font-size: 16pt; font-weight: bold; color: #553c9a; padding-bottom: 20pt; font-family: {display_font};">
                 {course_name}
             </td></tr>
         </table>

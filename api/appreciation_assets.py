@@ -44,15 +44,19 @@ def appreciation_header_html(
         f"font-size:5.5pt;color:{accent};letter-spacing:1.2pt;"
         f"text-transform:uppercase;font-weight:bold;"
     )
-    rule = f"border-top:1px solid {accent};font-size:1pt;line-height:1pt;width:46pt;"
+    # The 46pt underline lives in its own table: as a second row of the label
+    # table it set the shared column width, wrapping "EVENT TECHNOLOGY BY"
+    # onto two lines.
+    rule = f"border-top:1px solid {accent};font-size:1pt;line-height:1pt;"
     return (
         f'<table width="100%" cellspacing="0" cellpadding="0" '
         f'style="background-color:{header_bg};">'
         f"<tr>"
         f'<td width="50%" style="padding:8pt 16pt 10pt;vertical-align:bottom;">'
         f'<table cellspacing="0" cellpadding="0"><tr>'
-        f'<td style="{label}">Sponsored by</td></tr>'
-        f'<tr><td style="{rule}">&nbsp;</td></tr></table>'
+        f'<td style="{label}">Sponsored by</td></tr></table>'
+        f'<table width="46" cellspacing="0" cellpadding="0"><tr>'
+        f'<td style="{rule}">&nbsp;</td></tr></table>'
         f'<table cellspacing="0" cellpadding="0" style="margin-top:5pt;"><tr>'
         f'<td style="background-color:{ai_color};color:#ffffff;font-weight:bold;'
         f"font-size:9pt;width:15pt;height:15pt;text-align:center;"
@@ -67,8 +71,10 @@ def appreciation_header_html(
         f'<td width="50%" align="right" style="padding:8pt 16pt 10pt;'
         f'vertical-align:bottom;text-align:right;">'
         f'<table cellspacing="0" cellpadding="0" align="right"><tr>'
-        f'<td align="right" style="{label}text-align:right;">Event technology by</td></tr>'
-        f'<tr><td align="right" style="{rule}">&nbsp;</td></tr></table>'
+        f'<td align="right" style="{label}text-align:right;">Event technology by</td>'
+        f"</tr></table>"
+        f'<table width="46" align="right" cellspacing="0" cellpadding="0"><tr>'
+        f'<td style="{rule}">&nbsp;</td></tr></table>'
         f'<table cellspacing="0" cellpadding="0" align="right" style="margin-top:5pt;"><tr>'
         f'<td style="background-color:{secondary};color:#07070E;font-weight:bold;'
         f"font-size:9pt;width:15pt;height:15pt;text-align:center;"
