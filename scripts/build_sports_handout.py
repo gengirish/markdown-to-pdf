@@ -56,6 +56,19 @@ HEADER_BG = APPRECIATION_HEADER_BG
 GREEN = APPRECIATION_GREEN_ACCENT
 AI_COLOR = "#7B6FFF"
 
+# Ink scale tuned for >=4.5:1 contrast on the light page background (#f8faf9)
+# and white cards, per the accessibility-first pass. The old #718096/#a0aec0
+# label greys measured ~3.6:1 and ~1.9:1 respectively and failed WCAG AA for
+# the small caption sizes used here.
+INK = "#1a202c"       # primary text
+MUTED = "#4a5568"     # section labels / secondary text  (~7:1)
+CAPTION = "#5f6b7a"   # smallest sub-captions             (~5:1)
+
+# Sobha Dream Gardens host brand. The wordmark is recreated typographically
+# (SOBHA in a spaced serif, "dream" in the brand red, "gardens" in black) since
+# no logo asset ships in the repo; swap in a base64 image here if one is added.
+SDG_RED = "#E5322B"
+
 URL_MAIN = "https://www.intelliforge.tech/"
 URL_LEARNING = "https://learning.intelliforge.tech/"
 URL_UPSKILL = "https://upskill.intelliforge.tech/"
@@ -70,8 +83,10 @@ PAGE_H = 595
 # spills a stray blank page the moment content exceeds the page box, so these
 # are tuned by hand and sit ~5pt under a perfect fit. Re-measure by rendering
 # with pdftoppm if the copy length changes; one point too many splits a page.
-H_FRONT_FILL = 40
-H_BACK_FILL = 25
+# The back page now nearly fills itself: its three info columns bottom-pin
+# their QR CTAs, so only a few points of slack remain before the footer.
+H_FRONT_FILL = 8
+H_BACK_FILL = 6
 
 RECOGNITION_TEXT = (
     "in recognition of outstanding participation, sportsmanship and team spirit "
@@ -172,16 +187,42 @@ def header_bar() -> str:
 
 
 def sidebar_block() -> str:
+    """Vertical 'CERTIFICATE OF APPRECIATION' title (centered in the sidebar)."""
     line1 = stacked_letters("CERTIFICATE")
     line2 = "<br/><br/>".join(stacked_letters(w) for w in "OF APPRECIATION".split())
     return (
-        f'<table width="100%" height="100%"><tr><td align="center" valign="middle" '
-        f'style="text-align:center;vertical-align:middle;border-left:3pt solid {SECONDARY};'
-        f'padding-top:8pt;">'
         f'<div style="color:#ffffff;font-weight:bold;font-size:11pt;line-height:1.12;">{line1}</div>'
         f'<div style="color:#ffffff;font-size:5.5pt;letter-spacing:1pt;margin-top:14pt;'
         f'line-height:1.2;">{line2}</div>'
-        f"</td></tr></table>"
+    )
+
+
+def india_independence_badge() -> str:
+    """India Independence Day emblem: a mini tricolour with an Ashoka-chakra
+    stand-in glyph (the true wheel U+2638 is tofu in xhtml2pdf's base fonts, so
+    U+2742 — a circled spoked star — carries the wheel), sized for the dark
+    sidebar foot. Uses the official flag saffron/green rather than the doc's
+    poster orange."""
+    saffron, green, navy = "#FF9933", "#138808", "#000080"
+    flag = (
+        f'<table width="58" align="center" cellspacing="0" cellpadding="0" '
+        f'style="border:0.75pt solid #ffffff;">'
+        f'<tr><td style="background-color:{saffron};height:10pt;font-size:1pt;'
+        f'line-height:10pt;">&nbsp;</td></tr>'
+        f'<tr><td align="center" style="background-color:#ffffff;height:14pt;'
+        f'text-align:center;vertical-align:middle;color:{navy};font-size:12pt;'
+        f'line-height:14pt;">&#10050;</td></tr>'
+        f'<tr><td style="background-color:{green};height:10pt;font-size:1pt;'
+        f'line-height:10pt;">&nbsp;</td></tr></table>'
+    )
+    return (
+        f'{flag}'
+        f'<div style="font-size:5.5pt;color:{saffron};letter-spacing:2.2pt;'
+        f'font-weight:bold;text-transform:uppercase;padding-top:8pt;">Celebrating</div>'
+        f'<div style="font-size:8.5pt;color:#ffffff;letter-spacing:0.8pt;font-weight:bold;'
+        f'text-transform:uppercase;padding-top:2pt;line-height:1.15;">Independence<br/>Day</div>'
+        f'<div style="font-size:6pt;color:{saffron};letter-spacing:1.4pt;font-weight:bold;'
+        f'padding-top:5pt;">15 AUGUST</div>'
     )
 
 
@@ -192,18 +233,45 @@ def field_box(label: str, value: str, width: str) -> str:
     directly to a <table>, which pushes the label out over its own border.
     """
     if value:
-        inner = f'<div style="font-size:11pt;color:#1a202c;font-weight:bold;">{esc(value)}</div>'
+        inner = f'<div style="font-size:13pt;color:{INK};font-weight:bold;">{esc(value)}</div>'
     else:
-        inner = blank_rule(width="100%", height="17pt", color="#4a5568")
+        inner = blank_rule(width="100%", height="18pt", color="#4a5568")
     return (
         f'<table width="{width}" cellspacing="0" cellpadding="0" '
         f'style="background-color:#ffffff;border:1.5pt solid {ACCENT};'
         f'border-top:3pt solid {SECONDARY};">'
         f'<tr><td style="padding:8pt 12pt 9pt;">'
-        f'<div style="font-size:6.5pt;color:{ACCENT};text-transform:uppercase;'
+        f'<div style="font-size:8pt;color:{ACCENT};text-transform:uppercase;'
         f'letter-spacing:0.9pt;font-weight:bold;padding-bottom:5pt;">&#9654; {esc(label)}</div>'
         f"{inner}"
         f"</td></tr></table>"
+    )
+
+
+def sobha_wordmark(sobha_pt: float = 10.5, main_pt: float = 21) -> str:
+    """Typographic recreation of the Sobha Dream Gardens wordmark.
+
+    SOBHA sits above in spaced serif caps; "dream" (brand red, bold) runs into
+    "gardens" (black) as one lowercase word, matching the logo lockup. Times is
+    the only serif xhtml2pdf ships, so it stands in for the display serif.
+    """
+    return (
+        f'<div style="font-family:Times,\'Times New Roman\',serif;font-size:{sobha_pt}pt;'
+        f'color:{INK};letter-spacing:5pt;line-height:1;">SOBHA</div>'
+        f'<div style="font-family:Helvetica,Arial,sans-serif;font-size:{main_pt}pt;'
+        f'line-height:1;padding-top:2pt;">'
+        f'<span style="color:{SDG_RED};font-weight:bold;">dream</span>'
+        f'<span style="color:{INK};">gardens</span></div>'
+    )
+
+
+def sobha_host_lockup() -> str:
+    """'Tournament hosted at' host/venue endorsement for the certificate front."""
+    return (
+        f'<div style="font-size:7.5pt;color:{MUTED};letter-spacing:1.6pt;'
+        f'text-transform:uppercase;font-weight:bold;padding-bottom:8pt;">'
+        f"Tournament hosted at</div>"
+        f"{sobha_wordmark()}"
     )
 
 
@@ -233,23 +301,23 @@ def build_front(event_name: str, event_date: str) -> str:
                 </td>
                 <td style="padding-left:8pt;border-left:2pt solid {SECONDARY};">
                     <table width="100%" cellspacing="0" cellpadding="0">
-                        <tr><td style="font-size:7.5pt;color:#718096;letter-spacing:0.9pt;
+                        <tr><td style="font-size:9.5pt;color:{MUTED};letter-spacing:0.9pt;
                                        text-transform:uppercase;font-weight:bold;
                                        padding-bottom:6pt;">Presented to</td></tr>
                         <tr><td>{blank_rule(height="30pt", color=ACCENT)}</td></tr>
-                        <tr><td style="font-size:6.5pt;color:#a0aec0;letter-spacing:0.6pt;
+                        <tr><td style="font-size:7.5pt;color:{CAPTION};letter-spacing:0.6pt;
                                        padding-top:3pt;">FULL NAME OF PARTICIPANT</td></tr>
-                        <tr><td style="font-size:7.5pt;color:#718096;letter-spacing:0.9pt;
+                        <tr><td style="font-size:9.5pt;color:{MUTED};letter-spacing:0.9pt;
                                        text-transform:uppercase;font-weight:bold;
                                        padding:14pt 0 4pt;">Award / Position</td></tr>
                         <tr><td>{blank_rule(width="70%", height="24pt", color=SIDEBAR)}</td></tr>
-                        <tr><td style="font-size:10.5pt;color:#2d3748;line-height:1.6;
+                        <tr><td style="font-size:13pt;color:#2d3748;line-height:1.6;
                                        padding-top:15pt;">{RECOGNITION_TEXT}</td></tr>
                     </table>
                 </td>
             </tr>
             <tr>
-                <td colspan="2" style="padding-top:58pt;">
+                <td colspan="2" style="padding-top:38pt;">
                     <table width="100%" cellspacing="0" cellpadding="0">
                         <tr>
                             <td width="40%" valign="bottom" style="vertical-align:bottom;">
@@ -264,12 +332,13 @@ def build_front(event_name: str, event_date: str) -> str:
                 </td>
             </tr>
             <tr>
-                <td colspan="2" style="padding-top:68pt;">
+                <td colspan="2" style="padding-top:32pt;">
                     <table width="100%" cellspacing="0" cellpadding="0">
                         <tr>
                             <td width="44%" valign="bottom" style="vertical-align:bottom;">
+                                <div style="padding-bottom:26pt;">{sobha_host_lockup()}</div>
                                 {blank_rule(width="84%", height="22pt", color="#4a5568")}
-                                <div style="font-size:7pt;color:#718096;letter-spacing:0.8pt;
+                                <div style="font-size:8.5pt;color:{MUTED};letter-spacing:0.8pt;
                                             text-transform:uppercase;padding-top:4pt;
                                             font-weight:bold;">Authorised Signatory</div>
                             </td>
@@ -281,10 +350,10 @@ def build_front(event_name: str, event_date: str) -> str:
                                     <td align="center" style="text-align:center;padding:6pt;">
                                         <img src="{qr_data_uri(URL_CERTS)}" width="50" height="50" alt="QR"/>
                                     </td>
-                                    <td style="padding:6pt 12pt 6pt 2pt;font-size:7pt;color:#718096;
+                                    <td style="padding:6pt 12pt 6pt 2pt;font-size:8.5pt;color:{MUTED};
                                                vertical-align:middle;">
                                         Claim your <strong>verifiable</strong><br/>digital certificate<br/>
-                                        <span style="font-family:monospace;font-size:6.5pt;
+                                        <span style="font-family:monospace;font-size:7.5pt;
                                                      color:{ACCENT};">certs.intelliforge.tech</span>
                                     </td>
                                 </tr>
@@ -296,9 +365,17 @@ def build_front(event_name: str, event_date: str) -> str:
             </tr>
         </table>
     </td>
-    <td width="25%" style="background-color:{SIDEBAR};vertical-align:top;">
+    <td width="25%" style="background-color:{SIDEBAR};vertical-align:top;
+               border-left:3pt solid {SECONDARY};">
         {appreciation_pdf_sidebar_stripes(accent=ACCENT, secondary=SECONDARY)}
-        {sidebar_block()}
+        <table width="100%" height="100%" cellspacing="0" cellpadding="0">
+            <tr><td align="center" valign="middle" style="text-align:center;
+                       vertical-align:middle;padding:16pt 6pt;">
+                {sidebar_block()}
+                <div style="height:40pt;font-size:1pt;line-height:40pt;">&nbsp;</div>
+                {india_independence_badge()}
+            </td></tr>
+        </table>
     </td>
 </tr>
 <tr><td colspan="3" style="padding:0;">
@@ -332,26 +409,30 @@ def info_column(
     items: list[str],
     accent: str,
 ) -> str:
+    # Two-row column: the content cell claims full height (valign top) so the
+    # QR footer (valign bottom) pins to a common baseline across all three
+    # columns, regardless of how many bullets each carries.
     return f"""
 <table width="100%" height="100%" cellspacing="0" cellpadding="0"
        style="background-color:#ffffff;border:1pt solid #e2e8f0;border-top:3.5pt solid {accent};">
-<tr><td style="padding:10pt 11pt 10pt;vertical-align:top;">
+<tr><td height="100%" style="padding:10pt 11pt 4pt;vertical-align:top;">
     <table width="100%" cellspacing="0" cellpadding="0">
         <tr><td style="font-size:6pt;color:{accent};letter-spacing:1.1pt;text-transform:uppercase;
                        font-weight:bold;padding-bottom:4pt;">{kicker}</td></tr>
-        <tr><td style="font-size:11.5pt;font-weight:bold;color:#111827;line-height:1.15;
+        <tr><td style="font-size:11.5pt;font-weight:bold;color:{INK};line-height:1.15;
                        padding-bottom:4pt;">{esc(title)}</td></tr>
         <tr><td style="font-size:6.8pt;font-family:monospace;color:{accent};
                        padding-bottom:7pt;">{esc(domain)}</td></tr>
-        <tr><td style="font-size:7.8pt;color:#4a5568;line-height:1.45;padding-bottom:8pt;">
+        <tr><td style="font-size:7.8pt;color:{MUTED};line-height:1.45;padding-bottom:8pt;">
             {blurb}</td></tr>
         <tr><td style="border-top:1pt solid #edf2f7;padding-top:7pt;">{bullet_list(items)}</td></tr>
-        <tr><td align="center" style="text-align:center;padding-top:9pt;">
-            <img src="{qr_data_uri(url, box_size=3)}" width="58" height="58" alt="QR"/>
-            <div style="font-size:5.6pt;color:#a0aec0;letter-spacing:0.7pt;padding-top:2pt;
-                        text-transform:uppercase;">Scan to open</div>
-        </td></tr>
     </table>
+</td></tr>
+<tr><td style="padding:6pt 11pt 11pt;vertical-align:bottom;text-align:center;
+               border-top:1pt solid #edf2f7;">
+    <img src="{qr_data_uri(url, box_size=3)}" width="58" height="58" alt="QR"/>
+    <div style="font-size:5.6pt;color:{CAPTION};letter-spacing:0.7pt;padding-top:2pt;
+                text-transform:uppercase;">Scan to open</div>
 </td></tr></table>
 """
 
