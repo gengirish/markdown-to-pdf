@@ -250,8 +250,11 @@ API_TAGS = [
     {"name": "System", "description": "Health checks and API metadata"},
 ]
 
+from api.core.worker import lifespan
+
 app = FastAPI(
     title="PDF Cert Generator API",
+    lifespan=lifespan,
     description=(
         "**API-first PDF certificate generation.**\n\n"
         "Generate tamper-proof participation and VTU-style internship completion certificates as downloadable PDFs with shareable URLs. "
@@ -279,8 +282,23 @@ app.add_middleware(
     allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
-    allow_headers=["*"],
 )
+
+from api.routes.orgs import router as orgs_router
+from api.routes.templates import router as templates_router
+from api.routes.studio import router as studio_router
+from api.routes.verify import router as verify_router
+from api.routes.passports import router as passports_router, claims_router
+from api.routes.billing import router as billing_router, webhooks_router
+
+app.include_router(orgs_router, prefix="/api/v1")
+app.include_router(studio_router, prefix="/api/v1")
+app.include_router(templates_router, prefix="/api/v1")
+app.include_router(verify_router, prefix="/api/v1")
+app.include_router(passports_router, prefix="/api/v1")
+app.include_router(claims_router, prefix="/api/v1")
+app.include_router(billing_router, prefix="/api/v1")
+app.include_router(webhooks_router, prefix="/api/v1")
 
 
 def _error_type(status_code: int) -> str:
