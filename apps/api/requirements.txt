@@ -9,3 +9,7 @@ Pillow==11.1.0
 psycopg2-binary==2.9.10
 agentmail==0.4.15
 httpx>=0.21.2
+procrastinate
+sqlalchemy
+alembic
+psycopg[binary]
