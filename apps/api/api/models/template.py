@@ -3,8 +3,8 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Boolean, ForeignKey, Text
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, JSONB
+from sqlalchemy import String, Boolean, ForeignKey, Text, JSON
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from api.models import Base
@@ -23,7 +23,7 @@ class Template(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     html_source: Mapped[str] = mapped_column(Text, nullable=False)
-    variables: Mapped[dict] = mapped_column(JSONB, nullable=False, default=list)
+    variables: Mapped[dict] = mapped_column(JSON, nullable=False, default=list)
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)

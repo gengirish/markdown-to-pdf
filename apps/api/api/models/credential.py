@@ -3,8 +3,8 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Integer, Text, ForeignKey, Index
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, JSONB
+from sqlalchemy import String, Integer, Text, ForeignKey, Index, JSON
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from api.models import Base
@@ -32,7 +32,7 @@ class CredentialBatch(Base):
     status: Mapped[str] = mapped_column(
         String(50), nullable=False, default="pending"
     )  # pending, processing, completed, failed
-    error_report: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error_report: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
@@ -76,7 +76,7 @@ class Credential(Base):
     recipient_name: Mapped[str] = mapped_column(String(255), nullable=False)
     recipient_email: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    metadata_: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
     pdf_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     hmac_signature: Mapped[str] = mapped_column(String(64), nullable=False)
     legacy_token: Mapped[str | None] = mapped_column(Text, nullable=True)

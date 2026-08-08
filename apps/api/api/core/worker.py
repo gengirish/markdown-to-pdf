@@ -168,3 +168,41 @@ def _process_batch_sync(batch_id: uuid.UUID):
         session.commit()
         
         logger.info(f"Batch {batch_id} completed: {success_count} succeeded, {failed_count} failed.")
+
+        # Dispatch Webhooks
+        try:
+            from api.models.api_key import WebhookEndpoint
+            import httpx
+            import hmac
+            import hashlib
+            import json
+
+            webhooks = session.query(WebhookEndpoint).filter_by(org_id=batch.org_id, active=True).all()
+            if webhooks:
+                payload = {
+                    "event": "batch.completed",
+                    "data": {
+                        "batch_id": str(batch.id),
+                        "status": batch.status,
+                        "succeeded": batch.succeeded,
+                        "failed": batch.failed,
+                        "completed_at": batch.completed_at.isoformat()
+                    }
+                }
+                payload_bytes = json.dumps(payload).encode('utf-8')
+                
+                with httpx.Client(timeout=5.0) as client:
+                    for wh in webhooks:
+                        if "batch.completed" in wh.events:
+                            signature = hmac.new(wh.secret.encode('utf-8'), payload_bytes, hashlib.sha256).hexdigest()
+                            headers = {
+                                "Content-Type": "application/json",
+                                "x-certforge-signature": signature
+                            }
+                            try:
+                                client.post(wh.url, content=payload_bytes, headers=headers)
+                                logger.info(f"Webhook dispatched to {wh.url}")
+                            except Exception as e:
+                                logger.warning(f"Failed to dispatch webhook to {wh.url}: {e}")
+        except Exception as e:
+            logger.error(f"Webhook dispatch error: {e}")

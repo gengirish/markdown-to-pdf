@@ -57,6 +57,41 @@ def verify_api(credential_id: str):
         raise HTTPException(status_code=404, detail="Credential not found or invalid signature")
     return ApiResponse.ok(data)
 
+@router.get("/credentials/{public_id}/badge.json", response_model=dict)
+def get_open_badge_json(public_id: str):
+    """Export the credential in Open Badges 3.0 JSON-LD format."""
+    with get_db() as session:
+        cred = session.query(Credential).filter_by(public_id=public_id).first()
+        if not cred or cred.status == "revoked":
+            raise HTTPException(status_code=404, detail="Credential not found or revoked")
+            
+        org = session.query(Organization).filter_by(id=cred.org_id).first()
+        
+        # Construct Open Badges 3.0 JSON-LD Document
+        return {
+            "@context": [
+                "https://www.w3.org/2018/credentials/v1",
+                "https://purl.imsglobal.org/spec/ob/v3p0/context.json"
+            ],
+            "id": f"urn:uuid:{cred.public_id}",
+            "type": ["VerifiableCredential", "OpenBadgeCredential"],
+            "issuer": {
+                "id": f"https://certs.intelliforge.tech/orgs/{org.slug}",
+                "type": "Profile",
+                "name": org.name,
+            },
+            "issuanceDate": cred.issued_at.isoformat() if cred.issued_at else None,
+            "credentialSubject": {
+                "type": "AchievementSubject",
+                "achievement": {
+                    "id": f"https://certs.intelliforge.tech/api/v1/credentials/{cred.public_id}",
+                    "type": "Achievement",
+                    "name": cred.title,
+                    "description": cred.metadata_.get("description", f"Credential for {cred.title}"),
+                }
+            }
+        }
+
 @router.get("/verify/{credential_id}", response_class=HTMLResponse)
 def verify_page(credential_id: str):
     """HTML public viewer for a credential."""

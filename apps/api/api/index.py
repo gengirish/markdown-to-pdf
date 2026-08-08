@@ -290,6 +290,7 @@ from api.routes.studio import router as studio_router
 from api.routes.verify import router as verify_router
 from api.routes.passports import router as passports_router, claims_router
 from api.routes.billing import router as billing_router, webhooks_router
+from api.routes.developers import router as developers_router
 
 app.include_router(orgs_router, prefix="/api/v1")
 app.include_router(studio_router, prefix="/api/v1")
@@ -299,6 +300,7 @@ app.include_router(passports_router, prefix="/api/v1")
 app.include_router(claims_router, prefix="/api/v1")
 app.include_router(billing_router, prefix="/api/v1")
 app.include_router(webhooks_router, prefix="/api/v1")
+app.include_router(developers_router, prefix="/api/v1")
 
 
 def _error_type(status_code: int) -> str:

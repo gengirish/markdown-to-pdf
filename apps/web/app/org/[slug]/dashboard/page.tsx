@@ -105,6 +105,58 @@ export default function OrgDashboard({ params }: { params: { slug: string } }) {
               </div>
             )}
           </div>
+          </div>
+
+          <div className="bg-zinc-900/50 backdrop-blur-xl border border-zinc-800 rounded-2xl p-8 mt-8">
+            <h2 className="text-xl font-medium text-white mb-2">Developer Settings</h2>
+            <p className="text-zinc-400 mb-6 text-sm">Manage your API keys and Webhook endpoints for programatic access.</p>
+            
+            <div className="space-y-6">
+              {/* API Keys */}
+              <div className="border border-zinc-800 rounded-xl overflow-hidden">
+                <div className="bg-zinc-800/50 px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
+                  <h3 className="font-medium text-zinc-200">API Keys</h3>
+                  <button className="text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-md transition-colors">
+                    Generate New Key
+                  </button>
+                </div>
+                <div className="p-4">
+                  <div className="flex items-center justify-between text-sm">
+                    <div>
+                      <p className="font-medium text-zinc-300">Production Key 1</p>
+                      <p className="text-zinc-500 font-mono mt-1">cf_prod_************************</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-zinc-500 mb-1">Created 2 days ago</p>
+                      <button className="text-red-400 hover:text-red-300 transition-colors">Revoke</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Webhooks */}
+              <div className="border border-zinc-800 rounded-xl overflow-hidden">
+                <div className="bg-zinc-800/50 px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
+                  <h3 className="font-medium text-zinc-200">Webhook Endpoints</h3>
+                  <button className="text-sm bg-zinc-700 hover:bg-zinc-600 text-white px-3 py-1.5 rounded-md transition-colors">
+                    Add Endpoint
+                  </button>
+                </div>
+                <div className="p-4">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-3">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                      <div>
+                        <p className="font-medium text-zinc-300">https://api.example.com/webhooks/certforge</p>
+                        <p className="text-zinc-500 mt-1">Events: batch.completed</p>
+                      </div>
+                    </div>
+                    <button className="text-red-400 hover:text-red-300 transition-colors">Delete</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Right Column: Usage & Stats */}

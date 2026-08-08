@@ -43,6 +43,7 @@ def setup_db():
         patch("api.routes.studio.get_db", override_get_db),
         patch("api.routes.templates.get_db", override_get_db),
         patch("api.routes.verify.get_db", override_get_db),
+        patch("api.routes.developers.get_db", override_get_db),
     ]
     for p in patchers:
         p.start()
