@@ -157,7 +157,6 @@ export default function OrgDashboard({ params }: { params: { slug: string } }) {
               </div>
             </div>
           </div>
-        </div>
 
         {/* Right Column: Usage & Stats */}
         <div className="space-y-8">
