@@ -4,6 +4,7 @@ Run with: python test_api.py
 Requires: pip install requests
 """
 
+import os
 import sys
 import io
 import requests
@@ -12,6 +13,13 @@ if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 BASE_URL = "http://localhost:8000"
+
+# When the server has CERT_API_KEYS configured, creation endpoints require an
+# X-API-Key header — the same-origin browser bypass does not apply to requests
+# issued from here. Send the first configured key so the auth path stays under
+# test; against a server without CERT_API_KEYS the header is simply ignored.
+API_KEY = (os.environ.get("CERT_API_KEYS", "").split(",") + [""])[0].strip()
+AUTH_HEADERS = {"X-API-Key": API_KEY} if API_KEY else {}
 RESULTS: list[tuple[str, bool]] = []
 
 
@@ -65,7 +73,7 @@ def _create_cert(**overrides) -> requests.Response:
         "instructor_name": "Certificate Team",
         **overrides,
     }
-    return requests.post(f"{BASE_URL}/api/certificate", json=body)
+    return requests.post(f"{BASE_URL}/api/certificate", json=body, headers=AUTH_HEADERS)
 
 
 def test_certificate_creation():
@@ -104,7 +112,7 @@ def test_internship_certificate():
         "mentor_name": "Industry Mentor",
         "institution_name": "Sample Engineering College",
     }
-    r = requests.post(f"{BASE_URL}/api/certificate", json=body)
+    r = requests.post(f"{BASE_URL}/api/certificate", json=body, headers=AUTH_HEADERS)
     data = r.json()
     record("POST internship certificate returns 200", r.status_code == 200)
     record("Internship certificate_kind in response", data.get("certificate_kind") == "internship")
@@ -148,7 +156,7 @@ def _create_invoice(**overrides) -> requests.Response:
         ],
         **overrides,
     }
-    return requests.post(f"{BASE_URL}/api/invoice", json=body)
+    return requests.post(f"{BASE_URL}/api/invoice", json=body, headers=AUTH_HEADERS)
 
 
 def test_invoice_creation():

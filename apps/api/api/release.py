@@ -28,8 +28,25 @@ def _run_migrations() -> None:
     logger.info("Alembic migrations applied.")
 
 
+def _queue_schema_present() -> bool:
+    """True once Procrastinate's tables exist in the target database."""
+    import psycopg
+
+    with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+        row = conn.execute("SELECT to_regclass('public.procrastinate_jobs')").fetchone()
+    return bool(row and row[0])
+
+
 async def _apply_queue_schema() -> None:
     from api.core.worker import worker_app
+
+    # apply_schema_async() executes procrastinate's schema.sql verbatim, and that
+    # file uses bare CREATE TABLE — it is a first-install step, not idempotent.
+    # Running it unguarded made every deploy after the first abort the release
+    # command, which aborts the whole deploy.
+    if _queue_schema_present():
+        logger.info("Procrastinate schema already present — skipping.")
+        return
 
     logger.info("Applying Procrastinate schema…")
     async with worker_app.open_async():

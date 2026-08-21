@@ -13,7 +13,7 @@ if sys.platform == "win32":
 import logging
 import os
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 
 import procrastinate
@@ -56,9 +56,19 @@ async def lifespan(app):
             logger.info("PROCRASTINATE_APPLY_SCHEMA=1 — applying queue schema on boot.")
             await worker_app.schema_manager.apply_schema_async()
 
-        # Start the worker in the background
-        worker = procrastinate.Worker(app=worker_app, name="fastapi_worker")
-        worker_task = asyncio.create_task(worker.run())
+        # Start the worker in the background.
+        #
+        # procrastinate.Worker is not part of the public API (it moved out of the
+        # top-level namespace and importing it raised AttributeError on boot).
+        # run_worker_async is the supported in-process entry point. Signal
+        # handlers stay off because uvicorn owns SIGINT/SIGTERM here — letting
+        # procrastinate install its own would swallow Fly's shutdown signal.
+        worker_task = asyncio.create_task(
+            worker_app.run_worker_async(
+                name="fastapi_worker",
+                install_signal_handlers=False,
+            )
+        )
         logger.info("Procrastinate background worker started in FastAPI lifespan")
 
         try:
@@ -68,8 +78,9 @@ async def lifespan(app):
             # the LISTEN/NOTIFY connection to Neon, which is what lets Neon
             # compute autosuspend instead of billing around the clock.
             logger.info("Stopping Procrastinate worker...")
-            worker.stop()
-            await worker_task
+            worker_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await worker_task
 
 
 @worker_app.task(queue="issuance")
