@@ -9,6 +9,18 @@ primary_region = "iad"
   # Apply the Procrastinate schema from a release_command, not on every boot.
   PROCRASTINATE_APPLY_SCHEMA = "0"
 
+  # IS_PROD keys off VERCEL_ENV or ENV. Nothing sets VERCEL_ENV off Vercel, so
+  # after the cutover the API considered itself non-production and would fall
+  # back to dev defaults (ADMIN_KEY="admin-dev-key", a dev CERT_SECRET) instead
+  # of refusing to boot when a secret is missing.
+  ENV = "production"
+
+  # Vercel rewrites /api, /certificate and /invoice here as a proxy, so
+  # request.base_url reads certforge-api.fly.dev rather than the public domain.
+  # Without this, generated links and QR targets pointed at the Fly host over
+  # plain http. Keep in sync with the domain Vercel serves.
+  SITE_URL = "https://certs.intelliforge.tech"
+
 [deploy]
   # Migrations and the queue schema run once per deploy, not on every cold start.
   release_command = "python -m api.release"

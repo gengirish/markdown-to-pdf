@@ -218,14 +218,25 @@ def _store_idempotency(key: str, response: dict):
 # Webhook / callback helper
 # ---------------------------------------------------------------------------
 def _is_browser_same_origin(req: Request) -> bool:
-    """Allow browser UI requests without an API key when they come from this deployment."""
-    base = str(req.base_url).rstrip("/")
+    """Allow browser UI requests without an API key when they come from this deployment.
+
+    Vercel rewrites the API paths to Fly as a proxy, so request.base_url is the
+    Fly hostname while the browser sends the public domain in Origin/Referer.
+    Comparing against base_url alone therefore never matched once the API moved
+    off Vercel, and the web UI started getting 401s. Accept either the public
+    site URL or the raw base_url — the latter keeps local dev working, where
+    SITE_URL is unset and the two are the same thing anyway.
+    """
+    bases = {str(req.base_url).rstrip("/"), _resolve_site_url(req)}
     origin = req.headers.get("origin", "").rstrip("/")
     referer = req.headers.get("referer", "").rstrip("/")
-    if origin and (origin == base or origin.startswith(base + "/")):
-        return True
-    if referer and (referer == base or referer.startswith(base + "/")):
-        return True
+    for base in bases:
+        if not base:
+            continue
+        if origin and (origin == base or origin.startswith(base + "/")):
+            return True
+        if referer and (referer == base or referer.startswith(base + "/")):
+            return True
     return False
 
 
@@ -1759,7 +1770,7 @@ async def generate_certificate(request: CertificateRequest, req: Request):
             except Exception as e:
                 logger.warning(f"Failed to store certificate in DB (cert still valid): {e}")
 
-        base_url = str(req.base_url).rstrip("/")
+        base_url = _resolve_site_url(req)
         shareable_url = f"{base_url}/certificate/{token}"
         download_url = f"{shareable_url}/download"
 
@@ -1888,7 +1899,7 @@ async def generate_invoice(request: InvoiceRequest, req: Request):
         invoice_data = _invoice_request_to_dict(request)
         compact = compact_invoice_token_payload(invoice_data)
         token = _encode_cert(compact)
-        base_url = str(req.base_url).rstrip("/")
+        base_url = _resolve_site_url(req)
         download_url = f"{base_url}/invoice/{token}/download"
         totals = _invoice_totals(invoice_data)
 
@@ -2098,7 +2109,7 @@ async def view_certificate(token: str, req: Request):
     """Public certificate viewer – serves a styled HTML page."""
     data = _resolve_cert(token)
 
-    base_url = str(req.base_url).rstrip("/")
+    base_url = _resolve_site_url(req)
     page_url = f"{base_url}/certificate/{token}"
     download_url = f"{page_url}/download"
     auto_print = req.query_params.get("print") == "1"
@@ -2244,7 +2255,7 @@ async def view_certificate(token: str, req: Request):
 async def download_certificate(token: str, req: Request):
     """Download a certificate. Appreciation certs open the viewer print dialog (WYSIWYG PDF)."""
     data = _resolve_cert(token)
-    base_url = str(req.base_url).rstrip("/")
+    base_url = _resolve_site_url(req)
 
     if _is_appreciation_payload(data):
         return RedirectResponse(
@@ -2575,7 +2586,7 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
         raise HTTPException(status_code=400, detail="Maximum 500 certificates per batch")
 
     valid_courses = set(_get_course_names())
-    base_url = str(req.base_url).rstrip("/")
+    base_url = _resolve_site_url(req)
     client_ip = req.client.host if req.client else "admin-bulk"
     results = []
 
