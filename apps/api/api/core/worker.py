@@ -11,8 +11,10 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     
 import logging
+import os
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 import procrastinate
 
@@ -31,24 +33,43 @@ worker_app = procrastinate.App(
     connector=procrastinate.PsycopgConnector(conninfo=DATABASE_URL)
 )
 
+# Applying the queue schema is DDL. It belongs in the once-per-deploy release
+# step (api/release.py), not on a wake path that runs every time Fly autostarts
+# the machine. Set PROCRASTINATE_APPLY_SCHEMA=1 only for local/dev bootstraps.
+APPLY_SCHEMA_ON_BOOT = os.environ.get("PROCRASTINATE_APPLY_SCHEMA", "0") == "1"
+
+# Without DATABASE_URL there is nothing to connect to, and opening the app would
+# raise on boot. Keep the API serving its stateless routes instead.
+WORKER_ENABLED = bool(os.environ.get("DATABASE_URL", ""))
+
+
 @asynccontextmanager
 async def lifespan(app):
     """FastAPI lifespan to manage Procrastinate worker."""
+    if not WORKER_ENABLED:
+        logger.warning("DATABASE_URL not set — background worker disabled.")
+        yield
+        return
+
     async with worker_app.open_async():
-        # Ensure the procrastinate tables exist
-        # Typically run `procrastinate schema --apply` in deployment, but we can do it here:
-        await worker_app.schema_manager.apply_schema_async()
+        if APPLY_SCHEMA_ON_BOOT:
+            logger.info("PROCRASTINATE_APPLY_SCHEMA=1 — applying queue schema on boot.")
+            await worker_app.schema_manager.apply_schema_async()
 
         # Start the worker in the background
         worker = procrastinate.Worker(app=worker_app, name="fastapi_worker")
         worker_task = asyncio.create_task(worker.run())
         logger.info("Procrastinate background worker started in FastAPI lifespan")
-        
-        yield
-        
-        logger.info("Stopping Procrastinate worker...")
-        worker.stop()
-        await worker_task
+
+        try:
+            yield
+        finally:
+            # This runs when Fly stops the machine on idle. Closing cleanly drops
+            # the LISTEN/NOTIFY connection to Neon, which is what lets Neon
+            # compute autosuspend instead of billing around the clock.
+            logger.info("Stopping Procrastinate worker...")
+            worker.stop()
+            await worker_task
 
 
 @worker_app.task(queue="issuance")
@@ -57,7 +78,6 @@ async def process_batch(batch_id_str: str):
     # We must run DB synchronous code in a thread pool since this task is async,
     # or just use loop.run_in_executor
     import uuid
-    from datetime import datetime, timezone
 
     batch_id = uuid.UUID(batch_id_str)
     

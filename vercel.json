@@ -1,55 +1,50 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "devCommand": "npm run dev",
-  "installCommand": "npm install",
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
-  "functions": {
-    "api/index.py": {
-      "runtime": "@vercel/python@4.5.0",
-      "includeFiles": "api/fonts/**"
-    }
-  },
+  "installCommand": "npm install",
+  "buildCommand": "npm run build --workspace=pdf-cert-generator",
+  "devCommand": "npm run dev --workspace=pdf-cert-generator",
+  "outputDirectory": "apps/legacy-web/dist",
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "/api/index.py"
+      "destination": "https://certforge-api.fly.dev/api/:path*"
     },
     {
       "source": "/certificate/:path*",
-      "destination": "/api/index.py"
+      "destination": "https://certforge-api.fly.dev/certificate/:path*"
     },
     {
       "source": "/invoice/:path*",
-      "destination": "/api/index.py"
+      "destination": "https://certforge-api.fly.dev/invoice/:path*"
     },
     {
       "source": "/docs",
-      "destination": "/api/index.py"
+      "destination": "https://certforge-api.fly.dev/docs"
     },
     {
       "source": "/redoc",
-      "destination": "/api/index.py"
+      "destination": "https://certforge-api.fly.dev/redoc"
     },
     {
       "source": "/openapi.json",
-      "destination": "/api/index.py"
+      "destination": "https://certforge-api.fly.dev/openapi.json"
     },
     {
       "source": "/llms.txt",
-      "destination": "/api/index.py"
+      "destination": "https://certforge-api.fly.dev/llms.txt"
     },
     {
       "source": "/robots.txt",
-      "destination": "/api/index.py"
+      "destination": "https://certforge-api.fly.dev/robots.txt"
     },
     {
       "source": "/sitemap.xml",
-      "destination": "/api/index.py"
+      "destination": "https://certforge-api.fly.dev/sitemap.xml"
     },
     {
       "source": "/.well-known/:path*",
-      "destination": "/api/index.py"
+      "destination": "https://certforge-api.fly.dev/.well-known/:path*"
     },
     {
       "source": "/((?!assets/|branding/).*)",

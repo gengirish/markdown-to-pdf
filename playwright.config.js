@@ -31,6 +31,7 @@ export default defineConfig({
     : [
         {
           command: `python -m uvicorn api.index:app --host 127.0.0.1 --port ${apiPort}`,
+          cwd: 'apps/api',
           url: `${apiOrigin}/api/health`,
           reuseExistingServer: !process.env.CI,
           timeout: 120_000,
@@ -40,6 +41,7 @@ export default defineConfig({
         },
         {
           command: `npm run dev -- --host 127.0.0.1 --port ${webPort}`,
+          cwd: 'apps/legacy-web',
           url: webOrigin,
           reuseExistingServer: !process.env.CI,
           timeout: 120_000,

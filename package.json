@@ -4,7 +4,9 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev --parallel",
-    "lint": "turbo run lint"
+    "lint": "turbo run lint",
+    "build:web": "npm run build --workspace=pdf-cert-generator",
+    "test:e2e": "playwright test"
   },
   "workspaces": [
     "apps/*",

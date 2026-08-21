@@ -5,6 +5,10 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  # apps/api/requirements.txt after the Phase 2 monorepo restructure.
+  API_REQUIREMENTS: apps/api/requirements.txt
+
 jobs:
   lint-and-type-check:
     runs-on: ubuntu-latest
@@ -13,7 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
       - run: pip install ruff
-      - run: ruff check api/ sdk/pdfcert/
+      - run: ruff check apps/api/api/ sdk/pdfcert/
 
   test-api:
     runs-on: ubuntu-latest
@@ -25,10 +29,20 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
-      - run: pip install -r requirements.txt
-      - run: python -m uvicorn api.index:app --host 0.0.0.0 --port 8000 &
-      - run: sleep 5
-      - run: python test_api.py
+      - run: pip install -r $API_REQUIREMENTS requests
+      - name: Start API
+        working-directory: apps/api
+        run: python -m uvicorn api.index:app --host 127.0.0.1 --port 8000 &
+      - name: Wait for API
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/api/health && exit 0
+            sleep 2
+          done
+          echo "API did not become healthy in 60s" >&2
+          exit 1
+      - working-directory: apps/api
+        run: python test_api.py
 
   test-sdk:
     runs-on: ubuntu-latest
@@ -38,10 +52,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
-      - run: pip install -r requirements.txt
-      - run: cd sdk && pip install -e .
-      - run: python -m uvicorn api.index:app --host 0.0.0.0 --port 8000 &
-      - run: sleep 5
+      - run: pip install -r $API_REQUIREMENTS requests
+      - run: pip install -e ./sdk
+      - name: Start API
+        working-directory: apps/api
+        run: python -m uvicorn api.index:app --host 127.0.0.1 --port 8000 &
+      - name: Wait for API
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/api/health && exit 0
+            sleep 2
+          done
+          echo "API did not become healthy in 60s" >&2
+          exit 1
       - run: python sdk/test_sdk.py
 
   build-frontend:
@@ -51,7 +74,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - run: npm ci
-      - run: npx vite build
+      # Same command Vercel runs (see vercel.json buildCommand).
+      - run: npm run build:web
 
   test-e2e:
     runs-on: ubuntu-latest
@@ -64,8 +88,9 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
       - run: npm ci
-      - run: pip install -r requirements.txt
+      - run: pip install -r $API_REQUIREMENTS
       - run: npx playwright install --with-deps chromium
+      # playwright.config.js starts uvicorn in apps/api and vite in apps/legacy-web.
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v4
         if: failure()

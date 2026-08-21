@@ -6,28 +6,44 @@ primary_region = "iad"
 
 [env]
   PORT = "8000"
+  # Apply the Procrastinate schema from a release_command, not on every boot.
+  PROCRASTINATE_APPLY_SCHEMA = "0"
 
-[[services]]
-  protocol = "tcp"
+[deploy]
+  # Migrations and the queue schema run once per deploy, not on every cold start.
+  release_command = "python -m api.release"
+
+[http_service]
   internal_port = 8000
+  force_https = true
   processes = ["app"]
 
-  [[services.ports]]
-    port = 80
-    handlers = ["http"]
-    force_https = true
+  # Scale to zero: no traffic -> machine stops -> the worker's Postgres
+  # LISTEN connection closes -> Neon compute autosuspends.
+  # "stop" (not "suspend") is deliberate: a suspended machine keeps a frozen
+  # TCP socket to Neon that is dead on resume, and Procrastinate would keep
+  # using it. A full stop forces a clean reconnect.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
 
-  [[services.ports]]
-    port = 443
-    handlers = ["tls", "http"]
-  
-  [services.concurrency]
-    type = "connections"
+  [http_service.concurrency]
+    type = "requests"
     hard_limit = 25
     soft_limit = 20
 
-  [[services.tcp_checks]]
-    interval = "15s"
-    timeout = "2s"
-    grace_period = "1s"
-    restart_limit = 0
+  # No periodic health check on purpose.
+  #
+  # Fly clamps check intervals to a 1 minute maximum ("Service HTTP check has an
+  # interval greater than 1 minute; this will be lowered to 1 minute"), and a
+  # recurring 60s touch is far shorter than the idle window this service is
+  # supposed to sleep through. With auto_start_machines the machine is started
+  # by real requests, so a liveness probe buys nothing here and only risks
+  # holding the machine — and its Postgres connection — awake.
+  #
+  # /api/health is still there for deploy gates and manual checks. It reads env
+  # flags only and never queries Postgres, so it stays safe to curl by hand.
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

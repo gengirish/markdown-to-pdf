@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Never bake local env or a local sqlite fixture into the image — Fly injects
+# real config via secrets.
+.env
+.env.*
+*.local
+test_db.sqlite
+tests/
+test_api.py
+
+.git
+.gitignore
