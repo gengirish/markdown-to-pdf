@@ -50,7 +50,14 @@ from api.certificate_templates import (
     VIEWER_APPRECIATION_HTML,
     VIEWER_INTERNSHIP_HTML,
 )
-from api.core.config import TRUSTED_PROXY_HOPS
+from api.core.config import (
+    CERTFORGE_WEB_URL,
+    RATE_LIMIT,
+    RATE_WINDOW,
+    TRUSTED_PROXY_HOPS,
+)
+from api.core.config import SITE_URL as CONFIG_SITE_URL
+from api.core.envelope import ApiResponse, error_type_for_status
 from api.invoice_brand import invoice_brand_colors
 from api.invoice_utils import (
     amount_in_words_inr,
@@ -157,8 +164,12 @@ if AGENTMAIL_API_KEY:
 # Rate limiter (in-memory, per-IP, resets on cold start)
 # ---------------------------------------------------------------------------
 _rate_buckets: dict[str, list[float]] = defaultdict(list)
-RATE_LIMIT = 10
-RATE_WINDOW = 60
+
+# RATE_LIMIT / RATE_WINDOW come from api.core.config, which parses
+# RATE_LIMIT_MAX_REQUESTS and RATE_LIMIT_WINDOW_SECONDS. They used to be
+# hardcoded here as well, which made those env vars dead: setting them changed
+# nothing. Defaults stay at 10/60s — the numbers were picked once the limiter
+# started binding per real client IP rather than per proxy.
 
 
 def _client_ip(req: Request, fallback: str = "unknown") -> str:
@@ -313,11 +324,47 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# Origins allowed to call this API from a browser. `*` was fine while every
+# caller was same-origin behind the Vercel rewrite, but the CertForge dashboard
+# lives on its own host and sends bearer tokens, so the list is now explicit.
+# SITE_URL stays in it: the legacy SPA is served from there.
+CORS_ALLOWED_ORIGINS = sorted(
+    origin
+    for origin in {
+        CERTFORGE_WEB_URL,
+        CONFIG_SITE_URL,
+        # Local dev: Vite serves the legacy SPA, Next serves the dashboard.
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    }
+    if origin
+)
+
+# Vercel preview deployments get a fresh hostname per branch, so they cannot be
+# enumerated. Scoped to our own project prefix rather than all of *.vercel.app,
+# which would hand every app on the platform a cross-origin channel to this API.
+CORS_PREVIEW_ORIGIN_REGEX = r"^https://certforge[a-z0-9-]*\.vercel\.app$"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ALLOWED_ORIGINS,
+    allow_origin_regex=CORS_PREVIEW_ORIGIN_REGEX,
+    # Bearer tokens ride in Authorization, not cookies, so credentialed
+    # requests stay off. Keeping this False is what makes the preview regex
+    # safe to have at all.
     allow_credentials=False,
-    allow_methods=["*"],
+    allow_methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    # Without these the browser strips the auth headers on preflight and every
+    # cross-origin call arrives unauthenticated.
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-API-Key",
+        "X-Admin-Key",
+        "Idempotency-Key",
+    ],
 )
 
 from api.routes.orgs import router as orgs_router
@@ -345,6 +392,12 @@ app.include_router(verify_public_router)
 
 
 def _error_type(status_code: int) -> str:
+    """Status -> error type for the legacy surface.
+
+    Deliberately a copy of api.core.envelope.error_type_for_status rather than a
+    call to it. `sdk/pdfcert` and the live SPA parse these strings, so the legacy
+    mapping must not move when the v1 envelope's does.
+    """
     mapping = {
         400: "validation_error",
         401: "authentication_error",
@@ -365,20 +418,38 @@ def _error_type(status_code: int) -> str:
     return "error"
 
 
+def _is_v1_path(path: str) -> bool:
+    """True for the CertForge /api/v1 surface, false for the legacy one."""
+    return path == "/api/v1" or path.startswith("/api/v1/")
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     detail = exc.detail
     message = detail if isinstance(detail, str) else str(detail)
-    kwargs: dict = {
-        "status_code": exc.status_code,
-        "content": {
+
+    # Two surfaces, two error shapes. This handler used to emit the bare
+    # {"error": {...}} body for everything, which silently overrode the
+    # ApiResponse envelope that every /api/v1 route declares as its
+    # response_model — so v1 clients coding against the OpenAPI schema got a
+    # shape it never advertised on any failure.
+    if _is_v1_path(request.url.path):
+        content = ApiResponse.fail(
+            message,
+            code=exc.status_code,
+            error_type=error_type_for_status(exc.status_code),
+        ).model_dump()
+    else:
+        # Frozen. sdk/pdfcert and the live SPA parse this verbatim.
+        content = {
             "error": {
                 "code": exc.status_code,
                 "message": message,
                 "type": _error_type(exc.status_code),
             }
-        },
-    }
+        }
+
+    kwargs: dict = {"status_code": exc.status_code, "content": content}
     if exc.headers:
         kwargs["headers"] = dict(exc.headers)
     return JSONResponse(**kwargs)

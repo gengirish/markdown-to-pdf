@@ -26,11 +26,36 @@ _jwks_client = None
 
 @dataclass
 class AuthenticatedUser:
-    """Authenticated user context extracted from Clerk JWT."""
+    """Authenticated user context extracted from Clerk JWT.
+
+    Everything here is *identity*, never authorisation: org membership and role
+    are resolved against `org_members` (see `require_org_role`), because a claim
+    only proves whoever minted the token said so.
+    """
 
     clerk_user_id: str
     clerk_org_id: Optional[str] = None
     clerk_org_role: Optional[str] = None
+    # Optional by necessity, not by convenience — see _email_from_claims.
+    email: Optional[str] = None
+
+
+# Clerk's default session token carries no email claim: it ships sub, sid, the
+# org_* set and timing claims, nothing else. An instance can add one through a
+# JWT template ("email": "{{user.primary_email_address}}"), and templates in the
+# wild spell it several ways, so accept the usual spellings and let every caller
+# cope with None. Nothing may *require* the email — a deployment that has not
+# customised its template will never send one.
+_EMAIL_CLAIMS = ("email", "email_address", "primary_email_address", "user_email")
+
+
+def _email_from_claims(claims: dict) -> Optional[str]:
+    """Pull an email out of Clerk claims if the JWT template supplies one."""
+    for name in _EMAIL_CLAIMS:
+        value = claims.get(name)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 def _jwks_url_from_publishable_key(publishable_key: str) -> str:
@@ -157,6 +182,7 @@ def get_current_user(request: Request) -> AuthenticatedUser:
         clerk_user_id=user_id,
         clerk_org_id=claims.get("org_id"),
         clerk_org_role=claims.get("org_role"),
+        email=_email_from_claims(claims),
     )
 
 

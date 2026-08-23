@@ -1,9 +1,11 @@
 """Verification API endpoints (Public)."""
 
+import html
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from api.core.config import SITE_URL
+from api.core.config import CERTFORGE_WEB_URL
 from api.core.envelope import ApiResponse
 from api.core.legacy_tokens import decode_legacy_token, legacy_cert_id
 from api.core.crypto import is_certforge_id
@@ -19,11 +21,6 @@ router = APIRouter(tags=["Verification"])
 public_router = APIRouter(tags=["Verification"])
 
 
-def _public_base() -> str:
-    """Public origin for links we mint. Falls back to the production domain."""
-    return SITE_URL or "https://certs.intelliforge.tech"
-
-
 def _get_credential_data(credential_id: str) -> dict | None:
     """Resolve a credential ID into its data payload (handles legacy and new)."""
     # 1. Check if it's a new DB-backed CertForge credential
@@ -32,16 +29,17 @@ def _get_credential_data(credential_id: str) -> dict | None:
             cred = session.query(Credential).filter_by(public_id=credential_id).first()
             if not cred or cred.status != "issued":
                 return None
-                
+
             return {
                 "source": "database",
                 "id": cred.public_id,
                 "name": cred.recipient_name,
                 "title": cred.title,
                 "issued_at": cred.issued_at.isoformat(),
+                "pdf_url": cred.pdf_url,
                 "metadata": cred.metadata_
             }
-            
+
     # 2. Check if it's a legacy token payload
     # Legacy routes used the raw HMAC token directly in the URL instead of the short ID.
     # If the credential_id contains a dot, it might be a legacy token.
@@ -57,7 +55,7 @@ def _get_credential_data(credential_id: str) -> dict | None:
                 "issued_at": decoded.get("d", ""),
                 "metadata": decoded
             }
-            
+
     return None
 
 @router.get("/verify/{credential_id}", response_model=ApiResponse[dict])
@@ -75,9 +73,22 @@ def get_open_badge_json(public_id: str):
         cred = session.query(Credential).filter_by(public_id=public_id).first()
         if not cred or cred.status == "revoked":
             raise HTTPException(status_code=404, detail="Credential not found or revoked")
-            
+
         org = session.query(Organization).filter_by(id=cred.org_id).first()
-        
+
+        # Every URL below addresses CertForge, never the legacy product. This
+        # route only ever serves DB-backed CertForge credentials — the query
+        # above runs against the Credential table, and a legacy certificate has
+        # no row there — so SITE_URL (certs.intelliforge.tech, frozen because
+        # every certificate issued under it carries a printed QR code) was the
+        # wrong host for both of them.
+        #
+        # CERTFORGE_WEB_URL rather than CERTFORGE_API_URL because an Open Badges
+        # consumer dereferences these to show a person the issuer and the
+        # achievement; both are pages on the dashboard, not API resources.
+        # achievement.id used to point at /api/v1/credentials/{id}, a route that
+        # exists on neither host.
+
         # Construct Open Badges 3.0 JSON-LD Document
         return {
             "@context": [
@@ -87,7 +98,7 @@ def get_open_badge_json(public_id: str):
             "id": f"urn:uuid:{cred.public_id}",
             "type": ["VerifiableCredential", "OpenBadgeCredential"],
             "issuer": {
-                "id": f"{_public_base()}/orgs/{org.slug}",
+                "id": f"{CERTFORGE_WEB_URL}/orgs/{org.slug}",
                 "type": "Profile",
                 "name": org.name,
             },
@@ -95,7 +106,7 @@ def get_open_badge_json(public_id: str):
             "credentialSubject": {
                 "type": "AchievementSubject",
                 "achievement": {
-                    "id": f"{_public_base()}/api/v1/credentials/{cred.public_id}",
+                    "id": f"{CERTFORGE_WEB_URL}/verify/{cred.public_id}",
                     "type": "Achievement",
                     "name": cred.title,
                     "description": cred.metadata_.get("description", f"Credential for {cred.title}"),
@@ -123,6 +134,29 @@ async def verify_page(credential_id: str, request: Request):
 
         return await view_certificate(credential_id, request)
 
+    # Recipient names and credential titles arrive from customer-uploaded CSVs
+    # and land on a public page, so they are attacker-controlled and every one
+    # of them is escaped before it reaches the markup. This stays an f-string
+    # rather than becoming a Jinja2 template with autoescaping: Jinja2 is not in
+    # requirements.txt and the container installs nothing beyond it, so
+    # templating would mean taking on a runtime dependency for a page that is
+    # one card with four fields.
+    name = html.escape(str(data["name"]))
+    title = html.escape(str(data["title"]))
+    issued_at = html.escape(str(data["issued_at"]))
+    cred_id = html.escape(str(data["id"]))
+
+    # The button used to link to /api/v1/verify/{id}/download, a route that has
+    # never existed and 404s. A credential carries the URL of its rendered PDF
+    # once one has been stored; with nothing stored there is nothing to offer,
+    # so the button is omitted rather than pointed at a dead end. The scheme
+    # check does what escaping cannot: html.escape would pass a `javascript:`
+    # URL straight through into the href.
+    pdf_url = data.get("pdf_url") or ""
+    download_btn = ""
+    if pdf_url.startswith(("https://", "http://", "/")):
+        download_btn = f'<a href="{html.escape(pdf_url)}" class="download-btn">Download PDF</a>'
+
     # Generic viewer for new templates
     return HTMLResponse(f"""
     <!DOCTYPE html>
@@ -130,7 +164,7 @@ async def verify_page(credential_id: str, request: Request):
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>{data['title']} - Verified Credential</title>
+        <title>{title} - Verified Credential</title>
         <style>
             body {{ font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; margin: 0; padding: 2rem; color: #0f172a; text-align: center; }}
             .card {{ background: white; max-width: 600px; margin: 0 auto; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); border: 1px solid #e2e8f0; }}
@@ -149,21 +183,21 @@ async def verify_page(credential_id: str, request: Request):
                 <svg style="width: 16px; height: 16px; margin-right: 4px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 Verified Authentic
             </div>
-            <h1>{data['name']}</h1>
+            <h1>{name}</h1>
             <div class="field">
                 <div class="label">Credential Name</div>
-                <div class="value">{data['title']}</div>
+                <div class="value">{title}</div>
             </div>
             <div class="field">
                 <div class="label">Issued Date</div>
-                <div class="value">{data['issued_at']}</div>
+                <div class="value">{issued_at}</div>
             </div>
             <div class="field">
                 <div class="label">Credential ID</div>
-                <div class="value" style="font-family: monospace;">{data['id']}</div>
+                <div class="value" style="font-family: monospace;">{cred_id}</div>
             </div>
-            
-            <a href="/api/v1/verify/{data['id']}/download" class="download-btn">Download PDF</a>
+
+            {download_btn}
         </div>
     </body>
     </html>

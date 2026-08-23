@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 
 import procrastinate
 
-from api.core.config import DATABASE_URL
+from api.core.config import CERTFORGE_WEB_URL, DATABASE_URL
 from api.models import get_db
 from api.models.credential import CredentialBatch, Credential
 from api.models.template import Template
@@ -139,8 +139,11 @@ def _process_batch_sync(batch_id: uuid.UUID):
                 variables["title"] = cred.title
                 variables["credential_id"] = cred.public_id
                 
-                # We need the verify URL for the QR code
-                verify_url = f"https://certs.intelliforge.tech/verify/{cred.public_id}"
+                # This URL is rendered into the QR code and baked into the PDF, so
+                # it is unfixable once a credential is printed. It was hardcoded to
+                # certs.intelliforge.tech — the legacy product — which meant every
+                # CertForge credential shipped pointing at someone else's brand.
+                verify_url = f"{CERTFORGE_WEB_URL}/verify/{cred.public_id}"
                 from api.core.qr import generate_qr_data_uri
                 variables["qr"] = generate_qr_data_uri(verify_url)
                 
