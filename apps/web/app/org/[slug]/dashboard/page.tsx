@@ -1,200 +1,128 @@
 "use client";
 
-import { useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { use, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { SignInButton, useAuth } from "@clerk/nextjs";
 
-export default function OrgDashboard({ params }: { params: { slug: string } }) {
-  const { user, isLoaded } = useUser();
-  const [file, setFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+import { publicApi, toApiError, type OrgProfile } from "@/lib/api";
+import { ApiStatusBadge } from "@/components/dashboard/api-status-badge";
+import { BulkIssueCard } from "@/components/dashboard/bulk-issue-card";
+import { DeveloperCard } from "@/components/dashboard/developer-card";
+import { RecentCredentialsCard } from "@/components/dashboard/recent-credentials-card";
+import { ErrorNote } from "@/components/dashboard/ui";
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-    }
-  };
+export default function OrgDashboard({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = use(params);
+  const { isLoaded, isSignedIn } = useAuth();
 
-  const handleUpload = async () => {
-    if (!file) return;
-    setUploading(true);
-    setResult(null);
+  const [org, setOrg] = useState<OrgProfile | null>(null);
+  const [orgError, setOrgError] = useState<string | null>(null);
+  // Bumped when a batch settles so the credential list refetches.
+  const [issuedToken, setIssuedToken] = useState(0);
 
-    try {
-      // Mocked for Phase 2 demo
-      await new Promise(r => setTimeout(r, 2000));
-      setResult({ success: true, batchId: "b-12345", total: 150 });
-    } catch (err) {
-      setResult({ success: false, error: "Failed to upload CSV" });
-    } finally {
-      setUploading(false);
-    }
-  };
+  // The org profile endpoint is public, so the header renders even while Clerk
+  // is still loading and even for a viewer who turns out not to be a member.
+  useEffect(() => {
+    const controller = new AbortController();
+    publicApi
+      .getOrg(slug, controller.signal)
+      .then((profile) => {
+        setOrg(profile);
+        setOrgError(null);
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        const error = toApiError(err);
+        setOrgError(
+          error.isNotFound ? `No organization with the slug “${slug}”.` : error.message,
+        );
+      });
+    return () => controller.abort();
+  }, [slug]);
 
-  if (!isLoaded) return <div className="min-h-screen bg-[#0a0a0a]" />;
+  const handleIssued = useCallback(() => setIssuedToken((current) => current + 1), []);
+
+  if (!isLoaded) {
+    return <div className="min-h-screen bg-[#0a0a0a]" />;
+  }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-zinc-100 p-8 font-sans">
-      <header className="max-w-6xl mx-auto mb-12 flex items-center justify-between">
+    <div className="min-h-screen bg-[#0a0a0a] p-6 font-sans text-zinc-100 sm:p-8">
+      <header className="mx-auto mb-12 flex max-w-6xl flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight text-white mb-2">
+          <h1 className="mb-2 text-3xl font-semibold tracking-tight text-white">
             Credential Studio
           </h1>
-          <p className="text-zinc-400">Manage issues and track analytics for {params.slug}</p>
+          <p className="text-zinc-400">
+            {org ? org.name : slug}
+            {org ? <span className="ml-2 text-zinc-600">· {org.tier} plan</span> : null}
+          </p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-sm font-medium text-zinc-300">API Operational</span>
-          </div>
-        </div>
+        <ApiStatusBadge />
       </header>
 
-      <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Column: Actions */}
-        <div className="lg:col-span-2 space-y-8">
-          <div className="bg-zinc-900/50 backdrop-blur-xl border border-zinc-800 rounded-2xl p-8">
-            <h2 className="text-xl font-medium text-white mb-6">Bulk Issue via CSV</h2>
-            
-            <div className="border-2 border-dashed border-zinc-800 hover:border-indigo-500/50 transition-colors rounded-xl p-12 text-center relative overflow-hidden group">
-              <input 
-                type="file" 
-                accept=".csv"
-                onChange={handleFileChange}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-              />
-              <div className="w-16 h-16 bg-zinc-800/50 group-hover:bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto mb-4 transition-colors">
-                <svg className="w-8 h-8 text-zinc-400 group-hover:text-indigo-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-              </div>
-              <p className="text-zinc-300 font-medium mb-1">
-                {file ? file.name : "Click or drag CSV file here"}
-              </p>
-              <p className="text-sm text-zinc-500">
-                Must include name, title, and email columns.
-              </p>
+      <main className="mx-auto max-w-6xl">
+        {orgError ? (
+          <div className="mb-8">
+            <ErrorNote>{orgError}</ErrorNote>
+          </div>
+        ) : null}
+
+        {!isSignedIn ? (
+          <SignInPrompt slug={slug} />
+        ) : (
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+            <div className="space-y-8 lg:col-span-2">
+              <BulkIssueCard slug={slug} onIssued={handleIssued} />
+              <DeveloperCard slug={slug} />
             </div>
 
-            <div className="mt-6 flex justify-end">
-              <button 
-                onClick={handleUpload}
-                disabled={!file || uploading}
-                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
-              >
-                {uploading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-zinc-400 border-t-white rounded-full animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  "Start Issuance"
-                )}
-              </button>
-            </div>
-
-            {result && result.success && (
-              <div className="mt-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-start gap-4">
-                <svg className="w-6 h-6 text-emerald-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <div>
-                  <h4 className="text-emerald-400 font-medium">Batch Started</h4>
-                  <p className="text-sm text-emerald-400/80 mt-1">Successfully queued {result.total} credentials for processing. Batch ID: {result.batchId}</p>
-                </div>
-              </div>
-            )}
-          </div>
-          </div>
-
-          <div className="bg-zinc-900/50 backdrop-blur-xl border border-zinc-800 rounded-2xl p-8 mt-8">
-            <h2 className="text-xl font-medium text-white mb-2">Developer Settings</h2>
-            <p className="text-zinc-400 mb-6 text-sm">Manage your API keys and Webhook endpoints for programatic access.</p>
-            
-            <div className="space-y-6">
-              {/* API Keys */}
-              <div className="border border-zinc-800 rounded-xl overflow-hidden">
-                <div className="bg-zinc-800/50 px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
-                  <h3 className="font-medium text-zinc-200">API Keys</h3>
-                  <button className="text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-md transition-colors">
-                    Generate New Key
-                  </button>
-                </div>
-                <div className="p-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <div>
-                      <p className="font-medium text-zinc-300">Production Key 1</p>
-                      <p className="text-zinc-500 font-mono mt-1">cf_prod_************************</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-zinc-500 mb-1">Created 2 days ago</p>
-                      <button className="text-red-400 hover:text-red-300 transition-colors">Revoke</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Webhooks */}
-              <div className="border border-zinc-800 rounded-xl overflow-hidden">
-                <div className="bg-zinc-800/50 px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
-                  <h3 className="font-medium text-zinc-200">Webhook Endpoints</h3>
-                  <button className="text-sm bg-zinc-700 hover:bg-zinc-600 text-white px-3 py-1.5 rounded-md transition-colors">
-                    Add Endpoint
-                  </button>
-                </div>
-                <div className="p-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                      <div>
-                        <p className="font-medium text-zinc-300">https://api.example.com/webhooks/certforge</p>
-                        <p className="text-zinc-500 mt-1">Events: batch.completed</p>
-                      </div>
-                    </div>
-                    <button className="text-red-400 hover:text-red-300 transition-colors">Delete</button>
-                  </div>
-                </div>
-              </div>
+            <div className="space-y-8">
+              <PlanCard org={org} />
+              <RecentCredentialsCard slug={slug} refreshToken={issuedToken} />
             </div>
           </div>
-
-        {/* Right Column: Usage & Stats */}
-        <div className="space-y-8">
-          <div className="bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/20 rounded-2xl p-6 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/20 blur-3xl rounded-full" />
-            <h3 className="text-sm font-medium text-indigo-300 uppercase tracking-wider mb-4">Monthly Usage</h3>
-            <div className="flex items-baseline gap-2 mb-2">
-              <span className="text-4xl font-bold text-white">1,240</span>
-              <span className="text-zinc-400">/ 5,000</span>
-            </div>
-            <div className="w-full h-2 bg-black/40 rounded-full mt-4 overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 w-[25%]" />
-            </div>
-            <button className="mt-6 w-full py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors backdrop-blur-md">
-              Upgrade Plan
-            </button>
-          </div>
-
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6">
-            <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-4">Recent Activity</h3>
-            <div className="space-y-4">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center">
-                    <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-zinc-200">Batch Issued</p>
-                    <p className="text-xs text-zinc-500">2 hours ago • 50 certs</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        )}
       </main>
     </div>
+  );
+}
+
+function SignInPrompt({ slug }: { slug: string }) {
+  return (
+    <div className="mx-auto max-w-md rounded-2xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
+      <h2 className="text-xl font-medium text-white">Sign in to continue</h2>
+      <p className="mt-2 text-sm text-zinc-400">
+        The Credential Studio for {slug} is only visible to members of the organization.
+      </p>
+      <div className="mt-6 flex flex-col gap-3">
+        <SignInButton mode="modal">
+          <button className="w-full rounded-lg bg-indigo-600 px-4 py-3 font-medium text-white transition-colors hover:bg-indigo-500">
+            Sign in
+          </button>
+        </SignInButton>
+        <Link href="/" className="text-sm text-zinc-500 transition-colors hover:text-zinc-300">
+          Back to CertForge
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function PlanCard({ org }: { org: OrgProfile | null }) {
+  return (
+    <section className="relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-gradient-to-br from-indigo-900/40 to-purple-900/40 p-6">
+      <div className="absolute right-0 top-0 h-32 w-32 rounded-full bg-indigo-500/20 blur-3xl" />
+      <h3 className="relative mb-4 text-sm font-medium uppercase tracking-wider text-indigo-300">
+        Plan
+      </h3>
+      <p className="relative text-3xl font-bold capitalize text-white">{org?.tier ?? "—"}</p>
+      {/* No usage endpoint exists yet, and the checkout endpoint returns a
+          placeholder URL server-side, so neither is surfaced as if it worked. */}
+      <p className="relative mt-4 text-sm leading-relaxed text-zinc-300">
+        Usage reporting and self-serve upgrades are not available yet. Contact support to change
+        your plan or quota.
+      </p>
+    </section>
   );
 }
