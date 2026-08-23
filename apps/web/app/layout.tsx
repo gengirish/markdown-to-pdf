@@ -3,7 +3,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CertForge Passports",
+  title: { default: "CertForge", template: "%s · CertForge" },
   description: "Secure, verifiable digital credentials.",
 };
 
