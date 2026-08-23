@@ -145,6 +145,13 @@ See [`sdk/README.md`](sdk/README.md) for full SDK documentation.
 | `CERT_API_KEYS` | No | Comma-separated API keys for certificate creation |
 | `ADMIN_KEY` | No | Admin API authentication key |
 | `DATABASE_URL` | No | PostgreSQL for analytics & admin |
+| `CLERK_SECRET_KEY` | No | Clerk backend API key |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | For dashboard auth | Clerk publishable key; the JWKS URL used to verify session tokens is derived from it |
+| `CLERK_JWKS_URL` | No | Explicit JWKS override. Without this (or the publishable key) authenticated endpoints answer 503 — they never fall back to unverified tokens |
+| `RAZORPAY_WEBHOOK_SECRET` | For billing | Razorpay webhook signing secret. **No default**: unset means `/api/v1/webhooks/razorpay` rejects every request, because a valid signature upgrades an org's tier |
+| `RATE_LIMIT_MAX_REQUESTS` | No | Requests per window per client IP (default: `10`) |
+| `RATE_LIMIT_WINDOW_SECONDS` | No | Rate-limit window in seconds (default: `60`) |
+| `TRUSTED_PROXY_HOPS` | No | Reverse proxies in front of the app, used to pick the caller out of `X-Forwarded-For` (default: `2`, for browser → Vercel → Fly). Set to `0` to ignore forwarding headers |
 | `AGENTMAIL_API_KEY` | No | AgentMail API key for email delivery |
 | `AGENTMAIL_INBOX_ID` | No | AgentMail inbox address |
 | `SITE_URL` | No | Canonical public URL (e.g. `https://certs.intelliforge.tech`) for sitemap, `llms.txt`, and Open Graph |

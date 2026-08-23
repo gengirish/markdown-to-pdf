@@ -46,7 +46,20 @@ def test_bulk_csv_upload_and_verify(client: TestClient, mock_clerk):
 def test_verify_legacy(client: TestClient):
     # Test verifying a legacy token
     from api.core.legacy_tokens import encode_legacy_token
-    payload = {"n": "Alice", "c": "Python 101", "d": "2023-10-01", "k": "i"}
+    # k="i" is an internship certificate, and the viewer renders every field of
+    # one. A stub payload here used to pass only because the HTML branch was
+    # broken and never rendered the real template.
+    payload = {
+        "n": "Alice",
+        "c": "Python 101",
+        "d": "2023-10-01",
+        "k": "i",
+        "u": "1AB20CS001",
+        "i": "Dr. Instructor",
+        "m": "Mentor Name",
+        "w": "4 weeks",
+        "h": "160 hours",
+    }
     token = encode_legacy_token(payload)
     
     # API JSON Verify

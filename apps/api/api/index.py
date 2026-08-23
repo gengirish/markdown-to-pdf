@@ -50,6 +50,7 @@ from api.certificate_templates import (
     VIEWER_APPRECIATION_HTML,
     VIEWER_INTERNSHIP_HTML,
 )
+from api.core.config import TRUSTED_PROXY_HOPS
 from api.invoice_brand import invoice_brand_colors
 from api.invoice_utils import (
     amount_in_words_inr,
@@ -111,12 +112,12 @@ def _sanitize_env(value: str) -> str:
 
 
 IS_PROD = os.environ.get("VERCEL_ENV") == "production" or os.environ.get("ENV") == "production"
-CERT_SECRET = _sanitize_env(os.environ.get("CERT_SECRET_KEY", ""))
-if not CERT_SECRET:
-    if IS_PROD:
-        raise RuntimeError("CERT_SECRET_KEY environment variable is required in production")
-    CERT_SECRET = "pdfcert-dev-secret-local-only"
-    logger.warning("CERT_SECRET_KEY not set — using insecure dev default. Set it before deploying.")
+
+# Imported, not re-derived. This module and api/core/legacy_tokens.py sign the
+# same tokens, and when each read CERT_SECRET_KEY separately they picked
+# different dev fallbacks — so a token minted by one could never be verified by
+# the other outside production.
+from api.core.config import CERT_SECRET  # noqa: E402
 
 CERT_API_KEYS: set[str] = set()
 _raw_keys = _sanitize_env(os.environ.get("CERT_API_KEYS", ""))
@@ -158,6 +159,30 @@ if AGENTMAIL_API_KEY:
 _rate_buckets: dict[str, list[float]] = defaultdict(list)
 RATE_LIMIT = 10
 RATE_WINDOW = 60
+
+
+def _client_ip(req: Request, fallback: str = "unknown") -> str:
+    """Resolve the originating client IP for rate limiting.
+
+    `req.client.host` is the socket peer, which behind the Vercel -> Fly rewrite
+    is the Fly proxy, not the caller — every customer would land in one bucket
+    and share a single 10-req/60s allowance.
+
+    Requests arrive as browser -> Vercel edge -> Fly proxy -> uvicorn. Each hop
+    appends the address it saw to X-Forwarded-For, so the header reads
+    "<client>, <vercel-edge>" and the caller sits `TRUSTED_PROXY_HOPS` entries
+    from the right. Counting from the right (rather than blindly taking the
+    leftmost entry) means a client that prepends its own X-Forwarded-For cannot
+    shift the entry we read.
+    """
+    forwarded = req.headers.get("x-forwarded-for", "")
+    if TRUSTED_PROXY_HOPS > 0 and forwarded:
+        chain = [p.strip() for p in forwarded.split(",") if p.strip()]
+        if chain:
+            # Never index past the start: a short chain means fewer real hops
+            # than configured (e.g. a request that reached Fly directly).
+            return chain[-min(TRUSTED_PROXY_HOPS, len(chain))]
+    return req.client.host if req.client else fallback
 
 
 def _check_rate_limit(client_ip: str) -> tuple[bool, dict[str, str]]:
@@ -298,7 +323,7 @@ app.add_middleware(
 from api.routes.orgs import router as orgs_router
 from api.routes.templates import router as templates_router
 from api.routes.studio import router as studio_router
-from api.routes.verify import router as verify_router
+from api.routes.verify import router as verify_router, public_router as verify_public_router
 from api.routes.passports import router as passports_router, claims_router
 from api.routes.billing import router as billing_router, webhooks_router
 from api.routes.developers import router as developers_router
@@ -312,6 +337,11 @@ app.include_router(claims_router, prefix="/api/v1")
 app.include_router(billing_router, prefix="/api/v1")
 app.include_router(webhooks_router, prefix="/api/v1")
 app.include_router(developers_router, prefix="/api/v1")
+
+# Root-mounted public pages: /verify/{id} and /credentials/{id}/badge.json are
+# the URLs printed on certificates and embedded in QR codes. vercel.json must
+# rewrite both to this function or they fall through to the SPA.
+app.include_router(verify_public_router)
 
 
 def _error_type(status_code: int) -> str:
@@ -1687,7 +1717,7 @@ async def generate_certificate(request: CertificateRequest, req: Request):
             if not _is_browser_same_origin(req) and api_key not in CERT_API_KEYS:
                 raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
-        client_ip = req.client.host if req.client else "unknown"
+        client_ip = _client_ip(req)
         allowed, rate_headers = _check_rate_limit(client_ip)
         if not allowed:
             raise HTTPException(
@@ -1887,7 +1917,7 @@ async def generate_invoice(request: InvoiceRequest, req: Request):
             if not _is_browser_same_origin(req) and api_key not in CERT_API_KEYS:
                 raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
-        client_ip = req.client.host if req.client else "unknown"
+        client_ip = _client_ip(req)
         allowed, rate_headers = _check_rate_limit(client_ip)
         if not allowed:
             raise HTTPException(
@@ -2587,7 +2617,7 @@ async def admin_bulk_generate(request: BulkCertificateRequest, req: Request):
 
     valid_courses = set(_get_course_names())
     base_url = _resolve_site_url(req)
-    client_ip = req.client.host if req.client else "admin-bulk"
+    client_ip = _client_ip(req, fallback="admin-bulk")
     results = []
 
     for i, entry in enumerate(request.entries):

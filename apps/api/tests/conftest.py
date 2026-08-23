@@ -22,9 +22,18 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_
 
 @contextlib.contextmanager
 def override_get_db():
+    """Mirror api.models.get_db, including its commit-on-success behaviour.
+
+    Routes rely on the context manager committing for them (none of them call
+    session.commit()), so a yield-only stand-in silently discards every write.
+    """
     db = TestingSessionLocal()
     try:
         yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
@@ -44,6 +53,10 @@ def setup_db():
         patch("api.routes.templates.get_db", override_get_db),
         patch("api.routes.verify.get_db", override_get_db),
         patch("api.routes.developers.get_db", override_get_db),
+        patch("api.routes.passports.get_db", override_get_db),
+        patch("api.routes.billing.get_db", override_get_db),
+        # require_org_role imports get_db from api.models at call time.
+        patch("api.models.get_db", override_get_db),
     ]
     for p in patchers:
         p.start()
@@ -62,6 +75,13 @@ def setup_db():
             pass
 
 @pytest.fixture
+def db_session():
+    """Direct session against the test database, for arranging fixture rows."""
+    with TestingSessionLocal() as session:
+        yield session
+
+
+@pytest.fixture
 def client(setup_db):
     with TestClient(app) as c:
         yield c
@@ -71,11 +91,9 @@ def mock_clerk():
     from api.core.auth import get_current_user, AuthenticatedUser
     
     def _get_current_user():
-        return AuthenticatedUser(
-            clerk_user_id="test_user_123",
-            session_id="test_sess",
-            email="test@intelliforge.tech"
-        )
+        # Keep in sync with the AuthenticatedUser dataclass — it has no
+        # session_id/email fields, and passing them raises TypeError.
+        return AuthenticatedUser(clerk_user_id="test_user_123")
         
     app.dependency_overrides[get_current_user] = _get_current_user
     yield

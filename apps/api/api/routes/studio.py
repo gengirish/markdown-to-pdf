@@ -15,7 +15,9 @@ from api.models.template import Template
 from api.models.credential import Credential, CredentialBatch
 from api.core.worker import process_batch
 
-router = APIRouter(prefix="/api/v1/orgs", tags=["Studio"])
+# Mounted under /api/v1 by api/index.py — the prefix here must NOT repeat it,
+# or every path ends up served at /api/v1/api/v1/...
+router = APIRouter(prefix="/orgs", tags=["Studio"])
 
 @router.post("/{slug}/credentials/bulk", response_model=ApiResponse[dict])
 async def upload_bulk_csv(

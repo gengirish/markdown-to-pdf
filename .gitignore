@@ -55,6 +55,10 @@ env.bak/
 venv.bak/
 
 # Testing
+# pytest builds apps/api/test_db.sqlite from scratch on every run (see
+# apps/api/tests/conftest.py) — it is a build artifact, not fixture data.
+apps/api/test_db.sqlite
+.pytest_cache/
 test_output.pdf
 *.pdf
 /test-results/
