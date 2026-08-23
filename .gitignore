@@ -71,3 +71,6 @@ test_output.pdf
 
 # Local duplicate; canonical sample is docs/samples/IntelliForge_Internship_Offer_Letter.docx
 /IntelliForge_Internship_Offer_Letter.docx
+
+# Agent worktrees created by Claude Code (git worktrees live here).
+.claude/worktrees/

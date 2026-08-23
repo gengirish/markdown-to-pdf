@@ -1,6 +1,7 @@
 {
   "name": "certforge-monorepo",
   "private": true,
+  "packageManager": "npm@10.9.3",
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev --parallel",
