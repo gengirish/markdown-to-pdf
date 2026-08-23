@@ -10,7 +10,9 @@ from api.models import get_db
 from api.models.organization import Organization
 from api.models.template import Template
 
-router = APIRouter(prefix="/api/v1", tags=["Templates"])
+# Mounted under /api/v1 by api/index.py — the prefix here must NOT repeat it,
+# or every path ends up served at /api/v1/api/v1/...
+router = APIRouter(tags=["Templates"])
 
 class TemplateUpload(BaseModel):
     name: str

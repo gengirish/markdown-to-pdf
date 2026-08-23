@@ -19,6 +19,14 @@
       "destination": "https://certforge-api.fly.dev/invoice/:path*"
     },
     {
+      "source": "/verify/:path*",
+      "destination": "https://certforge-api.fly.dev/verify/:path*"
+    },
+    {
+      "source": "/credentials/:path*",
+      "destination": "https://certforge-api.fly.dev/credentials/:path*"
+    },
+    {
       "source": "/docs",
       "destination": "https://certforge-api.fly.dev/docs"
     },

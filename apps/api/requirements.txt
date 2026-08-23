@@ -7,6 +7,11 @@ reportlab==4.2.5
 qrcode==8.0
 Pillow==11.1.0
 psycopg2-binary==2.9.10
+# Clerk session tokens are RS256; the [crypto] extra pulls in `cryptography`,
+# without which PyJWT cannot verify them. Pinned deliberately: api/core/auth.py
+# refuses to authenticate at all if this import fails.
+PyJWT[crypto]==2.10.1
+python-dotenv==1.0.1
 agentmail==0.4.15
 httpx>=0.21.2
 procrastinate

@@ -3,15 +3,26 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
+from api.core.config import SITE_URL
 from api.core.envelope import ApiResponse
-from api.core.legacy_tokens import decode_legacy_token, legacy_cert_id, is_internship_payload, is_appreciation_payload
+from api.core.legacy_tokens import decode_legacy_token, legacy_cert_id
 from api.core.crypto import is_certforge_id
-from api.core.pdf_renderer import render_credential_pdf
 from api.models import get_db
 from api.models.credential import Credential
-from api.certificate_templates import VIEWER_INTERNSHIP_HTML, VIEWER_APPRECIATION_HTML
+from api.models.organization import Organization
 
+# Mounted under /api/v1 by api/index.py — paths here must NOT repeat that prefix.
 router = APIRouter(tags=["Verification"])
+
+# Mounted at the site root: these are the URLs printed on certificates and
+# embedded in QR codes, so they must stay short and stable.
+public_router = APIRouter(tags=["Verification"])
+
+
+def _public_base() -> str:
+    """Public origin for links we mint. Falls back to the production domain."""
+    return SITE_URL or "https://certs.intelliforge.tech"
+
 
 def _get_credential_data(credential_id: str) -> dict | None:
     """Resolve a credential ID into its data payload (handles legacy and new)."""
@@ -49,7 +60,7 @@ def _get_credential_data(credential_id: str) -> dict | None:
             
     return None
 
-@router.get("/api/v1/verify/{credential_id}", response_model=ApiResponse[dict])
+@router.get("/verify/{credential_id}", response_model=ApiResponse[dict])
 def verify_api(credential_id: str):
     """JSON API to verify a credential."""
     data = _get_credential_data(credential_id)
@@ -57,7 +68,7 @@ def verify_api(credential_id: str):
         raise HTTPException(status_code=404, detail="Credential not found or invalid signature")
     return ApiResponse.ok(data)
 
-@router.get("/credentials/{public_id}/badge.json", response_model=dict)
+@public_router.get("/credentials/{public_id}/badge.json", response_model=dict)
 def get_open_badge_json(public_id: str):
     """Export the credential in Open Badges 3.0 JSON-LD format."""
     with get_db() as session:
@@ -76,7 +87,7 @@ def get_open_badge_json(public_id: str):
             "id": f"urn:uuid:{cred.public_id}",
             "type": ["VerifiableCredential", "OpenBadgeCredential"],
             "issuer": {
-                "id": f"https://certs.intelliforge.tech/orgs/{org.slug}",
+                "id": f"{_public_base()}/orgs/{org.slug}",
                 "type": "Profile",
                 "name": org.name,
             },
@@ -84,7 +95,7 @@ def get_open_badge_json(public_id: str):
             "credentialSubject": {
                 "type": "AchievementSubject",
                 "achievement": {
-                    "id": f"https://certs.intelliforge.tech/api/v1/credentials/{cred.public_id}",
+                    "id": f"{_public_base()}/api/v1/credentials/{cred.public_id}",
                     "type": "Achievement",
                     "name": cred.title,
                     "description": cred.metadata_.get("description", f"Credential for {cred.title}"),
@@ -92,41 +103,25 @@ def get_open_badge_json(public_id: str):
             }
         }
 
-@router.get("/verify/{credential_id}", response_class=HTMLResponse)
-def verify_page(credential_id: str):
+@public_router.get("/verify/{credential_id}", response_class=HTMLResponse)
+async def verify_page(credential_id: str, request: Request):
     """HTML public viewer for a credential."""
     data = _get_credential_data(credential_id)
     if not data:
-        return HTMLResponse("<h1>Invalid or Revoked Credential</h1><p>This credential could not be verified.</p>", status_code=404)
-        
-    # Phase 1: Simple HTML viewer
-    # We use legacy viewer templates for legacy credentials if we can
+        return HTMLResponse(
+            "<h1>Invalid or Revoked Credential</h1><p>This credential could not be verified.</p>",
+            status_code=404,
+        )
+
+    # Legacy tokens already have a full viewer at /certificate/{token} — QR
+    # codes, share links, JSON-LD, branding and per-kind layouts. Render through
+    # that instead of re-formatting the templates here: the local copy passed a
+    # different set of placeholders than the templates declare and raised
+    # KeyError('meta_description') on every legacy internship certificate.
     if data["source"] == "legacy":
-        meta = data["metadata"]
-        if is_internship_payload(meta):
-            from api.index import _generate_qr_data_uri, _internship_pdf_signatures_block, FOUNDER_NAME
-            verify_url = f"https://certs.intelliforge.tech/verify/{credential_id}"
-            
-            return HTMLResponse(VIEWER_INTERNSHIP_HTML.format(
-                participant_name=meta.get("n", ""),
-                course_name=meta.get("c", ""),
-                completion_date=meta.get("d", ""),
-                instructor_name=meta.get("i", ""),
-                mentor_name=meta.get("m", ""),
-                usn=meta.get("u", ""),
-                duration_text=meta.get("w", ""),
-                hours_text=meta.get("h", ""),
-                certificate_id=data["id"],
-                download_url=f"/certificate/{credential_id}/download",
-            ))
-        elif is_appreciation_payload(meta):
-            return HTMLResponse(VIEWER_APPRECIATION_HTML.format(
-                participant_name=meta.get("n", ""),
-                recognition_text=meta.get("r", ""),
-                completion_date=meta.get("d", ""),
-                certificate_id=data["id"],
-                download_url=f"/certificate/{credential_id}/download",
-            ))
+        from api.index import view_certificate
+
+        return await view_certificate(credential_id, request)
 
     # Generic viewer for new templates
     return HTMLResponse(f"""

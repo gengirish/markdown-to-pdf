@@ -35,13 +35,23 @@ def _env(key: str, default: str = "") -> str:
 
 IS_PROD = os.environ.get("VERCEL_ENV") == "production" or os.environ.get("ENV") == "production"
 
-CERT_SECRET = os.environ.get("CERT_SECRET_KEY", "dev-secret-key-change-me")
-RAZORPAY_SECRET = os.environ.get("RAZORPAY_SECRET_KEY", "rzp_test_secret")
+CERT_SECRET = _sanitize_env(os.environ.get("CERT_SECRET_KEY", ""))
+
+# Razorpay webhook signing secret. Deliberately has NO default: the webhook
+# handler upgrades an org's tier on a valid signature, so a known fallback
+# value would let anyone forge that request. Unset means the webhook rejects
+# every call (see routes/billing.py).
+RAZORPAY_SECRET = _env("RAZORPAY_WEBHOOK_SECRET") or _env("RAZORPAY_SECRET_KEY")
+if not RAZORPAY_SECRET:
+    logger.warning(
+        "RAZORPAY_WEBHOOK_SECRET not set — Razorpay webhooks will be rejected."
+    )
+
 if not CERT_SECRET:
     if IS_PROD:
         raise RuntimeError("CERT_SECRET_KEY environment variable is required in production")
     CERT_SECRET = "pdfcert-dev-secret-local-only"
-    logger.warning("CERT_SECRET_KEY not set — using insecure dev default.")
+    logger.warning("CERT_SECRET_KEY not set — using insecure dev default. Set it before deploying.")
 
 CERT_API_KEYS: set[str] = set()
 _raw_keys = _env("CERT_API_KEYS")
@@ -59,6 +69,10 @@ DATABASE_URL = _env("DATABASE_URL")
 CLERK_SECRET_KEY = _env("CLERK_SECRET_KEY")
 CLERK_WEBHOOK_SECRET = _env("CLERK_WEBHOOK_SECRET")
 CLERK_PUBLISHABLE_KEY = _env("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY")
+
+# Optional explicit override. When unset, api/core/auth.py derives the Frontend
+# API JWKS URL from the publishable key.
+CLERK_JWKS_URL = _env("CLERK_JWKS_URL")
 
 # ── AgentMail ──────────────────────────────────────────────────────────────
 
@@ -120,6 +134,13 @@ CERT_APPRECIATION_HOST_ORGANIZER = _env("CERT_APPRECIATION_HOST_ORGANIZER", APPR
 
 RATE_LIMIT = int(_env("RATE_LIMIT_MAX_REQUESTS", "10") or "10")
 RATE_WINDOW = int(_env("RATE_LIMIT_WINDOW_SECONDS", "60") or "60")
+
+# Number of trusted reverse proxies in front of this app, counted from the app
+# outwards. Requests reach us as browser -> Vercel edge -> Fly proxy -> uvicorn,
+# so X-Forwarded-For arrives as "<client>, <vercel-edge>" (Fly appends the peer
+# it saw) and the real client is the 2nd entry from the right. Set to 0 to
+# ignore forwarding headers entirely and trust the socket peer.
+TRUSTED_PROXY_HOPS = int(_env("TRUSTED_PROXY_HOPS", "2") or "2")
 
 # ── Billing tiers ──────────────────────────────────────────────────────────
 

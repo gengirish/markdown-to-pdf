@@ -19,6 +19,20 @@ jobs:
       - run: pip install ruff
       - run: ruff check apps/api/api/ sdk/pdfcert/
 
+  # Unit tests (pytest, SQLite-backed, no live server). These were previously
+  # not run anywhere, so the suite had gone red unnoticed.
+  test-unit:
+    runs-on: ubuntu-latest
+    env:
+      CERT_SECRET_KEY: ci-test-secret-key-do-not-use-in-production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r $API_REQUIREMENTS pytest pytest-asyncio
+      - working-directory: apps/api
+        run: python -m pytest
+
   test-api:
     runs-on: ubuntu-latest
     env:

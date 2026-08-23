@@ -9,7 +9,9 @@ from api.core.auth import AuthenticatedUser, get_current_user, require_org_role
 from api.models import get_db
 from api.models.organization import Organization, OrgMember
 
-router = APIRouter(prefix="/api/v1/orgs", tags=["Organizations"])
+# Mounted under /api/v1 by api/index.py — the prefix here must NOT repeat it,
+# or every path ends up served at /api/v1/api/v1/...
+router = APIRouter(prefix="/orgs", tags=["Organizations"])
 
 class OrgCreate(BaseModel):
     clerk_org_id: str

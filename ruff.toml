@@ -19,4 +19,3 @@ select = ["E9", "F63", "F7", "F82"]
 # references in Mapped[...] annotations ("Organization", "Template", ...).
 # Those resolve through the mapper registry at runtime; ruff cannot see it.
 "apps/api/api/models/*.py" = ["F821"]
-"apps/api/api/routes/verify.py" = ["F821"]
