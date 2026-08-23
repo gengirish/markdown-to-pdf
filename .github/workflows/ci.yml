@@ -139,3 +139,53 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  # Deploys the API to Fly. Nothing gated `fly deploy` before this: it ran from
+  # a laptop, with no tests in front of it, against the surface that actually
+  # carries the risk. Vercel only ever builds the SPA — the API has never been
+  # part of the git-push pipeline at all.
+  #
+  # Runs only on a push to main, and only after the API's own gates are green.
+  deploy-api:
+    needs: [lint, test-unit, test-api]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      # Never let two deploys race; a superseded one is cancelled, not queued.
+      group: deploy-api
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Skips loudly rather than silently when the token is absent, so a repo
+      # without the secret does not look like it deployed.
+      - name: Warn when FLY_API_TOKEN is not configured
+        if: ${{ env.FLY_API_TOKEN == '' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          echo "::warning title=API not deployed::FLY_API_TOKEN is not set, so the API was NOT deployed. Create one with 'fly tokens create deploy' and add it as a repository secret."
+
+      - name: Deploy to Fly
+        if: ${{ env.FLY_API_TOKEN != '' }}
+        working-directory: apps/api
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        # --remote-only builds on Fly's builders, so no Docker daemon is needed
+        # here. fly.toml's release_command runs migrations once per deploy.
+        run: flyctl deploy --remote-only
+
+      - name: Verify the deploy is serving
+        if: ${{ env.FLY_API_TOKEN != '' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          for i in $(seq 1 20); do
+            if curl -fsS https://certforge-api.fly.dev/api/health | tee /dev/stderr | grep -q '"status":"healthy"'; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "API did not report healthy after deploy" >&2
+          exit 1
