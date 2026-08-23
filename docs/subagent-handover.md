@@ -2,7 +2,43 @@
 
 Companion to [api-first-optimization-plan.md](./api-first-optimization-plan.md). That document says *what* and *why*; this one says *who does which files, in what order*.
 
-Baseline: commit `1fa17e9`, tree clean, `pytest` 42/42 green.
+Baseline: commit `9c3680e`, tree clean, `pytest` 72/72 green.
+
+**Status: W0 and Wave 1 are complete and merged.** Wave 2 (B1) is next.
+
+---
+
+## Wave 1 outcome
+
+Merged to `main` at `9c3680e`. **5/5 packages landed, zero merge conflicts, 72 tests passing (from 42).**
+
+| | Package | Commit | Result |
+|---|---|---|---|
+| W0 | Config contract seed | `78ab3b4` | Both host constants, `SITE_URL` untouched |
+| A1 | Viewer hardening | `3e464d0` | XSS escaped, scheme guard, badge URLs rehomed — 6 tests |
+| A2 | Identity & claiming | `b9bef5e` | H8 fixed, claim flow works, real status codes — 16 tests |
+| A3 | Origins & envelope | `d33b40a` | CORS allow-listed, envelope split, worker URL — 8 tests |
+| A4 | Frontend de-mocking | `e586c1e` | 25 files, mocks gone, Next 16 `params`, typed client |
+| A5 | Docs truth pass | `cea2993` | `CLAUDE.md` + `README.md` rewritten against verified reality |
+
+**The file-ownership partition held.** Every diff was checked against its `OWNS` list and none strayed. The only cross-boundary move was A3 cherry-picking the W0 commit rather than editing a file it did not own — the behaviour the rule exists to produce. Two agents also recovered unaided from a dispatch error: four of five worktrees were cut from the pre-W0 commit, so `CERTFORGE_WEB_URL` did not exist in their trees. A1 reset onto the intended baseline; A3 cherry-picked. Neither touched `config.py`.
+
+### Three bugs found outside any brief
+
+Each was found because an agent refused to take something on trust, each was confirmed independently, and all three had been invisible to CI:
+
+- **Root `npm run build`/`dev`/`lint` were dead** — turbo needs a `packageManager` field. CI and Vercel both call `build:web` directly, bypassing turbo. Found by A5 refusing to document a command it had not run.
+- **`.gitignore` was swallowing source code** — the stock Python block's unanchored `lib/` matches at any depth, hiding `apps/web/lib/` from `git add`.
+- **`apps/web` did not build at baseline** — Clerk's keyless path prerenders Next's `/_global-error` and threw `InvariantError`. A4's `app/global-error.tsx` is load-bearing.
+
+### The follow-up: one blind spot, not three bugs
+
+CI built *one* of two frontends, through a command that bypassed the workspace tool, and never ran ESLint. Closed in `9c3680e`:
+
+- `build-frontend` runs `npm run build` (turbo, both workspaces) **and** `npm run build:web` separately — Vercel does not go through turbo, so the production path is asserted on its own.
+- The lint job runs ESLint for the first time. Renamed from `lint-and-type-check`, which it never was.
+- `scripts/check_tracked_sources.py` fails when `.gitignore` hides anything source-shaped. Verified against the original bug, not assumed.
+- Turning ESLint on exposed a **fourth instance of the same class**: `eslint.config.js` ignored `dist` relative to itself, so it linted `apps/legacy-web/dist`'s minified bundles — 111 errors, none real. Same shape as the `.gitignore` bug: a pattern anchored to the wrong directory in a monorepo.
 
 ---
 
@@ -211,7 +247,16 @@ Today `POST /api/v1/orgs/{slug}/api-keys` mints `cf_live_…` keys and stores SH
 - New routes: `POST /api/v1/credentials`, `POST /api/v1/credentials/batch` (JSON array — CSV becomes a client convenience, not the only door), `GET /api/v1/credentials` with cursor pagination, `GET /{id}`, `POST /{id}/revoke`, `GET /{id}/pdf`.
 - Write `UsageLedger` on issuance (**H5** — it is read at `studio.py:72` and written nowhere, so quota never binds). Return `X-Quota-Limit` and `X-Quota-Remaining`.
 
-**Accept:** `curl -H "Authorization: Bearer cf_test_…" -d '{...}' /api/v1/credentials` issues a credential end to end. `POST /api/certificate` returns **byte-identical** output to `1fa17e9` — prove it with a golden-file test, not by inspection.
+### Commit 3 — four things Wave 1 uncovered
+
+Not new features. Unmodelled decisions that four agents each hit from a different direction, and the service layer is the only place they can be settled once.
+
+- **Credential `status` is an unmodelled state machine.** The viewer gates on `status != "issued"`; `badge.json` gates on `status == "revoked"` — so a `pending` credential is invisible in the viewer but still exports a public badge; and A2 could not set `"claimed"` at all without breaking verification of already-printed QR codes. Define the states and what each surface does with them.
+- **Three error shapes still reach clients.** A3 split the envelope by surface, but `ApiResponse.fail(...)` over HTTP 200 survives in `billing.py` and elsewhere, and FastAPI validation answers `{"detail": …}`. A4's client normalises all three — a workaround, not a fix. Unmatched paths bypass both envelopes too: the handler is registered against `fastapi.HTTPException`, not Starlette's.
+- **Nothing populates `Credential.pdf_url`** (`worker.py` leaves it `None` deliberately). A1 wired the viewer's download button to it, so the button appears the moment B1 stores a PDF and stays hidden until then.
+- **Quota cannot be displayed honestly.** No usage endpoint, and `GET /orgs/{slug}` does not expose `monthly_quota`. Ship it alongside the `UsageLedger` writes.
+
+**Accept:** `curl -H "Authorization: Bearer cf_test_…" -d '{...}' /api/v1/credentials` issues a credential end to end. `POST /api/certificate` returns **byte-identical** output to `9c3680e` — prove it with a golden-file test, not by inspection.
 
 ---
 
@@ -254,6 +299,8 @@ fly certs add api.certforge.intelliforge.tech
 ```
 
 Rename Vercel project `web` → `certforge`, git-link it to `gengirish/markdown-to-pdf`, Root Directory `apps/web`, `npx turbo-ignore` as the Ignored Build Step. Add `certforge.intelliforge.tech` to Clerk's allowed origins.
+
+**Prerequisite from Wave 1.** A4 deliberately left out `proxy.ts` running `clerkMiddleware()`, because adding it makes every request depend on `CLERK_SECRET_KEY` being configured, and nothing it built needed server-side Clerk. Until that file exists, `auth()`, `currentUser()`, `<Show>` and route protection are all unavailable — so **the dashboard has no server-side route protection.** D2–D4 need it; add it together with the Clerk environment, not before.
 
 **Also decide the worker topology here.** One 512 MB shared vCPU currently runs the HTTP server *and* the Procrastinate worker, with `auto_stop_machines = "stop"`. Under Studio volume a batch deferred near idle-stop dies, and nothing wakes a stopped machine to drain the queue. Recommended: split `fly.toml` into `[processes]` — `app` (scale-to-zero as today) and `worker` (`min_machines_running = 1`), accepting that Neon stops autosuspending. The trade-off is spelled out in the plan doc; pick before D2–D4 build UI on top of it.
 

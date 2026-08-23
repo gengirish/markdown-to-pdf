@@ -1,6 +1,6 @@
 # CertForge — API-First Plan
 
-Status: approved direction, Phase 0 complete · Updated: 2026-08-23 · Scope: whole product
+Status: Wave 1 shipped (Phases 0–1 done, 3 part-done) · Updated: 2026-08-23 · Scope: whole product
 
 **Decisions taken (2026-08-23):**
 
@@ -11,7 +11,13 @@ Status: approved direction, Phase 0 complete · Updated: 2026-08-23 · Scope: wh
 
 ---
 
-## 0. Progress — closed 2026-08-23 (separate session)
+## 0. Progress
+
+**Wave 1 merged at `9c3680e` — 72 tests passing, zero merge conflicts.** Five packages landed in parallel worktrees (W0, A1–A5); see [subagent-handover.md](./subagent-handover.md) for the per-package outcome. C3, H3–H9 and M4–M7 that Wave 1 did not cover are tracked there against B1 and later waves.
+
+A follow-up commit closed the CI blind spot that had hidden three separate breakages — CI built one of two frontends through a command that bypassed turbo, and never ran ESLint. It now builds both workspaces, lints, and fails if `.gitignore` hides source.
+
+### Earlier — closed 2026-08-23 (separate session)
 
 Staged in the working tree, verified against the code, not taken on report. **The pytest suite now passes 42/42, and the v1 route table is clean.**
 
