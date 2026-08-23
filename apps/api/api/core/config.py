@@ -88,6 +88,28 @@ AGENTMAIL_HTTP_TIMEOUT_SEC = 10.0
 
 SITE_URL = _env("SITE_URL").rstrip("/")
 CONTACT_EMAIL = _env("CONTACT_EMAIL", "support@intelliforge.tech")
+
+# ── Hosts ──────────────────────────────────────────────────────────────────
+#
+# Three hosts, and which one a URL is built from is a correctness question, not
+# a style one.
+#
+# SITE_URL is the legacy product, certs.intelliforge.tech. It is frozen: every
+# certificate ever issued carries a QR code that resolves through it, and those
+# are printed on paper. Never repoint it.
+#
+# CERTFORGE_WEB_URL is the CertForge dashboard and its public human-facing
+# pages — /verify/{id}, /passport/{username}, /claim/{id}, /orgs/{slug}. New
+# credentials build their verify URLs from this, so it is what ends up inside
+# a CertForge QR code.
+#
+# CERTFORGE_API_URL is the machine-facing host: /api/v1, badge.json, the
+# OpenAPI schema. It points straight at Fly rather than through the Vercel
+# rewrite, so customers get a stable API host that does not depend on the
+# frontend's routing.
+
+CERTFORGE_WEB_URL = _env("CERTFORGE_WEB_URL", "https://certforge.intelliforge.tech").rstrip("/")
+CERTFORGE_API_URL = _env("CERTFORGE_API_URL", "https://api.certforge.intelliforge.tech").rstrip("/")
 FOUNDER_NAME = _env("FOUNDER_NAME", "Girish Hiremath")
 FOUNDER_TITLE = _env("FOUNDER_TITLE", "Founder, Intelliforge AI")
 CERT_ORG_TAGLINE = _env("CERT_ORG_TAGLINE", "AN INTELLIFORGE AI INITIATIVE")
