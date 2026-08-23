@@ -3,6 +3,16 @@
 /**
  * Last-resort boundary: an error thrown in the root layout replaces it
  * entirely, so this file provides its own `<html>` and `<body>`.
+ *
+ * DO NOT DELETE THIS AS UNUSED BOILERPLATE. It is load-bearing at build time,
+ * not just at runtime. Without it, `next build` prerenders Next's built-in
+ * /_global-error, which Clerk's keyless path routes through when no
+ * publishable key is set, and the build dies with:
+ *
+ *     InvariantError: Expected workStore to be initialized
+ *
+ * Defining our own boundary replaces that built-in page, so the app builds
+ * with no Clerk environment configured at all — which is what CI does.
  */
 export default function GlobalError({
   error,

@@ -10,14 +10,27 @@ env:
   API_REQUIREMENTS: apps/api/requirements.txt
 
 jobs:
-  lint-and-type-check:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+
       - run: pip install ruff
       - run: ruff check apps/api/api/ sdk/pdfcert/
+
+      # ESLint had never run in CI, despite this job previously being called
+      # "lint-and-type-check". Goes through turbo so both frontends are linted.
+      - run: npm ci
+      - run: npm run lint
+
+      # Guards against .gitignore swallowing source. The stock Python block's
+      # unanchored `lib/` rule hid apps/web/lib/ — the API client — from
+      # `git add`, and nothing in CI would have noticed the files go missing.
+      - run: python scripts/check_tracked_sources.py
 
   # Unit tests (pytest, SQLite-backed, no live server). These were previously
   # not run anywhere, so the suite had gone red unnoticed.
@@ -81,14 +94,28 @@ jobs:
           exit 1
       - run: python sdk/test_sdk.py
 
+  # Builds BOTH frontends, through turbo.
+  #
+  # This job used to run only `npm run build:web`, which resolves to
+  # `--workspace=pdf-cert-generator` — so apps/web was never built in CI, and
+  # the root turbo scripts were never exercised at all. That single blind spot
+  # hid two separate breakages: apps/web failed to build (Clerk's keyless path
+  # prerenders /_global-error), and every root script died on a missing
+  # `packageManager` field. Both were found by hand, not by CI.
   build-frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: "20" }
+        with: { node-version: "22" }
       - run: npm ci
-      # Same command Vercel runs (see vercel.json buildCommand).
+
+      # Exercises turbo's workspace resolution and builds apps/web + apps/legacy-web.
+      - run: npm run build
+
+      # Vercel does NOT go through turbo — it calls this command directly
+      # (vercel.json buildCommand). Assert the production path separately so a
+      # turbo-only regression cannot pass while the deploy breaks, or vice versa.
       - run: npm run build:web
 
   test-e2e:
@@ -98,7 +125,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: "20" }
+        with: { node-version: "22" }
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
       - run: npm ci
