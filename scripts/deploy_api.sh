@@ -76,15 +76,28 @@ command -v python >/dev/null || die "python is not on PATH"
 ruff check apps/api/api/ sdk/pdfcert/ >/dev/null && ok "ruff"
 python scripts/check_tracked_sources.py >/dev/null && ok "no source hidden by .gitignore"
 
-# Run pytest from apps/api so pytest.ini's testpaths/pythonpath apply.
-( cd "$API_DIR" && python -m pytest -q ) >/tmp/deploy_api_pytest.log 2>&1 \
-  || { tail -30 /tmp/deploy_api_pytest.log; die "pytest failed. Nothing deployed."; }
-ok "pytest ($(grep -Eo '[0-9]+ passed' /tmp/deploy_api_pytest.log | tail -1))"
+# Run pytest from apps/api so pytest.ini's testpaths/pythonpath apply. No -q
+# here: pytest.ini already sets it, and a second -q suppresses the summary
+# line this reads the pass count from.
+PYTEST_LOG="$(mktemp)"
+( cd "$API_DIR" && python -m pytest ) >"$PYTEST_LOG" 2>&1 \
+  || { tail -30 "$PYTEST_LOG"; die "pytest failed. Nothing deployed."; }
+PASSED="$(grep -Eo '[0-9]+ passed' "$PYTEST_LOG" | tail -1)"
+[ -n "$PASSED" ] || die "could not read a pass count from pytest output.
+        Refusing to deploy on an unreadable test result: $PYTEST_LOG"
+ok "pytest — $PASSED"
+rm -f "$PYTEST_LOG"
 
 # ── 3. Deploy ───────────────────────────────────────────────────────────────
 step "Deploy"
 
-command -v flyctl >/dev/null || die "flyctl is not installed — https://fly.io/docs/flyctl/install/"
+if ! command -v flyctl >/dev/null; then
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf '    \\033[33mwarn\\033[0m flyctl is not installed; a real deploy would stop here.\\n'
+  else
+    die "flyctl is not installed — https://fly.io/docs/flyctl/install/"
+  fi
+fi
 
 CURRENT="$(flyctl releases --app "$FLY_APP" --json 2>/dev/null | python -c '
 import json,sys
