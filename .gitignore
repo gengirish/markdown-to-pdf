@@ -74,3 +74,4 @@ test_output.pdf
 
 # Agent worktrees created by Claude Code (git worktrees live here).
 .claude/worktrees/
+.turbo/
