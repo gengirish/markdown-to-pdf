@@ -1,7 +1,18 @@
 """
 Comprehensive test suite for the PDF Cert Generator API.
-Run with: python test_api.py
+
+Run with: python test_api.py           (from apps/api)
 Requires: pip install requests
+
+THIS SUITE WRITES. It issues real certificates and invoices, and can send real
+email when the server has AgentMail configured. Point it at a throwaway server,
+not at production -- scripts/smoke_test.sh is the read-only one that is safe to
+run against a live deployment.
+
+PDFCERT_URL overrides the target (the same variable sdk/test_sdk.py uses). It
+defaults to localhost and warns loudly when it is anything else: the URL used
+to be hardcoded, so there was no way to aim this somewhere real, and now that
+there is, the footgun needs a guard.
 """
 
 import os
@@ -12,7 +23,18 @@ import requests
 if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.environ.get("PDFCERT_URL", "http://localhost:8000").rstrip("/")
+
+if not BASE_URL.startswith(("http://localhost", "http://127.0.0.1")):
+    print(
+        f"""
+!! {BASE_URL} is not localhost, and this suite CREATES certificates,
+!! invoices and possibly email on whatever it points at.
+!! Ctrl-C now if that is not what you meant. scripts/smoke_test.sh is the
+!! read-only check that is safe against a live deployment.
+""",
+        file=sys.stderr,
+    )
 
 # When the server has CERT_API_KEYS configured, creation endpoints require an
 # X-API-Key header — the same-origin browser bypass does not apply to requests
