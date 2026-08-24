@@ -4,6 +4,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Lets CI be triggered from the Actions tab without inventing a commit.
+  # Needed to confirm Actions works again after the account billing block that
+  # has refused every run since 2026-07-09.
+  workflow_dispatch:
 
 env:
   # apps/api/requirements.txt after the Phase 2 monorepo restructure.
