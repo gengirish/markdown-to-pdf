@@ -7,7 +7,10 @@ from pathlib import Path
 
 BRANDING_DIR = Path(__file__).resolve().parent.parent / "public" / "branding"
 
-# Palette sampled from intelliforge-sdg-poster-v8.png
+# Palette sampled from the IntelliForge SDG event poster (v8). The poster
+# itself is no longer in the repo — it was a 2.5 MB design reference that
+# nothing loaded at runtime. These hex values are the whole of what it
+# contributed; treat them as the source of truth for the appreciation theme.
 APPRECIATION_HEADER_BG = "#07070E"
 APPRECIATION_SIDEBAR_COLOR = "#0A2818"
 APPRECIATION_ACCENT_COLOR = "#F05B00"
