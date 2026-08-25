@@ -16,6 +16,17 @@ class Organization(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    # The Clerk organization this mirrors. Nullable because orgs created through
+    # the API before Clerk sync existed have no counterpart, and because the
+    # column has to be addable to a populated table. Unique so two CertForge
+    # orgs can never claim the same Clerk org.
+    #
+    # Slug is NOT a safe join key: Clerk generates slugs like
+    # "certforge-1787635500301081932" and lets them be renamed at any time, so
+    # matching on it would silently desync on the first rename.
+    clerk_org_id: Mapped[str | None] = mapped_column(
+        String(255), unique=True, nullable=True, index=True
+    )
     slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     logo_url: Mapped[str | None] = mapped_column(String, nullable=True)

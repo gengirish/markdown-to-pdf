@@ -55,6 +55,7 @@ def setup_db():
         patch("api.routes.developers.get_db", override_get_db),
         patch("api.routes.passports.get_db", override_get_db),
         patch("api.routes.billing.get_db", override_get_db),
+        patch("api.routes.webhooks_clerk.get_db", override_get_db),
         # require_org_role imports get_db from api.models at call time.
         patch("api.models.get_db", override_get_db),
     ]

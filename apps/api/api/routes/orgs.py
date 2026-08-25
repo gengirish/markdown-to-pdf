@@ -34,7 +34,23 @@ def create_org(
         if existing:
             raise HTTPException(status_code=409, detail="Organization slug already in use")
 
+        # This endpoint has always *required* clerk_org_id and then discarded it,
+        # leaving no way to tell which Clerk org a row mirrored. Persist it, and
+        # reject a second CertForge org claiming the same Clerk org rather than
+        # letting the unique index surface as a 500.
+        clashing = (
+            session.query(Organization)
+            .filter_by(clerk_org_id=payload.clerk_org_id)
+            .first()
+        )
+        if clashing:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Clerk organization already linked to '{clashing.slug}'",
+            )
+
         org = Organization(
+            clerk_org_id=payload.clerk_org_id,
             slug=payload.slug,
             name=payload.name,
             logo_url=payload.logo_url,
