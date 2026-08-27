@@ -38,7 +38,18 @@ export default clerkMiddleware(async (auth, request) => {
 
 export const config = {
   matcher: [
-    "/((?!_next|[^?]*\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    // verify/credentials/orgs are excluded because they are not pages:
+    // vercel.json rewrites them straight through to the API, and a rewrite
+    // does NOT bypass this middleware — it runs first, on every one of them.
+    //
+    // That is a dependency the public credential surface must not have. These
+    // are the URLs inside printed QR codes, and running Clerk on them means a
+    // Clerk misconfiguration takes verification down. Not hypothetical: the
+    // preview deployment of this branch answered 500 on /verify, /orgs and
+    // /credentials — "Missing publishableKey", because the Clerk env vars are
+    // set on Production only. A scan of a printed certificate should not care
+    // whether the dashboard's auth is configured.
+    "/((?!_next|verify/|credentials/|orgs/|[^?]*\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
     "/(api|trpc)(.*)",
     // Clerk's auto-proxy path — must be matched or handshake/satellite flows break.
     "/__clerk/:path*",

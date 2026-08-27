@@ -229,3 +229,25 @@ def test_the_public_issuer_namespace_is_not_the_protected_dashboard_one():
             f"proxy.ts matcher {m!r} also captures /orgs/{{slug}}, putting the "
             f"public issuer profile behind authentication"
         )
+
+
+def test_the_public_credential_paths_skip_the_auth_middleware_entirely():
+    """A printed QR code must not depend on Clerk being configured.
+
+    A vercel.json rewrite does NOT bypass Next middleware — it runs first, on
+    every rewritten path. The preview deployment of this fix proved it by
+    answering 500 on /verify, /credentials and /orgs with "Missing
+    publishableKey", because the Clerk env vars are set on Production only.
+
+    These three paths are pure passthrough to the API, so they are excluded
+    from the matcher: verification stays up whatever the dashboard's auth is
+    doing.
+    """
+    proxy = WEB_PROXY_TS.read_text(encoding="utf-8")
+    matcher_block = proxy.split("matcher:")[1]
+    for rewritten in ("verify/", "credentials/", "orgs/"):
+        assert rewritten in matcher_block, (
+            f"{rewritten!r} is rewritten to the API in apps/web/vercel.json but "
+            f"is not excluded from the proxy.ts matcher, so Clerk middleware "
+            f"runs on it and a Clerk outage takes credential verification down"
+        )
