@@ -10,7 +10,7 @@ from api.core.envelope import ApiResponse
 from api.core.legacy_tokens import decode_legacy_token, legacy_cert_id
 from api.core.crypto import is_certforge_id
 from api.models import get_db
-from api.models.credential import Credential
+from api.models.credential import Credential, PUBLICLY_VERIFIABLE
 from api.models.organization import Organization
 
 # Mounted under /api/v1 by api/index.py — paths here must NOT repeat that prefix.
@@ -27,7 +27,10 @@ def _get_credential_data(credential_id: str) -> dict | None:
     if is_certforge_id(credential_id):
         with get_db() as session:
             cred = session.query(Credential).filter_by(public_id=credential_id).first()
-            if not cred or cred.status != "issued":
+            # Not `== issued`: a claimed credential is still live, and the QR
+            # code printed on the certificate must keep resolving after its
+            # recipient claims it.
+            if not cred or cred.status not in PUBLICLY_VERIFIABLE:
                 return None
 
             return {
@@ -71,7 +74,10 @@ def get_open_badge_json(public_id: str):
     """Export the credential in Open Badges 3.0 JSON-LD format."""
     with get_db() as session:
         cred = session.query(Credential).filter_by(public_id=public_id).first()
-        if not cred or cred.status == "revoked":
+        # Not `!= revoked`: a pending credential is one the worker has not
+        # finished, and it must not export a public Open Badge before it
+        # exists as far as the viewer is concerned.
+        if not cred or cred.status not in PUBLICLY_VERIFIABLE:
             raise HTTPException(status_code=404, detail="Credential not found or revoked")
 
         org = session.query(Organization).filter_by(id=cred.org_id).first()

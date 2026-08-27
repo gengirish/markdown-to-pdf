@@ -9,6 +9,29 @@ have to be settled before the first line of code.
 pytest` → 91 passed.** Every claim below was checked in the code today, not carried
 over from the earlier plan.
 
+## Status — 2026-08-27, `main` @ `a403b68`, 127 tests passing
+
+| | Commit | State |
+|---|---|---|
+| B1.0 | Golden contract test | **not started** — `tests/test_contract_legacy.py` still does not exist |
+| B1.1 | `resolve_principal` | **landed** — `d56557b` |
+| B1.2 | Service layer + single issuance | **landed** — `a403b68` |
+| B1.3 | The rest of the resource | **partly landed** — list, get and revoke in `a403b68`; the status state machine is in the working tree, uncommitted; no `/pdf` route |
+| B1.4 | Batch + usage surface | **not started** |
+| B1.5 | Legacy adapter | not started, and optional by design |
+
+The goal in §1 is met for JSON: an API key issues a credential in one call and the
+verify URL resolves. It is **not** met for the PDF — see D3, D4 and D5, none of which
+were settled by what shipped.
+
+Where the code and this plan disagree, the code is what shipped. The note under each
+commit below says which way it went.
+
+**Next, in order:** commit the working-tree state machine; template resolution + the
+`/pdf` route (D5 and D4 are one piece of work, and together they are what makes an
+issued credential an actual document); point `studio.py` at the service's quota helper;
+then D3's signing, while it is still free.
+
 ---
 
 ## 1. The one-sentence goal
@@ -18,7 +41,10 @@ over from the earlier plan.
 > "title":"Python 101"}'` returns a credential with a verify URL that resolves, a PDF
 > that downloads, and a usage counter that moved.
 
-Nothing in the product does that today. The only issuance path is
+*(As shipped the path is `/api/v1/orgs/{slug}/credentials` — see B1.2. The `pdf_url` in
+that goal is still null.)*
+
+Nothing in the product did that when this was written. The only issuance path was
 `POST /api/v1/orgs/{slug}/credentials/bulk` — a `multipart/form-data` CSV upload
 requiring a Clerk **browser session** JWT (`studio.py:22-118`).
 
@@ -80,6 +106,10 @@ legacy port as a separate package with its own review. It must not ride in the s
 commit as new endpoints — a byte-difference in `/api/certificate` and a bug in
 `/api/v1/credentials` would be indistinguishable in the diff.
 
+**Settled as recommended.** `services/issuance.py` serves the v1 path; its docstring
+says it is meant to serve the bulk path and the legacy adapter later. `/api/certificate`
+is untouched.
+
 ### D2 — What are the credential states?
 
 Four surfaces currently disagree (§2). Settle it as:
@@ -106,6 +136,15 @@ at all.
 Fix required by this decision: `verify.py:74` must gate on `status == "issued"`, not
 `status != "revoked"`.
 
+**Settled the other way, and better.** `models/credential.py` now defines the lifecycle
+in one place — `PENDING`, `ISSUED`, `CLAIMED`, `REVOKED`, plus `PUBLICLY_VERIFIABLE =
+{ISSUED, CLAIMED}` and `CLAIMABLE`. So `claimed` *is* a status after all, and
+`passports.py` sets it; what made that impossible before was the whitelist in
+`verify.py`, not the status field itself. Same outcome — a printed QR keeps resolving
+after a claim — reached without splitting the state across a column and a timestamp.
+The `badge.json` blacklist is fixed with it. **One loose end:** `worker.py:185` still
+writes `"failed"`, which the lifecycle block does not define.
+
 ### D3 — What does `hmac_signature` sign?
 
 Today: `hmac_sign(public_id)` — the signature proves the ID was minted here and says
@@ -117,6 +156,10 @@ the recipient and the signature still verifies.
 compacts. Store the scheme version in `metadata_["sig_v"]` so it can be rotated later
 without guessing. CertForge credentials are not in circulation yet, so this is the last
 cheap moment to fix it; after the first real customer it becomes a migration.
+
+**Not settled.** `issuance.py` still calls `hmac_sign(public_id)`. Every credential
+issued from here on carries a signature that attests to nothing but its own ID, and the
+window in which fixing that costs nothing is closing.
 
 ### D4 — Where does the PDF live?
 
@@ -138,6 +181,10 @@ which is written to appear the moment `pdf_url` is non-null and scheme-safe
 Object storage then becomes a pure optimisation: fill `pdf_url` with the stored object
 instead, and nothing else moves.
 
+**Not settled.** There is no `/pdf` route and `issue_credential` leaves `pdf_url` null,
+so a credential issued through the API has no document. A1's download button stays
+hidden, and the §1 goal is only half met.
+
 ### D5 — Which template does a single credential use?
 
 `Credential.template_id` is nullable, but `render_credential_pdf` needs an
@@ -150,6 +197,12 @@ instead, and nothing else moves.
 
 While you are here: pass `date` and `issuer_name` into `variables` so the seeded
 templates stop rendering `{{date}}` as literal text.
+
+**Not settled.** `IssueRequest.template_id` exists and is stored, but nothing resolves
+it and the route never populates it — a credential issued through `POST
+/orgs/{slug}/credentials` has `template_id = NULL`. Combined with D4, that is the whole
+reason there is still no PDF: no template, nothing to render. This and D4 are the next
+piece of work, and they are one piece, not two.
 
 ### D6 — Idempotency and quota concurrency
 
@@ -167,13 +220,26 @@ transaction. **Not** read-then-write — that is the race that makes a quota adv
 Note the test suite is SQLite: `ON CONFLICT DO UPDATE` is spelled differently per
 dialect, so put the upsert behind one helper and cover both.
 
+**Half settled.** Quota is now enforced, in the service, with `-1` handled and
+`UsageLedger` written for the first time (H5 closed). But `_consume_quota` is
+read-then-write — `ledger.credentials_issued = used + count` — so two concurrent issues
+in the same period can both read the same `used` and the second overwrites the first.
+The quota binds against a sequential caller and leaks under a parallel one. Idempotency
+was not implemented at all: there is no `Idempotency-Key` handling and no column for it,
+so a retried POST issues a second credential.
+
 ---
 
 ## 4. Commit sequence
 
 Five commits. Each leaves `pytest` green and the tree deployable.
 
-### B1.0 — Golden contract test for the frozen surface *(no production code)*
+### B1.0 — Golden contract test for the frozen surface · **NOT STARTED** *(no production code)*
+
+> Still true as of `a403b68`: `tests/` has no `test_contract_legacy.py`. Nothing has
+> touched `/api/certificate` yet, so no harm has been done — but B1.5 cannot start
+> until this exists, and the longer it is deferred the more the golden file records a
+> surface nobody has re-verified.
 
 Phase 0 item 4 of the optimization plan — "a contract test pinning the exact JSON shape
 of every frozen endpoint" — **was never written**. `tests/` has no
@@ -194,7 +260,28 @@ by a golden-file test", so the golden file has to exist before anything moves.
 **Accept:** the new file passes on `main` unchanged. If it does not, you have found a
 bug before B1 started; fix that first, separately.
 
-### B1.1 — `resolve_principal`: API keys that authenticate
+### B1.1 — `resolve_principal`: API keys that authenticate · **LANDED** (`d56557b`)
+
+> Shipped as `api/core/principal.py`, not `api_key_auth.py`. Four differences from the
+> spec below, all deliberate-looking:
+>
+> - **No `scopes`, no `mode` string, no migration.** `Principal` carries `is_test`,
+>   derived from the presented key's prefix. Nothing needed a scope yet, and the raw
+>   key is the only place the prefix lives — which means `GET /api-keys` cannot tell
+>   the dashboard whether a key is live or test. That is the cost of skipping the
+>   `prefix` column; it will want adding when the dashboard lists keys.
+> - **`cf_prod_` is not accepted.** `looks_like_api_key` matches only `cf_live_` /
+>   `cf_test_`, so any key minted by the old `developers.py` now falls through to Clerk
+>   verification and 401s. Fine if no `cf_prod_` key was ever handed out; a silent
+>   breakage if one was. Worth confirming against the live `api_keys` table.
+> - **`last_used_at` is stamped inline**, not out of band, so every authenticated
+>   request is a write. Cheap per request, but it is what keeps a read-only workload
+>   from being read-only, and on Fly-plus-Neon it wakes the compute.
+> - **`require_user` was added** and is not in this plan. Routes that only make sense
+>   for a person — creating an org, minting a key, claiming onto a passport — refuse an
+>   API key with 403 instead of misattributing the act. Good call.
+>
+> The conftest landmine below was handled: 127 tests pass.
 
 **New:** `apps/api/api/core/api_key_auth.py`, `apps/api/tests/test_api_key_auth.py`
 **Touches:** every `routes/*.py` (dependency swap only), `routes/developers.py`,
@@ -241,7 +328,24 @@ the same commit.
 **Accept:** a `cf_test_` key issues against its own org and gets 403 against another; a
 revoked key gets 401; all 91 existing tests still pass.
 
-### B1.2 — The service layer and `POST /api/v1/credentials`
+### B1.2 — The service layer and `POST /api/v1/credentials` · **LANDED** (`a403b68`)
+
+> Shipped as `services/issuance.py` + `routes/credentials.py`, with
+> `tests/test_credentials.py` covering it. What differs from the spec below:
+>
+> - **The path is `POST /api/v1/orgs/{slug}/credentials`, not `/api/v1/credentials`
+>   with `org` in the body.** Consistent with the rest of the v1 surface, at the cost
+>   of making an API key holder name the org it is already scoped to. Defensible; just
+>   note that §1's one-line `curl` in this document is now wrong.
+> - **Steps 1, 2, 3, 5 of the service are there** — validation, quota, collision-safe
+>   ID allocation, `status="issued"` on commit. **Steps 4 and 6 are not**: signing is
+>   still `hmac_sign(public_id)` (D3), and there is no delivery to skip in test mode,
+>   because nothing emails or fires a webhook from this path at all. `is_test` reaches
+>   the row as `metadata["_test"]`, so the distinction is recorded and will bind the
+>   moment delivery exists.
+> - **No idempotency** (D6). The `Idempotency-Key` header is still allow-listed in CORS
+>   and still read by nothing on v1.
+> - `revoke_credential` landed here rather than in B1.3.
 
 **New:** `apps/api/api/services/__init__.py`, `apps/api/api/services/issuance.py`,
 `apps/api/api/routes/credentials.py`, `apps/api/tests/test_credentials_issue.py`
@@ -314,7 +418,31 @@ nowhere in this file.
 call; the 51st credential on a community org returns 402; the same `Idempotency-Key`
 twice returns the same `public_id`; a test-mode key sends no email.
 
-### B1.3 — The rest of the resource
+### B1.3 — The rest of the resource · **PARTLY LANDED**
+
+> **Done** (`a403b68`): list with cursor pagination, `GET /{id}`, `POST /{id}/revoke`
+> with `owner`/`admin` and an idempotent repeat, quota headers on both write and read.
+>
+> **Done but uncommitted** (working tree): the D2 state machine in
+> `models/credential.py`, the `badge.json` gate, `passports.py` setting `CLAIMED`.
+> Commit it before starting anything else — it is the piece three other files now
+> import.
+>
+> **Not done:** `GET /{id}/pdf` (D4/D5). The credential still has no document.
+>
+> **Two departures worth knowing:**
+>
+> - **Revoked returns 404, not 410**, on both `GET /{id}` and the public verify route.
+>   The list and detail routes do return a revoked credential to its own org, which is
+>   the more important half — but a public caller still cannot distinguish "withdrawn"
+>   from "never existed".
+> - **`offset` was kept alongside `cursor`**, deliberately, because the dashboard ships
+>   against it; cursor wins when both arrive. The docstring argues the case. Reasonable,
+>   but it means the skipping-rows bug is still reachable by any client that keeps using
+>   `offset` — worth a deprecation date rather than an indefinite dual surface.
+> - The `status` query filter accepts `claimed`, which is right under the shipped D2 and
+>   would have been wrong under the version in this plan. Nothing to fix; noted so the
+>   next reader does not "correct" it.
 
 **Touches:** `routes/credentials.py`, `routes/verify.py` (the `badge.json` gate from
 D2), tests
@@ -338,7 +466,15 @@ D2), tests
 batch is inserting; the viewer's download button appears for a credential issued through
 B1.2, and its PDF opens.
 
-### B1.4 — Batch, and an honest quota surface
+### B1.4 — Batch, and an honest quota surface · **NOT STARTED**
+
+> `studio.py`'s bulk upload was moved onto `Principal` but still carries its own
+> read-then-write quota check and its own `-1` bug at `studio.py:74` — the service's
+> `_consume_quota` is right there and unused by it. That redirect is the cheapest part
+> of this commit and closes a live bug; do it first.
+>
+> Its duplicate `GET /orgs/{slug}/credentials` was removed in favour of the one in
+> `routes/credentials.py`, which is what the comment at the foot of `studio.py` records.
 
 **Touches:** `routes/credentials.py`, `routes/orgs.py`, `routes/studio.py`, tests
 
@@ -355,7 +491,7 @@ B1.2, and its PDF opens.
 **Accept:** a 60-row batch against a 50-quota org is rejected whole with 402 and writes
 nothing; `usage` reflects reality after B1.2 issues.
 
-### B1.5 *(optional, separate review)* — the legacy adapter
+### B1.5 *(optional, separate review)* — the legacy adapter · **NOT STARTED, and blocked on B1.0**
 
 Only under B1.0's golden test, one shared step at a time, per D1. Stop at the first step
 that needs a mode flag.
@@ -364,8 +500,8 @@ that needs a mode flag.
 
 ## 5. Landmines, collected
 
-1. **`conftest.py`'s `mock_clerk` breaks in B1.1.** ~40 tests turn red at once if the
-   dependency swap lands without the fixture change.
+1. ~~**`conftest.py`'s `mock_clerk` breaks in B1.1.**~~ Handled in `d56557b`; the suite
+   went 91 → 127 without a red intermediate.
 2. **`ruff check apps/api/api/ sdk/pdfcert/` is the CI gate** — every new file is inside
    the checked tree.
 3. **No `vercel.json` change is needed** (`/api/:path*` covers it), but `_build_llms_txt`

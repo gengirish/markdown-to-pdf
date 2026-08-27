@@ -140,15 +140,26 @@ def test_claiming_creates_a_passport_and_links_the_credential(
 
 
 def test_claiming_leaves_the_credential_verifiable(client: TestClient, db_session):
-    """`status` must stay "issued": /verify treats anything else as nonexistent,
-    and the QR code printed on the certificate resolves through it."""
-    _issue_credential(db_session, "CF-STATUS-1")
+    """The invariant is that the printed QR keeps resolving — not that the
+    status string never moves.
+
+    This originally asserted status == "issued", because verify.py treated
+    anything else as nonexistent and claiming therefore could not record
+    itself. That was a workaround encoded as a test. Now that
+    PUBLICLY_VERIFIABLE covers both states, the requirement can be asserted
+    directly: claim it, then check it still verifies.
+    """
+    _issue_credential(db_session, "CF-2026-STATUS01")
 
     with auth_as("user_2Status"):
-        assert client.post("/api/v1/claims/CF-STATUS-1").status_code == 200
+        assert client.post("/api/v1/claims/CF-2026-STATUS01").status_code == 200
+
+    assert client.get("/api/v1/verify/CF-2026-STATUS01").status_code == 200
 
     db_session.expire_all()
-    assert db_session.query(Credential).filter_by(public_id="CF-STATUS-1").one().status == "issued"
+    cred = db_session.query(Credential).filter_by(public_id="CF-2026-STATUS01").one()
+    assert cred.status == "claimed"
+    assert cred.is_publicly_verifiable is True
 
 
 def test_repeat_claim_by_the_same_user_is_idempotent(client: TestClient, db_session):

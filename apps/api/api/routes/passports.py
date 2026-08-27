@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.models import get_db
-from api.models.credential import Credential
+from api.models.credential import CLAIMABLE, CLAIMED, Credential
 from api.models.passport import Passport, PassportCredential
 from api.core.envelope import ApiResponse
 from api.core.principal import Principal, require_user, require_org_access
@@ -60,7 +60,7 @@ def claim_credential(
         cred = session.query(Credential).filter_by(public_id=credential_id).first()
         # Revoked counts as absent here, as it does in /verify — claiming one
         # would only pin a withdrawn credential to a public profile.
-        if not cred or cred.status == "revoked":
+        if not cred or cred.status not in CLAIMABLE:
             raise HTTPException(status_code=404, detail="Credential not found")
 
         if cred.claimed_by_user_id and cred.claimed_by_user_id != principal.clerk_user_id:
@@ -97,11 +97,13 @@ def claim_credential(
             )
             session.add(link)
 
-        # Claiming records who holds the credential and deliberately leaves
-        # `status` at "issued": verify.py treats any other value as
-        # unverifiable, and the QR printed on the certificate must keep
-        # resolving after the recipient claims it.
+        # Claiming now records the state as well as the holder. It could not
+        # before: verify.py treated anything other than "issued" as
+        # unverifiable, so marking a credential claimed would have stopped the
+        # QR code on the certificate from resolving. PUBLICLY_VERIFIABLE covers
+        # both states, so the transition is finally safe to make.
         cred.claimed_by_user_id = principal.clerk_user_id
+        cred.status = CLAIMED
         if cred.claimed_at is None:
             cred.claimed_at = datetime.now(timezone.utc)
 

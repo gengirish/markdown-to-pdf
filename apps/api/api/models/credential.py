@@ -1,5 +1,37 @@
 """Credential and CredentialBatch models."""
 
+# ── Credential lifecycle ────────────────────────────────────────────────────
+#
+# These were four ad-hoc string comparisons scattered across three files, and
+# they disagreed. The viewer allowed only "issued" (a whitelist) while
+# badge.json, claiming and passport listing allowed anything but "revoked" (a
+# blacklist). Two consequences, both hit independently during Wave 1:
+#
+#   - a credential could not be marked "claimed" at all, because doing so
+#     would have made an already-printed QR code stop verifying
+#   - a "pending" credential — a bulk row the worker has not finished — was
+#     invisible in the viewer yet still exported a public Open Badge
+#
+# Defining the states in one place means adding a fifth forces a decision about
+# what every surface does with it, instead of four files quietly disagreeing.
+
+PENDING = "pending"    # row exists; the worker has not produced it yet
+ISSUED = "issued"      # live and publicly verifiable
+CLAIMED = "claimed"    # a recipient attached it to their passport — still live
+REVOKED = "revoked"    # withdrawn; never becomes valid again
+
+#: Anything a stranger holding the URL may see. Claiming must not remove a
+#: credential from public view — the QR code on the certificate is permanent.
+PUBLICLY_VERIFIABLE = frozenset({ISSUED, CLAIMED})
+
+#: A recipient may claim a credential that is live, and claiming twice is a
+#: no-op rather than an error.
+CLAIMABLE = frozenset({ISSUED, CLAIMED})
+
+#: Terminal. Nothing transitions out of REVOKED.
+TERMINAL = frozenset({REVOKED})
+
+
 import uuid
 from datetime import datetime, timezone
 
@@ -99,7 +131,16 @@ class Credential(Base):
 
     @property
     def is_revoked(self) -> bool:
-        return self.status == "revoked"
+        return self.status == REVOKED
+
+    @property
+    def is_publicly_verifiable(self) -> bool:
+        """May a stranger holding the URL see this credential?"""
+        return self.status in PUBLICLY_VERIFIABLE
+
+    @property
+    def is_claimable(self) -> bool:
+        return self.status in CLAIMABLE
 
     def __repr__(self) -> str:
         return f"<Credential public_id={self.public_id!r} status={self.status!r}>"
