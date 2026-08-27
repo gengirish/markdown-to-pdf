@@ -25,6 +25,11 @@ from api.models import get_db
 from api.models.credential import Credential
 from api.models.organization import Organization
 from api.models.usage import UsageLedger
+from api.services.delivery import (
+    deliver_credential_email,
+    delivery_state,
+    mark_not_requested,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +66,9 @@ class IssueRequest:
     metadata: dict[str, Any] = field(default_factory=dict)
     template_id: Optional[uuid.UUID] = None
     batch_id: Optional[uuid.UUID] = None
+    #: Opt-in. Defaults off so that every caller written against the version of
+    #: this API that could not send email keeps behaving exactly as it did.
+    send_email: bool = False
 
 
 @dataclass
@@ -77,6 +85,9 @@ class IssuedCredential:
     metadata: dict[str, Any]
     verify_url: str
     badge_url: str
+    #: What happened to the email, always — including "we did not try", which is
+    #: a recorded outcome here rather than an absence.
+    delivery: dict[str, Any]
     quota_limit: int
     quota_remaining: int
 
@@ -92,6 +103,7 @@ class IssuedCredential:
             "metadata": self.metadata,
             "verify_url": self.verify_url,
             "badge_url": self.badge_url,
+            "delivery": self.delivery,
         }
 
 
@@ -194,6 +206,29 @@ def issue_credential(
         session.flush()
 
         verify_url, badge_url = _public_urls(public_id)
+
+        # Delivery goes through services/delivery.py — the same function bulk
+        # issuance calls. The TODO this closes asked for the state shape to be
+        # settled before this path grew its own sender, precisely so there
+        # would not be two email bodies and two ways of recording an outcome.
+        #
+        # Every branch writes a terminal state. "Nobody asked us to send" and
+        # "we sent and it was rejected" must never again be the same row.
+        if is_test:
+            mark_not_requested(
+                credential,
+                "Test credential; a cf_test_ key never sends email.",
+            )
+        elif not request.send_email:
+            mark_not_requested(
+                credential,
+                "Delivery not requested (send_email was not set).",
+            )
+        else:
+            deliver_credential_email(credential, verify_url=verify_url)
+
+        delivery = delivery_state(credential)
+
         result = IssuedCredential(
             public_id=public_id,
             org_slug=org.slug,
@@ -205,6 +240,7 @@ def issue_credential(
             metadata=metadata,
             verify_url=verify_url,
             badge_url=badge_url,
+            delivery=delivery,
             quota_limit=limit,
             quota_remaining=remaining,
         )
