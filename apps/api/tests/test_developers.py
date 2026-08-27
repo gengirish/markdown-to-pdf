@@ -27,7 +27,8 @@ def test_generate_api_key(client: TestClient, mock_clerk, db_session):
     assert response.status_code == 200
     data = response.json()["data"]
     assert "raw_key" in data
-    assert data["raw_key"].startswith("cf_prod_")
+    assert data["raw_key"].startswith("cf_live_")
+    assert data["kind"] == "live"
     assert data["label"] == "Production Key"
     
 def test_list_and_revoke_api_keys(client: TestClient, mock_clerk, db_session):

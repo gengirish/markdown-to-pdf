@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel
 
 from api.core.envelope import ApiResponse
-from api.core.auth import AuthenticatedUser, get_current_user, require_org_role
+from api.core.principal import Principal, require_user, require_org_access
 from api.models import get_db
 from api.models.organization import Organization, OrgMember
 
@@ -26,7 +26,7 @@ class OrgUpdate(BaseModel):
 @router.post("", response_model=ApiResponse[dict])
 def create_org(
     payload: OrgCreate,
-    user: AuthenticatedUser = Depends(get_current_user)
+    principal: Principal = Depends(require_user)
 ):
     """Create a new organization. Usually called by Clerk webhooks, but available via API."""
     with get_db() as session:
@@ -61,7 +61,7 @@ def create_org(
 
         member = OrgMember(
             org_id=org.id,
-            clerk_user_id=user.clerk_user_id,
+            clerk_user_id=principal.clerk_user_id,
             role="owner"
         )
         session.add(member)
@@ -92,7 +92,7 @@ def get_org(slug: str):
 def update_org(
     slug: str,
     payload: OrgUpdate,
-    user: AuthenticatedUser = Depends(get_current_user)
+    principal: Principal = Depends(require_user)
 ):
     """Update organization details. Requires owner or admin role."""
     with get_db() as session:
@@ -100,7 +100,7 @@ def update_org(
         if not org:
             raise HTTPException(status_code=404, detail="Organization not found")
             
-        require_org_role(user, str(org.id), allowed_roles=("owner", "admin"))
+        require_org_access(principal, str(org.id), allowed_roles=("owner", "admin"))
         
         if payload.name is not None:
             org.name = payload.name
@@ -117,7 +117,7 @@ def update_org(
 @router.get("/{slug}/members", response_model=ApiResponse[list[dict]])
 def list_org_members(
     slug: str,
-    user: AuthenticatedUser = Depends(get_current_user)
+    principal: Principal = Depends(require_user)
 ):
     """List members of an organization."""
     with get_db() as session:
@@ -125,7 +125,7 @@ def list_org_members(
         if not org:
             raise HTTPException(status_code=404, detail="Organization not found")
             
-        require_org_role(user, str(org.id), allowed_roles=("owner", "admin", "issuer"))
+        require_org_access(principal, str(org.id), allowed_roles=("owner", "admin", "issuer"))
         
         members = session.query(OrgMember).filter_by(org_id=org.id).all()
         

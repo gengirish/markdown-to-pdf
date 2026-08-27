@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from api.models import get_db
 from api.models.organization import Organization
 from api.core.envelope import ApiResponse
-from api.core.auth import get_current_user, AuthenticatedUser
+from api.core.principal import Principal, require_user, require_org_access
 from api.core.config import RAZORPAY_SECRET
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ webhooks_router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 def create_checkout_session(
     slug: str,
     payload: Dict[str, Any],
-    user: AuthenticatedUser = Depends(get_current_user)
+    principal: Principal = Depends(require_user)
 ):
     """Create a Razorpay checkout session for upgrading org tier."""
     # In a real app, integrate with razorpay python SDK

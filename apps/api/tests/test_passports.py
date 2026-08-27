@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from api.core import auth
 from api.core.auth import AuthenticatedUser, get_current_user
+from api.core.principal import Principal, require_user, resolve_principal
 from api.index import app
 from api.models.credential import Credential
 from api.models.organization import Organization
@@ -28,13 +29,25 @@ def auth_as(clerk_user_id: str, email=None):
     Separate from conftest's `mock_clerk` because these tests need to switch
     identities mid-test — and to vary whether the token carried an email.
     """
-    app.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(
-        clerk_user_id=clerk_user_id, email=email
-    )
+    # Both dependencies, because these routes authorise through the principal
+    # layer while other tests still exercise get_current_user directly.
+    overrides = {
+        get_current_user: lambda: AuthenticatedUser(
+            clerk_user_id=clerk_user_id, email=email
+        ),
+        require_user: lambda: Principal(
+            kind="user", clerk_user_id=clerk_user_id, email=email
+        ),
+        resolve_principal: lambda: Principal(
+            kind="user", clerk_user_id=clerk_user_id, email=email
+        ),
+    }
+    app.dependency_overrides.update(overrides)
     try:
         yield
     finally:
-        app.dependency_overrides.pop(get_current_user, None)
+        for dep in overrides:
+            app.dependency_overrides.pop(dep, None)
 
 
 def _issue_credential(db_session: Session, public_id: str, **overrides) -> Credential:

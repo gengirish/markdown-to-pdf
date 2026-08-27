@@ -89,13 +89,29 @@ def client(setup_db):
 
 @pytest.fixture
 def mock_clerk():
+    """Stand in for a signed-in human on both auth dependencies.
+
+    Routes reachable by machines depend on resolve_principal rather than
+    get_current_user, so overriding only the latter leaves them answering 401
+    and the test looks like an authorisation bug instead of a missing stub.
+    """
     from api.core.auth import get_current_user, AuthenticatedUser
-    
+    from api.core.principal import Principal, require_user, resolve_principal
+
     def _get_current_user():
         # Keep in sync with the AuthenticatedUser dataclass — it has no
-        # session_id/email fields, and passing them raises TypeError.
+        # session_id field, and passing one raises TypeError.
         return AuthenticatedUser(clerk_user_id="test_user_123")
-        
-    app.dependency_overrides[get_current_user] = _get_current_user
+
+    def _resolve_principal():
+        return Principal(kind="user", clerk_user_id="test_user_123")
+
+    overrides = {
+        get_current_user: _get_current_user,
+        resolve_principal: _resolve_principal,
+        require_user: _resolve_principal,
+    }
+    app.dependency_overrides.update(overrides)
     yield
-    app.dependency_overrides.pop(get_current_user, None)
+    for dep in overrides:
+        app.dependency_overrides.pop(dep, None)

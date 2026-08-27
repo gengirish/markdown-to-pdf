@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.core.envelope import ApiResponse
-from api.core.auth import AuthenticatedUser, get_current_user, get_optional_user, require_org_role
+from api.core.auth import AuthenticatedUser, get_optional_user
+from api.core.principal import Principal, resolve_principal, require_org_access
 from api.models import get_db
 from api.models.organization import Organization
 from api.models.template import Template
@@ -37,7 +38,7 @@ def list_global_templates(
 @router.get("/orgs/{slug}/templates", response_model=ApiResponse[list[dict]])
 def list_org_templates(
     slug: str,
-    user: AuthenticatedUser = Depends(get_current_user)
+    principal: Principal = Depends(resolve_principal)
 ):
     """List custom templates for an organization."""
     with get_db() as session:
@@ -45,7 +46,7 @@ def list_org_templates(
         if not org:
             raise HTTPException(status_code=404, detail="Organization not found")
             
-        require_org_role(user, str(org.id), allowed_roles=("owner", "admin", "issuer"))
+        require_org_access(principal, str(org.id), allowed_roles=("owner", "admin", "issuer"))
         
         templates = session.query(Template).filter_by(org_id=org.id).all()
         data = [{
@@ -60,7 +61,7 @@ def list_org_templates(
 def upload_org_template(
     slug: str,
     payload: TemplateUpload,
-    user: AuthenticatedUser = Depends(get_current_user)
+    principal: Principal = Depends(resolve_principal)
 ):
     """Upload a custom template for an organization (Paid feature)."""
     with get_db() as session:
@@ -68,7 +69,7 @@ def upload_org_template(
         if not org:
             raise HTTPException(status_code=404, detail="Organization not found")
             
-        require_org_role(user, str(org.id), allowed_roles=("owner", "admin"))
+        require_org_access(principal, str(org.id), allowed_roles=("owner", "admin"))
         
         # In a real app we'd enforce the tier checks here
         if org.tier == "community":

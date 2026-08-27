@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 
 from api.core.envelope import ApiResponse
-from api.core.auth import AuthenticatedUser, get_current_user, require_org_role
+from api.core.principal import Principal, resolve_principal, require_org_access
 from api.core.crypto import generate_credential_id, hmac_sign
 from api.models import get_db
 from api.models.organization import Organization
@@ -24,7 +24,7 @@ async def upload_bulk_csv(
     slug: str,
     template_id: str = Form(...),
     file: UploadFile = File(...),
-    user: AuthenticatedUser = Depends(get_current_user)
+    principal: Principal = Depends(resolve_principal)
 ):
     """Upload a CSV to bulk-issue credentials."""
     with get_db() as session:
@@ -32,7 +32,7 @@ async def upload_bulk_csv(
         if not org:
             raise HTTPException(status_code=404, detail="Organization not found")
             
-        require_org_role(user, str(org.id), allowed_roles=("owner", "admin", "issuer"))
+        require_org_access(principal, str(org.id), allowed_roles=("owner", "admin", "issuer"))
         
         try:
             tid = uuid.UUID(template_id)
@@ -80,7 +80,13 @@ async def upload_bulk_csv(
             csv_filename=file.filename or "upload.csv",
             total=len(rows),
             status="pending",
-            created_by=user.clerk_user_id
+            # An API key has no person behind it, so record the key instead
+            # of inventing a user id. Either way the batch is attributable.
+            created_by=(
+                principal.clerk_user_id
+                if not principal.is_api_key
+                else f"api_key:{principal.api_key_id}"
+            )
         )
         session.add(batch)
         session.flush()
@@ -125,7 +131,7 @@ async def upload_bulk_csv(
 def get_batch_status(
     slug: str,
     batch_id: str,
-    user: AuthenticatedUser = Depends(get_current_user)
+    principal: Principal = Depends(resolve_principal)
 ):
     """Check the status of a bulk issuance batch."""
     with get_db() as session:
@@ -133,7 +139,7 @@ def get_batch_status(
         if not org:
             raise HTTPException(status_code=404, detail="Organization not found")
             
-        require_org_role(user, str(org.id), allowed_roles=("owner", "admin", "issuer"))
+        require_org_access(principal, str(org.id), allowed_roles=("owner", "admin", "issuer"))
         
         try:
             bid = uuid.UUID(batch_id)
@@ -160,7 +166,7 @@ def list_org_credentials(
     slug: str,
     limit: int = 50,
     offset: int = 0,
-    user: AuthenticatedUser = Depends(get_current_user)
+    principal: Principal = Depends(resolve_principal)
 ):
     """List credentials issued by the organization."""
     with get_db() as session:
@@ -168,7 +174,7 @@ def list_org_credentials(
         if not org:
             raise HTTPException(status_code=404, detail="Organization not found")
             
-        require_org_role(user, str(org.id), allowed_roles=("owner", "admin", "issuer"))
+        require_org_access(principal, str(org.id), allowed_roles=("owner", "admin", "issuer"))
         
         query = session.query(Credential).filter_by(org_id=org.id).order_by(Credential.issued_at.desc())
         total = query.count()
