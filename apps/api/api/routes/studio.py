@@ -161,38 +161,7 @@ def get_batch_status(
             "completed_at": batch.completed_at.isoformat() if batch.completed_at else None
         })
 
-@router.get("/{slug}/credentials", response_model=ApiResponse[dict])
-def list_org_credentials(
-    slug: str,
-    limit: int = 50,
-    offset: int = 0,
-    principal: Principal = Depends(resolve_principal)
-):
-    """List credentials issued by the organization."""
-    with get_db() as session:
-        org = session.query(Organization).filter_by(slug=slug).first()
-        if not org:
-            raise HTTPException(status_code=404, detail="Organization not found")
-            
-        require_org_access(principal, str(org.id), allowed_roles=("owner", "admin", "issuer"))
-        
-        query = session.query(Credential).filter_by(org_id=org.id).order_by(Credential.issued_at.desc())
-        total = query.count()
-        creds = query.limit(limit).offset(offset).all()
-        
-        data = [{
-            "id": c.public_id,
-            "recipient_name": c.recipient_name,
-            "recipient_email": c.recipient_email,
-            "title": c.title,
-            "status": c.status,
-            "issued_at": c.issued_at.isoformat(),
-            "batch_id": str(c.batch_id) if c.batch_id else None
-        } for c in creds]
-        
-        return ApiResponse.ok({
-            "items": data,
-            "total": total,
-            "limit": limit,
-            "offset": offset
-        })
+# GET /orgs/{slug}/credentials now lives in routes/credentials.py, alongside
+# issuing and revoking. It was defined here as well, and FastAPI silently served
+# whichever router registered first — so the endpoint you got depended on import
+# order in index.py. One resource, one handler.
