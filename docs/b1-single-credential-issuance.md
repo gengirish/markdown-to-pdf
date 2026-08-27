@@ -57,8 +57,10 @@ Two things this run establishes that the code review could not:
   the download styling and renders no button; the badge is exportable, the document is
   not. Anyone who receives one of these credentials gets a web page, not a certificate.
 
-The delivery email was not verified in this run — all three CSV rows carry the same
-recipient address, so what did or did not arrive is a separate check.
+**Follow-up:** no email arrived. AgentMail is configured and healthy on the deployed
+API, and the send branch demonstrably ran, but nothing on the system records whether a
+send was attempted or why it failed — see
+[TODOs/email-delivery-observability.md](./TODOs/email-delivery-observability.md).
 
 
 **Next, in order:** the `/verify` 404 on `certforge.intelliforge.tech` (see the smoke
@@ -551,11 +553,12 @@ that needs a mode flag.
    service reads `org.monthly_quota`; billing is what keeps it in sync. Put that in the
    service docstring.
 7. **`-1` means unlimited**, and every comparison must special-case it.
-8. **`CERTFORGE_WEB_URL` has no `/verify/{id}` route.** `apps/web` does not implement
-   one and `apps/web/vercel.json` rewrites nothing to Fly, yet `worker.py:145` bakes
-   that host into every credential QR code. Proven live, 2026-08-27. Fixing it is
-   either a Next.js route in `apps/web` or a rewrite in `apps/web/vercel.json` — and
-   until it is fixed, credentials already printed point at a 404.
+8. **`CERTFORGE_WEB_URL` serves none of its public paths.** `/verify/{id}`,
+   `/credentials/{id}/badge.json` and `/orgs/{slug}` all 404 live — only `/claim/{id}`
+   resolves — yet those are the URLs baked into every QR code and into the Open Badges
+   `issuer.id`. Proven live, 2026-08-27. Written up in
+   [TODOs/certforge-public-urls-404.md](./TODOs/certforge-public-urls-404.md); it is
+   the highest open item, because printed credentials already point at a 404.
 
 ---
 
