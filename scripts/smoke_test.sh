@@ -116,6 +116,26 @@ check_abs_ctype "badge.json reaches the API, not the app shell" \
 check_abs_contains "the issuer profile route is deployed" \
   "$CF_WEB/orgs/__no_such_org__" "Organization not found"
 
+head_ "CertForge API host"
+# badge_url is built from CERTFORGE_API_URL and handed to every API caller, so
+# that host has to exist. Probed separately because it is a DIFFERENT host from
+# both BASE and CF_WEB, and nothing else in this file touches it — which is how
+# it went unnoticed that it does not resolve at all.
+CF_API="${SMOKE_CERTFORGE_API:-https://api.certforge.intelliforge.tech}"
+CF_API="${CF_API%/}"
+
+# curl reports 000 when the connection never happens — no DNS, no TLS, no
+# route. A status check alone would read that as "not 200" without saying why.
+cf_api_code="$(status "$CF_API/api/health")"
+case "$cf_api_code" in
+  000) bad "the API host resolves" "a reachable host" "connection failed (no DNS/TLS) for $CF_API" ;;
+  200) ok "the API host resolves and is healthy" ;;
+  *)   bad "the API host resolves" "HTTP 200" "HTTP $cf_api_code" ;;
+esac
+
+check_abs_contains "badge.json is reachable on the API host" \
+  "$CF_API/credentials/CF-2026-NOTREAL/badge.json" "Credential not found"
+
 head_ "CORS"
 A="$(acao -H "Origin: https://smoke-test.invalid" "$BASE/api/health")"
 [ -z "$A" ] && ok "unknown origin gets no ACAO" || bad "unknown origin is refused" "no ACAO header" "$A"
