@@ -20,4 +20,9 @@ pip install httpx
 - **`zapier_integration.py`** — Zapier webhook bridge
 - **`batch_verify.py`** — Batch verify tokens from a file
 
+Sample input:
+
+- **`sample-participants.csv`** — CertForge bulk upload (`name,email,title,date,issuer_name`)
+- **`sample-participants-legacy.csv`** — `bulk_onboarding.py` (`name,email,course,completion_date`)
+
 See root `README.md` for full API documentation.

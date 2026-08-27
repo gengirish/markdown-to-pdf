@@ -9,14 +9,14 @@ have to be settled before the first line of code.
 pytest` → 91 passed.** Every claim below was checked in the code today, not carried
 over from the earlier plan.
 
-## Status — 2026-08-27, `main` @ `a403b68`, 127 tests passing
+## Status — 2026-08-27, `main` @ `629b454`, 135 tests passing
 
 | | Commit | State |
 |---|---|---|
 | B1.0 | Golden contract test | **not started** — `tests/test_contract_legacy.py` still does not exist |
 | B1.1 | `resolve_principal` | **landed** — `d56557b` |
 | B1.2 | Service layer + single issuance | **landed** — `a403b68` |
-| B1.3 | The rest of the resource | **partly landed** — list, get and revoke in `a403b68`; the status state machine is in the working tree, uncommitted; no `/pdf` route |
+| B1.3 | The rest of the resource | **partly landed** — list, get and revoke in `a403b68`; the status state machine in `629b454`; no `/pdf` route |
 | B1.4 | Batch + usage surface | **not started** |
 | B1.5 | Legacy adapter | not started, and optional by design |
 
@@ -27,8 +27,43 @@ were settled by what shipped.
 Where the code and this plan disagree, the code is what shipped. The note under each
 commit below says which way it went.
 
-**Next, in order:** commit the working-tree state machine; template resolution + the
-`/pdf` route (D5 and D4 are one piece of work, and together they are what makes an
+### Production smoke test — 2026-08-27
+
+First end-to-end issuance against production. **The bulk CSV path works.**
+
+Input: `examples/sample-participants.csv` (`name,email,title,date,issuer_name`; three
+participation rows). Issued under org `certforge-1787635500301081932` ("CertForge HQ").
+
+| Check | Result |
+|---|---|
+| Bulk upload → batch → worker render | credential `CF-2026-XEHQNMFZ`, `issued_at` `2026-08-27T02:38:18Z` |
+| `GET https://certs.intelliforge.tech/verify/CF-2026-XEHQNMFZ` | **200 `text/html`**, viewer renders, status shown as *Issued* |
+| `GET https://certs.intelliforge.tech/credentials/CF-2026-XEHQNMFZ/badge.json` | **200**, well-formed OB 3.0; `achievement.name` = `Certificate of Participation`, taken from the CSV `title` column |
+| `GET https://certforge.intelliforge.tech/verify/CF-2026-XEHQNMFZ` | **404** — see below |
+| Download button in the viewer | **absent.** `.download-btn` CSS is in the page, no anchor uses it, because `pdf_url` is null (D4) |
+| `cd apps/api && python -m pytest` | 135 passed |
+
+Two things this run establishes that the code review could not:
+
+- **The CertForge public host does not serve `/verify/{id}`.** Only the legacy host does,
+  because `certs.intelliforge.tech` is the Vercel project whose `vercel.json` rewrites
+  `/verify/*` through to Fly. `apps/web` has `claim/[credential_id]`, `passport` and
+  `org` routes but **no `verify` route**, and `apps/web/vercel.json` declares no
+  rewrites at all. Meanwhile `worker.py:145` builds the QR code from
+  `CERTFORGE_WEB_URL` — so **every CertForge PDF issued so far carries a QR code that
+  resolves to a 404**, on paper, unfixably. The URL above resolves only because it was
+  typed against the legacy host by hand. This outranks the rest of the B1 backlog.
+- **D4 is confirmed unsettled in production, not just in the source.** The viewer ships
+  the download styling and renders no button; the badge is exportable, the document is
+  not. Anyone who receives one of these credentials gets a web page, not a certificate.
+
+The delivery email was not verified in this run — all three CSV rows carry the same
+recipient address, so what did or did not arrive is a separate check.
+
+
+**Next, in order:** the `/verify` 404 on `certforge.intelliforge.tech` (see the smoke
+test below — it is live and it is baked into printed QR codes); template resolution +
+the `/pdf` route (D5 and D4 are one piece of work, and together they are what makes an
 issued credential an actual document); point `studio.py` at the service's quota helper;
 then D3's signing, while it is still free.
 
@@ -183,7 +218,8 @@ instead, and nothing else moves.
 
 **Not settled.** There is no `/pdf` route and `issue_credential` leaves `pdf_url` null,
 so a credential issued through the API has no document. A1's download button stays
-hidden, and the §1 goal is only half met.
+hidden, and the §1 goal is only half met. Confirmed in production on 2026-08-27: the
+viewer for `CF-2026-XEHQNMFZ` carries the `.download-btn` CSS and no button.
 
 ### D5 — Which template does a single credential use?
 
@@ -423,10 +459,9 @@ twice returns the same `public_id`; a test-mode key sends no email.
 > **Done** (`a403b68`): list with cursor pagination, `GET /{id}`, `POST /{id}/revoke`
 > with `owner`/`admin` and an idempotent repeat, quota headers on both write and read.
 >
-> **Done but uncommitted** (working tree): the D2 state machine in
-> `models/credential.py`, the `badge.json` gate, `passports.py` setting `CLAIMED`.
-> Commit it before starting anything else — it is the piece three other files now
-> import.
+> **Done** (`629b454`): the D2 state machine in `models/credential.py`, the
+> `badge.json` gate, `passports.py` setting `CLAIMED`. The smoke test above exercised
+> the `badge.json` gate for real — an `issued` credential exports a valid badge.
 >
 > **Not done:** `GET /{id}/pdf` (D4/D5). The credential still has no document.
 >
@@ -516,6 +551,11 @@ that needs a mode flag.
    service reads `org.monthly_quota`; billing is what keeps it in sync. Put that in the
    service docstring.
 7. **`-1` means unlimited**, and every comparison must special-case it.
+8. **`CERTFORGE_WEB_URL` has no `/verify/{id}` route.** `apps/web` does not implement
+   one and `apps/web/vercel.json` rewrites nothing to Fly, yet `worker.py:145` bakes
+   that host into every credential QR code. Proven live, 2026-08-27. Fixing it is
+   either a Next.js route in `apps/web` or a rewrite in `apps/web/vercel.json` — and
+   until it is fixed, credentials already printed point at a 404.
 
 ---
 
