@@ -3,7 +3,7 @@
 import html
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from api.core.config import CERTFORGE_WEB_URL
 from api.core.envelope import ApiResponse
@@ -119,6 +119,103 @@ def get_open_badge_json(public_id: str):
                 }
             }
         }
+
+@public_router.get("/orgs/{slug}")
+def issuer_profile(slug: str, request: Request):
+    """Public issuer profile — the target of every badge's `issuer.id`.
+
+    Open Badges 3.0 treats `issuer.id` as a dereferenceable URL: a consumer
+    fetches it to find out who issued the thing. Until this existed the badge
+    validated structurally and failed in use, because nothing served the URL it
+    named — on this host or any other. A rewrite could not fix that; there was
+    no target to rewrite to.
+
+    Deliberately NOT `/org/{slug}`. That namespace is the signed-in dashboard
+    and `apps/web/proxy.ts` protects it, so an issuer.id there would answer a
+    badge consumer with a sign-in redirect. Plural is public, singular is
+    private, and the two must not be merged.
+
+    Content-negotiated because both kinds of client dereference this same URL:
+    a validator sends `Accept: application/json` and needs the Profile, a person
+    follows the link from a certificate and needs a page.
+    """
+    with get_db() as session:
+        org = session.query(Organization).filter_by(slug=slug).first()
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found")
+
+        profile_id = f"{CERTFORGE_WEB_URL}/orgs/{org.slug}"
+        name = org.name
+        logo_url = org.logo_url
+
+    accept = request.headers.get("accept", "")
+    wants_json = ("json" in accept) and ("text/html" not in accept)
+
+    if wants_json:
+        profile = {
+            "@context": [
+                "https://www.w3.org/2018/credentials/v1",
+                "https://purl.imsglobal.org/spec/ob/v3p0/context.json",
+            ],
+            "id": profile_id,
+            "type": "Profile",
+            "name": name,
+        }
+        # Omitted rather than sent as null: an Open Badges consumer renders an
+        # `image` key if it is present, and a null one is a broken image.
+        if logo_url:
+            profile["image"] = logo_url
+        return JSONResponse(profile, media_type="application/ld+json")
+
+    # Organization names are customer-supplied and land on a public page, so
+    # they are escaped for the same reason recipient names are below.
+    safe_name = html.escape(str(name))
+    safe_slug = html.escape(str(slug))
+
+    logo_img = ""
+    if logo_url and str(logo_url).startswith(("https://", "http://", "/")):
+        logo_img = (
+            f'<img src="{html.escape(str(logo_url))}" alt="" class="logo">'
+        )
+
+    return HTMLResponse(f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{safe_name} - Credential Issuer</title>
+        <link rel="alternate" type="application/ld+json" href="{html.escape(profile_id)}">
+        <style>
+            body {{ font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; margin: 0; padding: 2rem; color: #0f172a; text-align: center; }}
+            .card {{ background: white; max-width: 600px; margin: 0 auto; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); border: 1px solid #e2e8f0; }}
+            .logo {{ max-height: 64px; max-width: 200px; margin-bottom: 1rem; }}
+            h1 {{ color: #1e293b; font-size: 1.5rem; margin-bottom: 0.5rem; }}
+            .badge {{ display: inline-flex; align-items: center; background: #e0f2fe; color: #075985; padding: 0.25rem 0.75rem; border-radius: 9999px; font-weight: 600; font-size: 0.875rem; margin-bottom: 1.5rem; border: 1px solid #bae6fd; }}
+            .field {{ margin-bottom: 1rem; text-align: left; }}
+            .label {{ font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; font-weight: 600; margin-bottom: 0.25rem; }}
+            .value {{ font-size: 1.125rem; font-weight: 500; color: #0f172a; }}
+            .note {{ font-size: 0.8125rem; color: #64748b; margin-top: 1.5rem; line-height: 1.5; }}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            {logo_img}
+            <div class="badge">Credential Issuer</div>
+            <h1>{safe_name}</h1>
+            <div class="field">
+                <div class="label">Issuer ID</div>
+                <div class="value" style="font-family: monospace; font-size: 0.9375rem; word-break: break-all;">{safe_slug}</div>
+            </div>
+            <p class="note">
+                This organization issues verifiable credentials. Each one carries a
+                link that confirms it against this issuer.
+            </p>
+        </div>
+    </body>
+    </html>
+    """)
+
 
 @public_router.get("/verify/{credential_id}", response_class=HTMLResponse)
 async def verify_page(credential_id: str, request: Request):

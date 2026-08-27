@@ -17,6 +17,10 @@ set -uo pipefail
 
 BASE="${1:-https://certs.intelliforge.tech}"
 BASE="${BASE%/}"
+# The CertForge host is probed separately from BASE, because the URLs inside a
+# CertForge QR code are built from CERTFORGE_WEB_URL rather than from the legacy
+# site. Override with SMOKE_CERTFORGE_WEB.
+#
 # The origin the browser UI is served from — used to prove CORS still admits
 # the real front end, not just that it blocks strangers.
 SITE_ORIGIN="${SMOKE_SITE_ORIGIN:-https://certs.intelliforge.tech}"
@@ -78,6 +82,39 @@ check_status "unknown /verify is 404"             "/verify/CF-2026-NOTREAL" 404
 CT="$(ctype "$BASE/verify/CF-2026-NOTREAL")"
 case "$CT" in text/html*) ok "/verify serves HTML, not the SPA shell" ;;
   *) bad "/verify serves HTML" "text/html" "$CT" ;; esac
+
+head_ "CertForge public host"
+# Everything above was probed against BASE, which defaults to the LEGACY host —
+# where these rewrites have existed since 3b52e72. The URLs CertForge actually
+# stamps into a QR code are built from CERTFORGE_WEB_URL, and on THAT host they
+# 404'd for the whole of Wave 1 while every check in this file passed. Probing
+# the path without probing the host it is written on is what hid the bug.
+CF_WEB="${SMOKE_CERTFORGE_WEB:-https://certforge.intelliforge.tech}"
+CF_WEB="${CF_WEB%/}"
+
+# Asserting the STATUS here would be useless: Next.js answers an unrouted path
+# with its own 404, so "404" is returned both when the API refused the
+# credential and when the request never reached the API at all. The first
+# version of this section passed against a host serving nothing but the app
+# shell. So each check below pins a response only the API can produce.
+check_abs_contains() { local n="$1" u="$2" want="$3"; local got; got="$(get "$u")"
+  case "$got" in *"$want"*) ok "$n" ;;
+    *) bad "$n" "body containing: $want" "$(printf '%s' "$got" | head -c 140)" ;; esac; }
+
+check_abs_ctype() { local n="$1" u="$2" want="$3"; shift 3; local got
+  got="$(ctype "$@" "$u")"
+  case "$got" in "$want"*) ok "$n" ;; *) bad "$n" "$want" "$got" ;; esac; }
+
+check_abs_contains "/verify reaches the API, not the app shell" \
+  "$CF_WEB/verify/CF-2026-NOTREAL" "Invalid or Revoked Credential"
+check_abs_ctype "badge.json reaches the API, not the app shell" \
+  "$CF_WEB/credentials/CF-2026-NOTREAL/badge.json" "application/json"
+# Pinned to the message, not just the content type: FastAPI answers an
+# unmounted path with its own {"detail":"Not Found"}, which is also JSON.
+# Only the route itself produces this envelope, so this proves /orgs/{slug}
+# is deployed rather than merely that the request reached Fly.
+check_abs_contains "the issuer profile route is deployed" \
+  "$CF_WEB/orgs/__no_such_org__" "Organization not found"
 
 head_ "CORS"
 A="$(acao -H "Origin: https://smoke-test.invalid" "$BASE/api/health")"
