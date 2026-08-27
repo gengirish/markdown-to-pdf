@@ -22,6 +22,7 @@ from api.core.principal import Principal, require_org_access, resolve_principal
 from api.models import get_db
 from api.models.credential import Credential
 from api.models.organization import Organization
+from api.services.delivery import delivery_state
 from api.services.issuance import (
     UNLIMITED,
     IssuanceError,
@@ -39,6 +40,9 @@ class CredentialCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     recipient_email: str = Field("", max_length=255)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    #: Documented in the B1 plan and never implemented until now. Off by default
+    #: so no existing caller starts sending mail it did not ask to send.
+    send_email: bool = False
 
 
 def _quota_headers(response: Response, limit: int, remaining: int) -> None:
@@ -82,6 +86,7 @@ def create_credential(
                 title=payload.title,
                 recipient_email=payload.recipient_email,
                 metadata=payload.metadata,
+                send_email=payload.send_email,
             ),
             is_test=principal.is_test,
         )
@@ -205,6 +210,9 @@ def get_credential(
                 "claimed_at": c.claimed_at.isoformat() if c.claimed_at else None,
                 "verify_url": verify_url,
                 "badge_url": badge_url,
+                # So support can answer "did they get the email?" from the API
+                # instead of from a Fly log buffer that holds ~100 lines.
+                "delivery": delivery_state(c),
             }
         )
 

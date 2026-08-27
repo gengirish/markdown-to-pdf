@@ -154,8 +154,21 @@ def get_batch_status(
             "id": str(batch.id),
             "status": batch.status,
             "total": batch.total,
+            # succeeded/failed count RENDERS. Reading them as "people who got
+            # their credential" is how a batch that emailed nobody was reported
+            # as a complete success. delivery answers the other question.
             "succeeded": batch.succeeded,
             "failed": batch.failed,
+            "delivery": {
+                "delivered": batch.delivered,
+                "failed": batch.delivery_failed,
+                # Neither delivered nor failed: no address on the row, or the
+                # upload did not ask for delivery. Stated rather than left to be
+                # inferred from a subtraction.
+                "not_requested": max(
+                    0, batch.succeeded - batch.delivered - batch.delivery_failed
+                ),
+            },
             "error_report": batch.error_report,
             "created_at": batch.created_at.isoformat(),
             "completed_at": batch.completed_at.isoformat() if batch.completed_at else None

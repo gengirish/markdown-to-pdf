@@ -24,7 +24,8 @@ from api.models.credential import CredentialBatch, Credential
 from api.models.template import Template
 from api.core.pdf_renderer import render_credential_pdf
 from api.core.crypto import hmac_sign, generate_credential_id
-from api.core.email import agentmail_deliver
+from api.models.credential import DELIVERY_FAILED
+from api.services.delivery import deliver_credential_email, may_retry
 
 logger = logging.getLogger(__name__)
 
@@ -93,11 +94,57 @@ async def process_batch(batch_id_str: str):
     batch_id = uuid.UUID(batch_id_str)
     
     # Run sync code in thread
-    await asyncio.to_thread(_process_batch_sync, batch_id)
+    retry_ids = await asyncio.to_thread(_process_batch_sync, batch_id)
+
+    # Deferred rather than retried inline: a provider outage would otherwise
+    # stall the whole batch behind one address, and Procrastinate already gives
+    # us the scheduling. Failing to queue a retry must not fail the batch —
+    # the credentials are issued and verifiable either way.
+    for public_id in retry_ids or []:
+        try:
+            await retry_delivery.defer_async(public_id=public_id)
+        except Exception:
+            logger.exception("Could not queue a delivery retry for %s", public_id)
 
 
-def _process_batch_sync(batch_id: uuid.UUID):
-    """Synchronous core logic for processing a batch."""
+@worker_app.task(queue="issuance", retry=False)
+async def retry_delivery(public_id: str):
+    """Re-attempt one credential's email.
+
+    Procrastinate's own retry is off. This task manages attempts itself, on the
+    credential row, so the count survives a worker restart and so support can
+    see how many times we tried without reading the queue. MAX_DELIVERY_ATTEMPTS
+    is a hard stop: every AgentMail failure seen so far has been a configuration
+    error, which retrying does not fix, and an unbounded retry would mail the
+    same person on a loop.
+    """
+    await asyncio.to_thread(_retry_delivery_sync, public_id)
+
+
+def _retry_delivery_sync(public_id: str) -> None:
+    with get_db() as session:
+        cred = session.query(Credential).filter_by(public_id=public_id).first()
+        if not cred:
+            logger.warning("Delivery retry: no credential %s", public_id)
+            return
+        # Re-checked here rather than trusted from the queue: the row may have
+        # been delivered, or revoked, between queueing and running.
+        if not may_retry(cred):
+            logger.info(
+                "Delivery retry skipped for %s (status=%s, attempts=%s)",
+                public_id, cred.delivery_status, cred.delivery_attempts,
+            )
+            return
+        deliver_credential_email(cred)
+
+
+def _process_batch_sync(batch_id: uuid.UUID) -> list[str]:
+    """Synchronous core logic for processing a batch.
+
+    Returns the public IDs whose delivery failed and is still worth retrying.
+    The caller defers those; queueing from here would mean reaching into the
+    async Procrastinate app from inside a worker thread.
+    """
     logger.info(f"Processing batch {batch_id}")
     import csv
     from io import StringIO
@@ -107,7 +154,7 @@ def _process_batch_sync(batch_id: uuid.UUID):
         batch = session.query(CredentialBatch).filter_by(id=batch_id).first()
         if not batch or batch.status != "pending":
             logger.warning(f"Batch {batch_id} not found or not pending.")
-            return
+            return []
 
         batch.status = "processing"
         session.commit()
@@ -117,7 +164,7 @@ def _process_batch_sync(batch_id: uuid.UUID):
             batch.status = "failed"
             batch.error_report = {"error": "Template not found"}
             session.commit()
-            return
+            return []
 
         # Fetch pending credentials for this batch
         # Wait, in the studio, the user uploads CSV, we can either parse it in the route
@@ -129,6 +176,12 @@ def _process_batch_sync(batch_id: uuid.UUID):
         
         success_count = 0
         failed_count = 0
+        # Counted apart from success/failed, which measure RENDERS. A batch that
+        # rendered 30 PDFs and delivered none of them used to report "30
+        # succeeded" and nothing else.
+        delivered_count = 0
+        delivery_failed_count = 0
+        retry_ids: list[str] = []
         errors = {}
 
         for cred in pending_creds:
@@ -155,27 +208,23 @@ def _process_batch_sync(batch_id: uuid.UUID):
                 # For now, we leave pdf_url as None and generate on-the-fly.
                 
                 # 3. Send Email
-                if cred.recipient_email:
-                    # In Phase 1, we use AgentMail
-                    from api.core.config import CERT_BRAND_NAME
-                    
-                    # Very simple email template for Phase 1
-                    html_content = f"""
-                    <h2>Your Credential from {CERT_BRAND_NAME}</h2>
-                    <p>Hi {cred.recipient_name},</p>
-                    <p>Your credential for <strong>{cred.title}</strong> is ready.</p>
-                    <p>View it here: <a href="{verify_url}">{verify_url}</a></p>
-                    """
-                    
-                    success, msg = agentmail_deliver(
-                        to_email=cred.recipient_email,
-                        subject=f"Your credential for {cred.title}",
-                        text=f"Your credential is ready. View it here: {verify_url}",
-                        html=html_content
-                    )
-                    if not success:
-                        logger.warning(f"Email failed for {cred.recipient_email}: {msg}")
-                
+                #
+                # Through services/delivery.py rather than inline, so that this
+                # and single issuance cannot drift into two different email
+                # bodies and two different ways of recording an outcome. Every
+                # path through it writes a terminal delivery state onto the row,
+                # including the no-address case, which previously wrote nothing
+                # and was indistinguishable afterwards from a rejected send.
+                if deliver_credential_email(cred, verify_url=verify_url):
+                    delivered_count += 1
+                elif cred.delivery_status == DELIVERY_FAILED:
+                    delivery_failed_count += 1
+                    # Retryable failures are handed to a deferred job rather
+                    # than retried here: a provider outage would otherwise stall
+                    # the whole batch behind one address.
+                    if may_retry(cred):
+                        retry_ids.append(cred.public_id)
+
                 cred.status = "issued"
                 cred.issued_at = datetime.now(timezone.utc)
                 success_count += 1
@@ -190,18 +239,28 @@ def _process_batch_sync(batch_id: uuid.UUID):
             if (success_count + failed_count) % 10 == 0:
                 batch.succeeded = success_count
                 batch.failed = failed_count
+                batch.delivered = delivered_count
+                batch.delivery_failed = delivery_failed_count
                 session.commit()
                 # small delay to prevent DB hammering
                 time.sleep(0.1)
 
         batch.succeeded = success_count
         batch.failed = failed_count
+        batch.delivered = delivered_count
+        batch.delivery_failed = delivery_failed_count
+        # Delivery failures do NOT make the batch failed: the credentials exist,
+        # verify, and can be shared by link. Reporting the batch as failed would
+        # hide 30 perfectly good credentials behind an email problem.
         batch.status = "completed" if failed_count == 0 else "completed_with_errors"
         batch.completed_at = datetime.now(timezone.utc)
         batch.error_report = errors if errors else None
         session.commit()
         
-        logger.info(f"Batch {batch_id} completed: {success_count} succeeded, {failed_count} failed.")
+        logger.info(
+            f"Batch {batch_id} completed: {success_count} rendered, {failed_count} failed, "
+            f"{delivered_count} delivered, {delivery_failed_count} delivery failures."
+        )
 
         # Dispatch Webhooks
         try:
@@ -220,6 +279,11 @@ def _process_batch_sync(batch_id: uuid.UUID):
                         "status": batch.status,
                         "succeeded": batch.succeeded,
                         "failed": batch.failed,
+                        # A subscriber reading only succeeded/failed would
+                        # conclude every recipient was emailed. These say
+                        # otherwise when they were not.
+                        "delivered": batch.delivered,
+                        "delivery_failed": batch.delivery_failed,
                         "completed_at": batch.completed_at.isoformat()
                     }
                 }
@@ -240,3 +304,5 @@ def _process_batch_sync(batch_id: uuid.UUID):
                                 logger.warning(f"Failed to dispatch webhook to {wh.url}: {e}")
         except Exception as e:
             logger.error(f"Webhook dispatch error: {e}")
+
+    return retry_ids

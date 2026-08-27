@@ -1,8 +1,7 @@
 # TODO · Every public CertForge URL 404s on `certforge.intelliforge.tech`
 
-**Opened** 2026-08-27 · **Status** fixed in the working tree, **not yet deployed** ·
-**Severity** highest open item — it is baked into printed QR codes · **Trigger** first
-production issuance, `CF-2026-XEHQNMFZ`
+**Opened** 2026-08-27 · **Status** CLOSED — deployed and verified in production
+2026-08-27 · **Trigger** first production issuance, `CF-2026-XEHQNMFZ`
 
 ## The finding
 
@@ -70,7 +69,7 @@ frozen legacy brand, `SITE_URL` is immutable per the freeze contract, and shippi
 CertForge credentials under someone else's domain is the bug `worker.py:143-145` was
 already fixed once to stop doing.
 
-## Resolution (2026-08-27, undeployed)
+## Resolution (2026-08-27, deployed)
 
 **Rewrite** was chosen over native pages. The API already renders the verify viewer,
 and every hour spent building a second one is another hour of QR codes pointing at
@@ -142,15 +141,33 @@ CertForge public host
   FAIL the issuer profile reaches the API, not the app shell
 ```
 
-### What is still open
+### Verified in production
 
-- **Nothing is deployed.** The three failures above are the live state. `apps/web`
-  must ship for the QR codes to resolve.
-- The good news the fix carries: because the rewrite serves the *same* URLs already
-  printed, **every credential issued so far starts working on deploy**. Nothing needs
-  reissuing. That stops being true the moment the paths change.
-- `apps/web` has no `node_modules` in this working tree, so `next build` was not run.
-  The `proxy.ts` change is a two-element string array; the risk is low but unverified.
+Merged as `c92b8fb` and deployed. `scripts/smoke_test.sh` reports **23 passed, 0
+failed** against production, and the real credential from the incident —
+`CF-2026-XEHQNMFZ`, the one printed on paper — returns 200 *Verified Authentic* on
+`certforge.intelliforge.tech`. Its badge's `issuer.id` dereferences to a proper
+`Profile` (`application/ld+json`, "CertForge HQ"), and the same URL serves an HTML
+page to a browser. Because the rewrite serves the *same* URLs already printed,
+every credential issued before the fix started working at deploy: **nothing was
+reissued**.
+
+### One more thing the preview caught
+
+A Vercel rewrite does **not** bypass Next middleware. Clerk ran first, on all three
+passthrough paths — so the preview answered 500 with *"Missing publishableKey"*,
+because the Clerk env vars are set on Production only. That coupled printed QR codes
+to the dashboard's auth: a rotated key or an outage would have taken verification
+down, on paper nobody can reissue. `/verify`, `/credentials` and `/orgs` are now
+excluded from the `proxy.ts` matcher and a test fails if that exclusion is removed.
+
+### Still open
+
+- **`certforge` preview deployments 500 on every page.** All three env vars
+  (`CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`,
+  `NEXT_PUBLIC_CERTFORGE_API_URL`) exist only in Production. Pre-existing since
+  Clerk landed; needs Clerk *development-instance* keys, since copying production
+  secrets onto preview URLs is real exposure.
 - `_build_llms_txt` / `_build_sitemap_xml` were left alone. They describe the legacy
   `SITE_URL` surface and list none of the CertForge public paths — not `/verify`, not
   `badge.json`. Adding `/orgs` alone would be inconsistent; publishing the CertForge
