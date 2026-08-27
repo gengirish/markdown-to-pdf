@@ -109,8 +109,12 @@ check_abs_contains "/verify reaches the API, not the app shell" \
   "$CF_WEB/verify/CF-2026-NOTREAL" "Invalid or Revoked Credential"
 check_abs_ctype "badge.json reaches the API, not the app shell" \
   "$CF_WEB/credentials/CF-2026-NOTREAL/badge.json" "application/json"
-check_abs_ctype "the issuer profile reaches the API, not the app shell" \
-  "$CF_WEB/orgs/__no_such_org__" "application/json" -H "Accept: application/json"
+# Pinned to the message, not just the content type: FastAPI answers an
+# unmounted path with its own {"detail":"Not Found"}, which is also JSON.
+# Only the route itself produces this envelope, so this proves /orgs/{slug}
+# is deployed rather than merely that the request reached Fly.
+check_abs_contains "the issuer profile route is deployed" \
+  "$CF_WEB/orgs/__no_such_org__" "Organization not found"
 
 head_ "CORS"
 A="$(acao -H "Origin: https://smoke-test.invalid" "$BASE/api/health")"

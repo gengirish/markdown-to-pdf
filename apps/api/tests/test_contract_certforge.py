@@ -207,6 +207,10 @@ def test_the_issuer_profile_serves_a_page_to_a_browser(client, issued):
 def test_an_unknown_issuer_is_404_not_a_blank_profile(client):
     r = client.get("/orgs/no-such-org", headers={"Accept": "application/json"})
     assert r.status_code == 404
+    # The message is pinned because smoke_test.sh uses it to tell a deployed
+    # route from an unmounted one: FastAPI answers a path it does not have
+    # with its own {"detail":"Not Found"}, which is also JSON and also 404.
+    assert "Organization not found" in r.text
 
 
 # -- the namespace split that keeps the profile public ------------------------
