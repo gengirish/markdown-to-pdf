@@ -15,8 +15,19 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 // quietly breaking verification — is both likelier and worse.
 //
 // Anything that renders org-owned data or acts on a session goes in here.
+//
+// The singular/plural split is load-bearing, not a typo:
+//
+//   /org/{slug}/...  the private dashboard  — protected, listed below
+//   /orgs/{slug}     the public issuer page — anonymous, rewritten to the API
+//
+// This was "/org(.*)", which matches "/orgs/acme" too: `(.*)` accepts the "s".
+// That would have put an Open Badges issuer.id behind auth.protect(), so a
+// badge consumer dereferencing it would be redirected to a sign-in page rather
+// than served a Profile. Anchoring the slash keeps the two namespaces apart.
 const isProtectedRoute = createRouteMatcher([
-  "/org(.*)",
+  "/org",
+  "/org/(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, request) => {
