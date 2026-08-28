@@ -4,7 +4,12 @@ Companion to [api-first-optimization-plan.md](./api-first-optimization-plan.md).
 
 Baseline: commit `9c3680e`, tree clean, `pytest` 72/72 green.
 
-**Status: W0 and Wave 1 are complete and merged.** Wave 2 (B1) is next.
+**Status: W0 and Wave 1 are complete and merged.** Wave 2 (B1) is in progress — B1.1–B1.3
+have landed, including the `GET /credentials/{id}/pdf` route and template resolution
+this pack's Commit 3 flagged as missing (see
+[b1-single-credential-issuance.md](./b1-single-credential-issuance.md) for the
+up-to-date, code-verified status; this document is the original work-order and is not
+kept in sync with what actually shipped).
 
 ---
 

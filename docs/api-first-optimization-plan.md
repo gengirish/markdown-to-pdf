@@ -133,7 +133,7 @@ Five structural gaps, each verified in the code.
 
 **There is no way to authenticate as a machine.** `POST /api/v1/orgs/{slug}/api-keys` mints `cf_live_…` keys and stores SHA-256 hashes. Nothing anywhere reads them back — grep for `ApiKey` outside `models/api_key.py` and `routes/developers.py` returns nothing. Every v1 write route depends on `get_current_user`, which requires a Clerk **browser session** JWT. A customer can create an API key and then has no endpoint that accepts it.
 
-**There is no single-credential issuance endpoint.** The only path is `POST /api/v1/orgs/{slug}/credentials/bulk` — a `multipart/form-data` CSV upload.
+**There is no single-credential issuance endpoint.** ~~The only path is `POST /api/v1/orgs/{slug}/credentials/bulk` — a `multipart/form-data` CSV upload.~~ **Closed, `fad716b` (2026-08-28):** `POST /api/v1/orgs/{slug}/credentials` issues one credential per call, resolves a template, and returns a real `pdf_url`. This whole §4 snapshot predates B1 (dated 2026-08-23); the other four gaps below have not been re-verified against current `main` — check [b1-single-credential-issuance.md](./b1-single-credential-issuance.md) before trusting any of them.
 
 **Half the v1 surface is unreachable.** `index.py:306-314` mounts routers with `prefix="/api/v1"`, but `orgs.py:12`, `studio.py:18` and `templates.py:13` already declare absolute `/api/v1/…` prefixes. From the live `openapi.json`:
 
