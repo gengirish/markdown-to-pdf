@@ -43,7 +43,13 @@ APPLY_SCHEMA_ON_BOOT = os.environ.get("PROCRASTINATE_APPLY_SCHEMA", "0") == "1"
 
 # Without DATABASE_URL there is nothing to connect to, and opening the app would
 # raise on boot. Keep the API serving its stateless routes instead.
-WORKER_ENABLED = bool(os.environ.get("DATABASE_URL", ""))
+#
+# Postgres specifically, not merely "a database": Procrastinate's connector is
+# psycopg, so pointing this at SQLite — which local development and the E2E
+# suite both do — makes `open_async()` wait out its 30-second pool timeout and
+# then fail application startup entirely. Gating on truthiness alone meant the
+# API could not boot at all against a URL it otherwise serves perfectly.
+WORKER_ENABLED = os.environ.get("DATABASE_URL", "").startswith("postgres")
 
 
 @asynccontextmanager

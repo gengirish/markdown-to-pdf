@@ -33,13 +33,27 @@ def get_engine():
     if _engine is None:
         if not DATABASE_URL:
             raise RuntimeError("DATABASE_URL is not configured")
-        _engine = create_engine(
-            DATABASE_URL,
-            pool_pre_ping=True,
-            pool_size=5,
-            max_overflow=10,
-            connect_args={"connect_timeout": 5},
-        )
+        if DATABASE_URL.startswith("sqlite"):
+            # SQLite, for local development and the E2E suite. Everything in
+            # the Postgres branch below is a psycopg2 argument — `connect_timeout`
+            # is rejected outright, and the pool sizing is meaningless against a
+            # file. `check_same_thread=False` because uvicorn serves requests
+            # from a thread pool and SQLite otherwise refuses the connection.
+            #
+            # This is why the unit suite builds its own engine and patches
+            # get_db rather than using this one: until now the real engine
+            # could not open a SQLite database at all.
+            _engine = create_engine(
+                DATABASE_URL, connect_args={"check_same_thread": False}
+            )
+        else:
+            _engine = create_engine(
+                DATABASE_URL,
+                pool_pre_ping=True,
+                pool_size=5,
+                max_overflow=10,
+                connect_args={"connect_timeout": 5},
+            )
         logger.info("Database engine created")
     return _engine
 

@@ -30,13 +30,28 @@ export default defineConfig({
     ? undefined
     : [
         {
-          command: `python -m uvicorn api.index:app --host 127.0.0.1 --port ${apiPort}`,
+          // The seed is chained ahead of uvicorn rather than run as a global
+          // setup step, because globalSetup and webServer race — the server can
+          // be answering before the org and API key exist.
+          command:
+            `python ../../e2e/seed_e2e.py && ` +
+            `python -m uvicorn api.index:app --host 127.0.0.1 --port ${apiPort}`,
           cwd: 'apps/api',
           url: `${apiOrigin}/api/health`,
           reuseExistingServer: !process.env.CI,
           timeout: 120_000,
           env: {
             CERT_SECRET_KEY: process.env.CERT_SECRET_KEY || 'e2e-test-secret-local-only',
+            // A disposable SQLite file, so the CertForge surface is reachable
+            // without provisioning Postgres. Both surfaces cope: the legacy
+            // psycopg2 layer fails to connect and degrades to its hardcoded
+            // course list, which is the documented behaviour when the database
+            // is absent.
+            DATABASE_URL: process.env.E2E_DATABASE_URL || 'sqlite:///e2e.sqlite',
+            // The embedded Procrastinate worker needs real Postgres. Bulk
+            // issuance is therefore out of scope for E2E; single issuance,
+            // which runs inline, is what these specs exercise.
+            PROCRASTINATE_APPLY_SCHEMA: '0',
           },
         },
         {
@@ -45,6 +60,11 @@ export default defineConfig({
           url: webOrigin,
           reuseExistingServer: !process.env.CI,
           timeout: 120_000,
+          env: {
+            // vite.config.js reads this to aim its proxy. Without it the SPA
+            // talks to whatever is on 8000 while uvicorn runs elsewhere.
+            E2E_API_PORT: apiPort,
+          },
         },
       ],
 })

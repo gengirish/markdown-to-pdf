@@ -75,7 +75,9 @@ apps/api/test_db.sqlite
 .pytest_cache/
 test_output.pdf
 *.pdf
-/test-results/
+# Playwright output. Anchored to the root until a run from apps/api dropped a
+# test-results/ there that the root-only pattern did not match.
+test-results/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
