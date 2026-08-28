@@ -169,8 +169,14 @@ def quota_state(session, org: Organization) -> tuple[int, int]:
     return org.monthly_quota, (ledger.credentials_issued if ledger else 0)
 
 
-def _consume_quota(session, org: Organization, count: int) -> tuple[int, int]:
-    """Reserve `count` issuances, or raise QuotaExceeded. Returns (limit, remaining)."""
+def consume_quota(session, org: Organization, count: int) -> tuple[int, int]:
+    """Reserve `count` issuances, or raise QuotaExceeded. Returns (limit, remaining).
+
+    Public because it is the meter for BOTH issuance paths. routes/studio.py
+    calls it for bulk uploads, which previously read the ledger without ever
+    writing it back and so went unmetered. One counter, one period calculation,
+    two callers.
+    """
     limit, used = quota_state(session, org)
 
     if limit != UNLIMITED and used + count > limit:
@@ -227,7 +233,7 @@ def issue_credential(
 
         template_id = resolve_template_id(session, org, request.template_id)
 
-        limit, remaining = _consume_quota(session, org, 1)
+        limit, remaining = consume_quota(session, org, 1)
 
         public_id = _unique_public_id(session)
         metadata = dict(request.metadata or {})
