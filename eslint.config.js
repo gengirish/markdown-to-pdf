@@ -38,4 +38,17 @@ export default defineConfig([
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
     },
   },
+  {
+    // Build and test configuration runs in Node, not a browser. Without this
+    // the block above applies browser globals to everything, so reading
+    // `process.env` in vite.config.js — which is how the dev proxy learns which
+    // port the API is on — fails as an undefined global.
+    files: [
+      '**/*.config.{js,mjs}',
+      'e2e/**/*.js',
+    ],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
 ])
