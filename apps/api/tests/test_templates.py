@@ -158,6 +158,35 @@ def test_an_unknown_layout_falls_back_rather_than_failing():
     assert normalise_config({"layout": "nonsense"})["layout"] == "participation"
 
 
+def test_the_generated_layout_matches_the_platform_design():
+    """The first version of this generator produced a plain portrait table with
+    a coloured border — it rendered, it validated, and it looked nothing like
+    any certificate this product issues. These pin the parts that made it wrong.
+    """
+    html = build_html_from_config({})
+
+    # Landscape. xhtml2pdf defaults to portrait, and without this the whole
+    # layout collapses into a column.
+    assert "size: 842pt 595pt" in html
+
+    # Driven by the org's branding rather than baked-in colours, so a template
+    # picks up what the branding form sets.
+    assert "{{primary_color}}" in html
+    assert "{{accent_color}}" in html
+
+    # The structural features shared with api/seed.py's platform templates.
+    assert "#0f172a" in html, "no dark outer frame"
+    assert "2px solid #d4af37" in html, "no gold rule under the name"
+    assert "CREDENTIAL ID" in html, "no date / credential-id panel"
+
+
+def test_the_internship_layout_carries_the_vtu_fields():
+    html = build_html_from_config({"layout": "internship"})
+    assert "{{usn}}" in html
+    assert "{{duration}}" in html
+    assert "{{usn}}" not in build_html_from_config({"layout": "participation"})
+
+
 def test_toggles_actually_remove_their_sections():
     with_qr = build_html_from_config({"show_qr": True})
     without = build_html_from_config({"show_qr": False})

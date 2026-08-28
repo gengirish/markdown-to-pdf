@@ -168,76 +168,165 @@ def _esc(value: Any) -> str:
 
 
 def build_html_from_config(config: dict[str, Any]) -> str:
-    """Generate template HTML from guided settings."""
+    """Generate template HTML from guided settings.
+
+    Built in the same design language as the seeded platform templates
+    (api/seed.py) — which are themselves the CertForge port of the legacy
+    certificate: landscape 842x595pt, dark outer frame, white inner card, a
+    header band in the org's primary colour, a gold rule under the recipient
+    name, a date/credential-ID panel, and a footer band.
+
+    The first version of this generated a plain portrait table with a coloured
+    border. It rendered, it validated, and it looked nothing like any
+    certificate this product has ever issued — which is worse than not shipping
+    a guided form at all, because the output carries the customer's brand.
+
+    Markup is deliberately nested tables with inline styles. xhtml2pdf supports
+    no flex and no grid, and `@page size` is what makes it landscape; a template
+    that forgets it renders portrait and the layout collapses.
+    """
     cfg = normalise_config(config)
 
     logo = (
-        '<tr><td align="center" style="padding-bottom:18px;">'
-        '<img src="{{logo_url}}" style="height:56px;"/></td></tr>'
+        '<tr><td align="center" style="padding-bottom:10pt;">'
+        '<img src="{{logo_url}}" height="34" /></td></tr>'
         if cfg["show_logo"]
-        else ""
-    )
-
-    qr = (
-        '<tr><td align="center" style="padding-top:26px;">'
-        '<img src="{{qr}}" style="width:96px;height:96px;"/>'
-        '<div style="font-size:8pt;color:#64748b;padding-top:6px;">'
-        "Verify: {{credential_id}}</div></td></tr>"
-        if cfg["show_qr"]
-        else ""
-    )
-
-    footer = (
-        '<tr><td align="center" style="padding-top:22px;font-size:8pt;color:#64748b;">'
-        "{{footer_text}}</td></tr>"
-        if cfg["show_footer"]
         else ""
     )
 
     signature = ""
     if cfg["signature_name"]:
         signature = (
-            '<tr><td align="center" style="padding-top:34px;">'
-            '<div style="border-top:1px solid #94a3b8;width:220px;margin:0 auto;"></div>'
-            f'<div style="padding-top:6px;font-size:10pt;">{_esc(cfg["signature_name"])}</div>'
-            f'<div style="font-size:8pt;color:#64748b;">{_esc(cfg["signature_title"])}</div>'
-            "</td></tr>"
+            '<table width="100%" cellspacing="0" cellpadding="0" style="padding-top:14pt;">'
+            '<tr><td align="center">'
+            '<table align="center" cellspacing="0" cellpadding="0" width="200">'
+            '<tr><td style="border-top:1px solid #a0aec0;font-size:1pt;">&nbsp;</td></tr>'
+            f'<tr><td align="center" style="font-size:10pt;color:#2d3748;padding-top:4pt;">{_esc(cfg["signature_name"])}</td></tr>'
+            f'<tr><td align="center" style="font-size:7pt;letter-spacing:1pt;color:#a0aec0;">{_esc(cfg["signature_title"])}</td></tr>'
+            "</table></td></tr></table>"
         )
 
-    # The internship layout carries the USN/duration line the VTU workflow
-    # needs; the others leave it out rather than print an empty row.
+    qr = (
+        '<table width="100%" cellspacing="0" cellpadding="0" style="padding-top:16pt;">'
+        '<tr><td align="center">'
+        '<table align="center" cellspacing="0" cellpadding="0"><tr>'
+        '<td style="padding-right:12pt;vertical-align:middle;">'
+        '<img src="{{qr}}" width="70" height="70" /></td>'
+        '<td style="vertical-align:middle;text-align:left;">'
+        '<table cellspacing="0" cellpadding="0"><tr><td style="font-size:9pt;font-weight:bold;color:#2d3748;">'
+        "Scan to Verify</td></tr></table>"
+        '<table cellspacing="0" cellpadding="0"><tr><td style="font-size:7pt;color:#a0aec0;">'
+        "This QR code links to the permanent<br/>verification page.</td></tr></table>"
+        "</td></tr></table></td></tr></table>"
+        if cfg["show_qr"]
+        else ""
+    )
+
+    footer = (
+        '<table width="100%" style="background-color:#f8fafc;border-top:1px solid #edf2f7;">'
+        '<tr><td align="center" style="padding:10pt 40pt;font-size:7pt;color:#a0aec0;">'
+        "{{footer_text}}</td></tr></table>"
+        if cfg["show_footer"]
+        else ""
+    )
+
+    # The internship layout carries the USN and duration the VTU workflow needs.
+    # The others leave the row out rather than print empty labels.
     detail = ""
     if cfg["layout"] == "internship":
         detail = (
-            '<tr><td align="center" style="padding-top:10px;font-size:10pt;color:#334155;">'
-            "USN {{usn}} · {{duration}}</td></tr>"
+            '<table width="100%" cellspacing="0" cellpadding="0">'
+            '<tr><td align="center" style="font-size:10pt;color:#4a5568;padding-bottom:12pt;">'
+            "USN {{usn}} &nbsp;&middot;&nbsp; {{duration}}</td></tr></table>"
         )
 
     return f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"/></head>
-<body style="margin:0;padding:0;font-family:Helvetica,Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0"
-       style="border:10px solid {{{{primary_color}}}};padding:44px 40px;">
-  {logo}
-  <tr><td align="center"
-      style="font-size:22pt;letter-spacing:2px;color:{{{{primary_color}}}};">
-      {_esc(cfg["heading"])}</td></tr>
-  <tr><td align="center" style="padding-top:26px;font-size:11pt;color:#475569;">
-      {_esc(cfg["body"])}</td></tr>
-  <tr><td align="center" style="padding-top:10px;font-size:26pt;color:#0f172a;">
-      {{{{name}}}}</td></tr>
-  <tr><td align="center" style="padding-top:14px;font-size:11pt;color:#475569;">
-      {_esc(cfg["closing"])}</td></tr>
-  <tr><td align="center" style="padding-top:8px;font-size:15pt;color:{{{{accent_color}}}};">
-      {{{{title}}}}</td></tr>
-  {detail}
-  <tr><td align="center" style="padding-top:18px;font-size:10pt;color:#64748b;">
-      {{{{date}}}}</td></tr>
-  {signature}
-  {qr}
-  {footer}
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+@page {{ size: 842pt 595pt; margin: 0; }}
+body {{ font-family: Helvetica, Arial, sans-serif; color: #2d3748; margin: 0; padding: 0; }}
+table {{ border-collapse: collapse; }}
+td {{ padding: 0; }}
+</style>
+</head>
+<body>
+<table width="100%" height="100%" style="background-color: #0f172a;">
+<tr><td style="padding: 24pt 32pt;">
+<table width="100%" style="background-color: #ffffff;">
+<tr><td>
+
+    <table width="100%" style="background-color: {{{{primary_color}}}};">
+    <tr><td style="padding: 26pt 40pt 22pt;" align="center">
+        <table width="100%" cellspacing="0" cellpadding="0">
+            {logo}
+            <tr><td align="center" style="font-size: 8pt; letter-spacing: 4pt; color: {{{{accent_color}}}}; font-weight: bold; padding-bottom: 4pt;">
+                {{{{issuer_name}}}}
+            </td></tr>
+            <tr><td align="center" style="font-size: 9pt; letter-spacing: 3pt; color: #d4af37; font-weight: bold; padding-top: 8pt;">
+                {_esc(cfg["heading"])}
+            </td></tr>
+        </table>
+    </td></tr>
+    </table>
+
+    <table width="100%">
+    <tr><td style="padding: 26pt 50pt 18pt;" align="center">
+
+        <table width="100%" cellspacing="0" cellpadding="0">
+            <tr><td align="center" style="font-size: 8pt; letter-spacing: 3pt; color: #a0aec0; padding-bottom: 6pt;">
+                {_esc(cfg["body"])}
+            </td></tr>
+            <tr><td align="center" style="font-size: 34pt; font-weight: bold; color: #1a202c; padding: 4pt 0 2pt;">
+                {{{{name}}}}
+            </td></tr>
+        </table>
+
+        <table width="60%" align="center"><tr><td style="border-top: 2px solid #d4af37; font-size: 1pt;">&nbsp;</td></tr></table>
+
+        <table width="100%" cellspacing="0" cellpadding="0">
+            <tr><td align="center" style="font-size: 9pt; color: #718096; padding-top: 12pt;">
+                {_esc(cfg["closing"])}
+            </td></tr>
+            <tr><td align="center" style="font-size: 16pt; font-weight: bold; color: {{{{primary_color}}}}; padding: 6pt 0 16pt;">
+                {{{{title}}}}
+            </td></tr>
+        </table>
+
+        {detail}
+
+        <table width="85%" align="center" cellspacing="0" cellpadding="0" style="border-top: 1px solid #edf2f7; border-bottom: 1px solid #edf2f7;">
+            <tr>
+                <td width="50%" align="center" style="padding: 12pt 8pt;">
+                    <table cellspacing="0" cellpadding="0">
+                    <tr><td align="center" style="font-size: 11pt; color: #2d3748; font-weight: bold;">{{{{date}}}}</td></tr>
+                    <tr><td align="center" style="font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">DATE</td></tr>
+                    </table>
+                </td>
+                <td width="50%" align="center" style="padding: 12pt 8pt; border-left: 1px solid #edf2f7;">
+                    <table cellspacing="0" cellpadding="0">
+                    <tr><td align="center" style="font-size: 11pt; color: #2d3748; font-weight: bold;">{{{{credential_id}}}}</td></tr>
+                    <tr><td align="center" style="font-size: 6pt; letter-spacing: 2pt; color: #a0aec0; padding-top: 3pt;">CREDENTIAL ID</td></tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+
+        {signature}
+        {qr}
+
+    </td></tr>
+    </table>
+
+    {footer}
+
+</td></tr>
 </table>
-</body></html>"""
+</td></tr>
+</table>
+</body>
+</html>"""
 
 
 # -- preview ------------------------------------------------------------------
