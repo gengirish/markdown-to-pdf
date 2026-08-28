@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { toApiError, type IssuedCredential, type TemplateSummary } from "@/lib/api";
+import {
+  toApiError,
+  type DeliveryState,
+  type IssuedCredential,
+  type TemplateSummary,
+} from "@/lib/api";
 import { useCertForge } from "@/lib/use-api";
 import { Card, ErrorNote } from "./ui";
 
@@ -171,6 +176,7 @@ function IssueResult({ result }: { result: IssuedCredential }) {
       <p className="mt-1 text-sm opacity-90">
         {result.recipient_name} — {result.title}
       </p>
+      <DeliveryNote delivery={result.delivery} />
       <div className="mt-3 flex flex-wrap gap-4 text-sm">
         <a
           href={result.verify_url}
@@ -199,4 +205,31 @@ function IssueResult({ result }: { result: IssuedCredential }) {
       </div>
     </div>
   );
+}
+
+/** Whether the recipient was actually emailed, said plainly next to the
+ *  checkbox that asked for it. Before this, a rejected send and a send that was
+ *  never requested both looked exactly like success. */
+function DeliveryNote({ delivery }: { delivery: DeliveryState | undefined }) {
+  if (!delivery) return null;
+
+  if (delivery.status === "sent") {
+    return <p className="mt-2 text-sm opacity-90">Email sent to the recipient.</p>;
+  }
+
+  if (delivery.status === "failed") {
+    return (
+      <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+        The credential was issued, but the email did not send
+        {delivery.error ? `: ${delivery.error}` : "."}
+        {delivery.may_retry ? " It will be retried automatically." : ""}
+      </p>
+    );
+  }
+
+  if (delivery.status === "not_requested") {
+    return <p className="mt-2 text-sm opacity-75">No email sent — share the link instead.</p>;
+  }
+
+  return null;
 }

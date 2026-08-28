@@ -272,3 +272,26 @@ def test_omitting_send_email_keeps_the_old_behaviour(client, db_session):
     send.assert_not_called()
     assert r.status_code == 201
     assert r.json()["data"]["delivery"]["status"] == NOT_REQUESTED
+
+
+def test_the_credential_list_flags_delivery_per_row(client, db_session):
+    """The list is where someone notices a batch went undelivered.
+
+    Only the status, not the whole delivery object — the list flags which rows
+    need attention and the detail route explains why.
+    """
+    raw = LIVE_PREFIX + "list-delivery-key"
+    org_with_key(db_session, "list-delivery", raw)
+
+    with patch(SEND, return_value=(False, "AgentMail rejected the request (403)")):
+        issue(client, "list-delivery", raw,
+              recipient_email="ada@example.com", send_email=True)
+    issue(client, "list-delivery", raw)  # no delivery asked for
+
+    r = client.get(
+        "/api/v1/orgs/list-delivery/credentials",
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert r.status_code == 200, r.text
+    statuses = {item["delivery_status"] for item in r.json()["data"]["items"]}
+    assert statuses == {DELIVERY_FAILED, NOT_REQUESTED}

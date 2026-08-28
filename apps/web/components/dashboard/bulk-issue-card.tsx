@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { toApiError, type BatchStatus, type TemplateSummary } from "@/lib/api";
+import { toApiError, type BatchDelivery, type BatchStatus, type TemplateSummary } from "@/lib/api";
 import { useCertForge } from "@/lib/use-api";
 import { Card, EmptyNote, ErrorNote, Skeleton } from "./ui";
 
@@ -94,6 +94,9 @@ export function BulkIssueCard({ slug, onIssued }: { slug: string; onIssued: () =
         total: result.total,
         succeeded: 0,
         failed: 0,
+        // Zeroes are honest here — the worker has not run yet. DeliveryLine is
+        // only rendered once the batch settles, so these are never displayed.
+        delivery: { delivered: 0, failed: 0, not_requested: 0 },
         error_report: null,
         created_at: new Date().toISOString(),
         completed_at: null,
@@ -212,7 +215,39 @@ function BatchResult({ batch }: { batch: BatchStatus }) {
           ? `${batch.succeeded} of ${batch.total} issued${batch.failed > 0 ? `, ${batch.failed} failed` : ""}.`
           : `${batch.total} rows accepted. Waiting on the issuance worker…`}
       </p>
+      {settled ? <DeliveryLine delivery={batch.delivery} /> : null}
       <p className="mt-2 font-mono text-xs opacity-70">Batch ID: {batch.id}</p>
     </div>
+  );
+}
+
+/** Issued and delivered are different numbers, and the line above only knows
+ *  the first. Saying "30 issued" while 30 emails failed is how a batch that
+ *  reached nobody read as a clean success. */
+function DeliveryLine({ delivery }: { delivery: BatchDelivery | undefined }) {
+  // An older API, or a batch that predates delivery tracking, sends nothing
+  // here. Claiming "0 delivered" for those would be inventing a fact.
+  if (!delivery) return null;
+
+  const { delivered, failed, not_requested: notRequested } = delivery;
+
+  if (failed === 0 && delivered === 0 && notRequested > 0) {
+    return (
+      <p className="mt-1 text-sm opacity-75">
+        No emails sent — {notRequested === 1 ? "the row had" : "the rows had"} no address, or
+        delivery was not requested.
+      </p>
+    );
+  }
+
+  const parts = [`${delivered} delivered`];
+  if (failed > 0) parts.push(`${failed} failed`);
+  if (notRequested > 0) parts.push(`${notRequested} not sent`);
+
+  return (
+    <p className={`mt-1 text-sm ${failed > 0 ? "font-medium" : "opacity-75"}`}>
+      {parts.join(", ")}.
+      {failed > 0 ? " Failed sends are retried automatically." : ""}
+    </p>
   );
 }

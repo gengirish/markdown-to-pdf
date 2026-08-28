@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from "react";
 
-import { publicApi, toApiError, type CredentialPage } from "@/lib/api";
+import {
+  publicApi,
+  toApiError,
+  type CredentialPage,
+  type DeliveryStatus,
+} from "@/lib/api";
 import { useCertForge } from "@/lib/use-api";
 import { EmptyNote, ErrorNote, Skeleton, formatDate } from "./ui";
 
@@ -72,6 +77,7 @@ export function RecentCredentialsCard({
                 <p className="truncate text-xs text-zinc-500">{credential.title}</p>
                 <p className="mt-1 text-xs text-zinc-600">
                   {formatDate(credential.issued_at)} · {credential.status}
+                  <DeliveryTag status={credential.delivery_status} />
                 </p>
               </div>
               {credential.status === "issued" ? (
@@ -89,5 +95,21 @@ export function RecentCredentialsCard({
         </ul>
       )}
     </section>
+  );
+}
+
+/** Flags the rows worth looking at. Deliberately silent for `sent` and
+ *  `not_requested`: a list that tags every row tags nothing, and only a failure
+ *  needs someone to act. `unknown` is silent too — those rows predate delivery
+ *  tracking, and labelling them would assert something we do not know. */
+function DeliveryTag({ status }: { status: DeliveryStatus | undefined }) {
+  if (status !== "failed") return null;
+  return (
+    <>
+      {" · "}
+      <span className="text-amber-500/90" title="The credential issued, but its email did not send">
+        email failed
+      </span>
+    </>
   );
 }

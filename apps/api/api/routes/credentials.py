@@ -164,6 +164,10 @@ def list_credentials(
                 "status": c.status,
                 "issued_at": c.issued_at.isoformat(),
                 "batch_id": str(c.batch_id) if c.batch_id else None,
+                # The status only, not the full delivery object: a list wants to
+                # flag which rows need attention, and the detail route carries
+                # the error text and attempt count for when one does.
+                "delivery_status": c.delivery_status,
             }
             for c in rows
         ]

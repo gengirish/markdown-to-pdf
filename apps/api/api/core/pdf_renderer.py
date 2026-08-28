@@ -8,6 +8,7 @@ Supports both legacy certificate payloads and new DB-backed Templates.
 import html as html_mod
 import logging
 import os
+import re
 from io import BytesIO
 
 from xhtml2pdf import pisa
@@ -30,6 +31,9 @@ from api.core.qr import generate_qr_data_uri
 from api.core.legacy_tokens import legacy_cert_id, is_internship_payload, is_appreciation_payload
 
 logger = logging.getLogger(__name__)
+
+#: A {{placeholder}} left over after substitution.
+_UNRESOLVED = re.compile(r"\{\{\s*[\w.-]+\s*\}\}")
 
 # ── Font Loading ───────────────────────────────────────────────────────────
 
@@ -60,12 +64,56 @@ def _participation_font_face() -> str:
     )
 
 
+#: The only directory a template may pull a file from. Everything else a
+#: template needs must arrive as a data: URI.
+_ASSET_ROOT = os.path.realpath(
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fonts")
+)
+
+
+#: Returned for anything not allowed. Inside the asset root so it can never
+#: escape it, and nonexistent so nothing is ever opened.
+_BLOCKED = os.path.join(_ASSET_ROOT, "__blocked__")
+
+
 def _pdf_link_callback(uri: str, rel: str) -> str:
-    """Resolve local file paths (bundled fonts) for xhtml2pdf."""
+    """Resolve the bundled fonts, and nothing else.
+
+    This used to return any local path that happened to exist. Since orgs can
+    upload their own template HTML, that made `<img src="/app/.env">` a file
+    read: xhtml2pdf would open the path and embed the bytes in a PDF the
+    uploader then downloads. `file://` worked too.
+
+    Now a path resolves only if it sits inside the bundled fonts directory,
+    compared after realpath so `fonts/../../.env` cannot climb out.
+
+    Everything else returns _BLOCKED — a path inside that directory which does
+    not exist — rather than the original URI. Handing the URI back is not safe:
+    xhtml2pdf falls back to fetching http(s) itself, so a template could make
+    the server request an internal address and embed the response. A
+    nonexistent local path cannot be fetched or read, so the element simply
+    does not render.
+
+    NOTE: this is the CertForge renderer only. The legacy surface has its own
+    copy at index.py:1352 and is frozen; do not "fix" that one to match.
+    """
     if uri.startswith("data:"):
         return uri
+
     path = uri[7:] if uri.startswith("file://") else uri
-    return path if os.path.isfile(path) else uri
+    if "://" in path:
+        # http(s) and friends: never fetch on a template author's behalf.
+        return _BLOCKED
+
+    try:
+        resolved = os.path.realpath(path)
+        # commonpath raises on Windows when the paths sit on different drives,
+        # which is itself a definitive "outside the asset root".
+        inside = os.path.commonpath([resolved, _ASSET_ROOT]) == _ASSET_ROOT
+    except (OSError, ValueError):
+        return _BLOCKED
+
+    return resolved if inside and os.path.isfile(resolved) else _BLOCKED
 
 
 # ── New Credential Rendering ───────────────────────────────────────────────
@@ -84,7 +132,13 @@ def render_credential_pdf(html_source: str, variables: dict) -> bytes:
             rendered = rendered.replace(token, str(val))
         else:
             rendered = rendered.replace(token, html_mod.escape(str(val)))
-            
+
+    # Anything still unreplaced is a placeholder this credential has no value
+    # for — a CSV column one row lacks, or a typo. It used to be printed
+    # literally, so a certificate went out reading "{{cohort}}". Blank is the
+    # only sane rendering of "we do not know this".
+    rendered = _UNRESOLVED.sub("", rendered)
+
     pdf_buffer = BytesIO()
     pisa_status = pisa.CreatePDF(
         src=rendered, dest=pdf_buffer, encoding="UTF-8", link_callback=_pdf_link_callback
