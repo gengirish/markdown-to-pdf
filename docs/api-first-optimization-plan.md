@@ -35,7 +35,35 @@ Each fix shipped with a regression test naming the original bug. That is the rig
 
 ### Still open after that pass
 
-**C3** (spoofable same-origin bypass — `_is_browser_same_origin` unchanged), **H3** (blocking PDF/email on the event loop), **H4** (`asyncio.create_task` at `studio.py:116`), **H5** (`UsageLedger` still never written), **H6** (raw f-string interpolation still at `verify.py:133-166`, plus a dead `/api/v1/verify/{id}/download` link), **H7** (no Clerk webhook), **H8** (`AuthenticatedUser` still has no `email`; `passports.py:33` reads it), **H9** (templates gated behind mocked billing), **M4** (`worker.py:143` still hardcoded), **M5** (CORS still `*`), **M6**, **M7** — and all of Phase 2.
+> **Re-checked against the code 2026-08-28.** This list had gone stale and named
+> seven defects that were already closed, so anyone picking work from it chased
+> fixed bugs. Verified individually below; the closed rows say where to look if
+> you want to confirm rather than take it on report.
+
+**Closed since this list was written:**
+
+| | Was | Verified closed at |
+|---|---|---|
+| **H4** | `asyncio.create_task` enqueue after commit — a batch could commit with no job | `studio.py`, awaited inside the transaction; `tests/test_bulk_issuance.py` |
+| **H5** | `UsageLedger` never written | `issuance.py` `consume_quota`, now called by single **and** bulk |
+| **H6** | Raw f-string interpolation in the viewer | `routes/verify.py`, every interpolation `html.escape`d; `pdf_url` scheme-checked |
+| **H7** | No Clerk webhook | `routes/webhooks_clerk.py`; `tests/test_webhooks_clerk.py` |
+| **H8** | `AuthenticatedUser` has no `email` | `core/auth.py:40`; `passports.py` reads `principal.email` with a documented fallback |
+| **M4** | `worker.py` hardcoded the legacy domain | `worker.py`, builds from `CERTFORGE_WEB_URL` |
+| **M5** | CORS `*` | `index.py`, `CORS_ALLOWED_ORIGINS` + preview regex, `allow_credentials=False` |
+
+**Still open, confirmed:**
+
+- **C3** — `_is_browser_same_origin` (`index.py:256`) trusts `Origin`/`Referer`, which any
+  non-browser client sets freely, so `curl -H "Origin: https://certs.intelliforge.tech"`
+  skips the `X-API-Key` check. Rank it carefully before fixing: the legacy SPA is a public
+  generator, so the bypass grants little a browser user cannot already do, rate limiting
+  still binds per real client IP, and the endpoint is on the **frozen** surface — tightening
+  it risks the live SPA. It needs a decision, not a patch.
+- **H3** (blocking PDF/email on the event loop), **H9** (templates gated behind mocked
+  billing), **M6**, **M7** — not re-verified in this pass; treat their status as unknown
+  rather than open.
+- All of Phase 2.
 
 Two notes on what landed:
 
@@ -108,10 +136,34 @@ The CertForge tables are already logically separate (Alembic-managed) from the l
 
 ### DNS and certificates
 
+DNS for `intelliforge.tech` is at **GoDaddy** (`ns11`/`ns12.domaincontrol.com`), not
+Vercel — the Vercel account holds no domains. Records are added in GoDaddy's DNS
+manager, where the **Name field is relative to the zone**: use `api.certforge`, not
+the full hostname, or you create `api.certforge.intelliforge.tech.intelliforge.tech`.
+
 ```
-certforge.intelliforge.tech       CNAME  cname.vercel-dns.com     # add domain in Vercel project "certforge"
-api.certforge.intelliforge.tech   CNAME  certforge-api.fly.dev    # then: fly certs add api.certforge.intelliforge.tech
+certforge.intelliforge.tech       CNAME  cname.vercel-dns.com              # add domain in Vercel project "certforge"
+api.certforge.intelliforge.tech   CNAME  leqpek9.certforge-api.fly.dev     # after: fly certs add api.certforge.intelliforge.tech
 ```
+
+**The API CNAME target is app-specific and is not `certforge-api.fly.dev`.** This
+line said exactly that until 2026-08-28, and it does not work: Fly issues a
+per-app prefix, and the bare `.fly.dev` host will not validate the certificate.
+Run `fly certs setup api.certforge.intelliforge.tech -a certforge-api` to print
+the current values rather than trusting this block.
+
+Fly's own recommendation is A + AAAA instead:
+
+```
+A     api.certforge.intelliforge.tech  ->  66.241.125.183            # shared IPv4
+AAAA  api.certforge.intelliforge.tech  ->  2a09:8280:1::163:aa09:0   # dedicated IPv6
+```
+
+Either routes traffic. If you take that route you must add **both**: the IPv4 is
+shared, so Fly verifies ownership through the AAAA, and an A record on its own
+leaves the certificate stuck at `Not verified`. The CNAME is one record instead
+of two and follows Fly if the addresses change, which is why it is written first
+here.
 
 ### Environment variables
 
@@ -253,15 +305,20 @@ Five structural gaps, each verified in the code.
 
 ### Phase 3 — Split the hosts · ~~1.5 days~~ **~1 day left**
 
-**Done:** the prefix strip and the `vercel.json` rewrites for `/verify/*` and `/credentials/*`.
+**Done:** the prefix strip; the `vercel.json` rewrites for `/verify/*`, `/credentials/*` and `/orgs/*` (in **both** projects — `apps/web` had none at all, which 404'd every CertForge QR code in production); the CORS allow-list; `badge.json` building from `CERTFORGE_WEB_URL`; and `/orgs/{slug}`, which now exists as a public issuer profile.
 
-- `fly certs add api.certforge.intelliforge.tech`; add the CNAME.
+- **`fly certs add`** — done 2026-08-28, certificate created, status `Not verified`
+  pending DNS. **The CNAME is still not added**, so
+  `api.certforge.intelliforge.tech` does not resolve and every credential's
+  `badge_url` points at nothing. See
+  [TODOs/certforge-api-host-missing.md](./TODOs/certforge-api-host-missing.md);
+  `scripts/smoke_test.sh` fails two checks until it lands.
 - Rename Vercel `web` → `certforge`, git-link it, root directory `apps/web`, `turbo-ignore` as the ignored build step, add the domain.
 - Add `CERTFORGE_WEB_URL` / `CERTFORGE_API_URL`; leave `SITE_URL` alone.
-- CORS allow-list: `CERTFORGE_WEB_URL` plus Vercel preview origins. Drop `*`.
+- ~~CORS allow-list: `CERTFORGE_WEB_URL` plus Vercel preview origins. Drop `*`.~~ **Done.**
 - One envelope: the global handler emits `{"success": false, "error": {…}}` for `/api/v1/*` and keeps the bare `{"error": {…}}` for legacy. Branch on path; pin both in the contract test.
 - Fix `billing.py` to raise `HTTPException` so status codes match bodies.
-- `badge.json` builds URLs from `CERTFORGE_WEB_URL`; `achievement.id` points at a route that exists.
+- ~~`badge.json` builds URLs from `CERTFORGE_WEB_URL`; `achievement.id` points at a route that exists.~~ **Done** — and `issuer.id`'s target had to be built, not just repointed: `/orgs/{slug}` existed on no host at all. It is deliberately plural, because `/org/{slug}` is the Clerk-protected dashboard namespace and an Open Badges consumer dereferencing an issuer must not meet a sign-in redirect.
 
 ### Phase 4 — Studio backend · 4 days
 

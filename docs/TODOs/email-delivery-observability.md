@@ -1,6 +1,7 @@
 # TODO · Credential email delivery is unobservable
 
-**Opened** 2026-08-27 · **Status** fixed in the working tree, **not yet deployed** ·
+**Opened** 2026-08-27 · **Status** deployed 2026-08-27 (`a0a530d`, migration
+`c3d81ea47b19` applied via `release_command`); no live send confirmed yet ·
 **Trigger** first production bulk issuance
 (`CF-2026-XEHQNMFZ`, batch from `examples/sample-participants.csv`) — the credential
 issued and verified fine, and **no email arrived**. We could not determine why.
@@ -61,7 +62,7 @@ way this one was.
    support can answer the question from the API rather than from logs that expire.
 5. **Backfill** existing rows as `unknown` rather than guessing.
 
-## Resolution (2026-08-27, undeployed)
+## Resolution (2026-08-27, deployed)
 
 All five proposed items, plus the `send_email` flag the B1 plan documented and never
 implemented. 180 tests, up from 164.
@@ -126,10 +127,10 @@ reproduced as a test.
 
 ### What is still open
 
-- **Not deployed.** The migration runs in `release_command` on the next API deploy.
 - **Nothing has been sent end to end against real AgentMail.** Every test mocks the
-  provider. The first live `send_email: true` issuance is still the real proof, and
-  now it will leave a record either way — which is the point.
+  provider, so the deploy proved the schema and the routes, not delivery itself. The
+  first live `send_email: true` issuance is still the real proof — and unlike before,
+  it will leave a record either way, which is the point. Use your own address.
 - The dashboard does not surface any of this yet; `apps/web` has no delivery UI.
 - Bulk issuance still sends whenever a row has an address. Whether the CSV upload
   should carry its own `send_email` is unsettled.

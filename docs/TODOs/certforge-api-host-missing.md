@@ -1,6 +1,7 @@
 # TODO · `api.certforge.intelliforge.tech` does not exist
 
-**Opened** 2026-08-27 · **Status** open · **Severity** medium — it is in every
+**Opened** 2026-08-27 · **Status** open — Fly certificate created 2026-08-28,
+blocked on one DNS record · **Severity** medium — it is in every
 credential handed to an API caller, but not in anything printed · **Trigger**
 post-deploy verification of the delivery-observability change
 
@@ -60,25 +61,65 @@ So: an API-facing defect, not a credential-integrity one.
 
 ## Fix
 
-Two options, and they are not equivalent.
+This was filed as a choice between creating the hostname and repointing
+`CERTFORGE_API_URL`. That overstated it: **the plan already decided**, at §3 of
+[api-first-optimization-plan.md](../api-first-optimization-plan.md), which gives
+the records and the `fly certs add`. The host exists precisely so customers get
+an API host that "does not depend on the frontend's routing"
+(`config.py:106-110`), and repointing it at `certs.intelliforge.tech` would bake
+that dependency into every credential issued from then on.
 
-- **Create the hostname.** A DNS record plus
-  `flyctl certs add api.certforge.intelliforge.tech`. This is what the code was
-  designed for — `config.py:106-110` says the host exists precisely so customers
-  get an API host that "does not depend on the frontend's routing." Needs DNS
-  access at the registrar / Vercel.
-- **Repoint** `CERTFORGE_API_URL` in `fly.toml` to `https://certs.intelliforge.tech`,
-  matching what the dashboard already uses. One line, ships on the next deploy —
-  but it bakes the frontend dependency into every credential issued from then on,
-  which is the thing the separate host was introduced to avoid.
+### Step 1 — Fly certificate · DONE 2026-08-28
 
-Creating the hostname is the better end state. Repointing is the faster stopgap
-and is reversible; note that credentials issued in between carry whichever URL
-was live at the time, and `badge_url` is stored nowhere — it is computed per
-request from config — so changing it later fixes old credentials too. That is
-the one mercy here, and it is why this is medium rather than high.
+```
+$ fly certs add api.certforge.intelliforge.tech -a certforge-api
+✓ Certificate created for api.certforge.intelliforge.tech
+$ fly certs check api.certforge.intelliforge.tech -a certforge-api
+  Status = Not verified
+! No AAAA records were found for your domain
+```
 
-Whichever way it goes, also update `apps/web/.env.example`.
+### Step 2 — DNS · OPEN, and the only thing blocking this
+
+DNS for `intelliforge.tech` is at **GoDaddy** (`ns11`/`ns12.domaincontrol.com`),
+not Vercel — the Vercel account holds no domains, so this cannot be done with
+`vercel dns`. Add one record in GoDaddy's DNS manager:
+
+| Field | Value |
+|---|---|
+| Type | `CNAME` |
+| Name | `api.certforge` |
+| Value | `leqpek9.certforge-api.fly.dev` |
+| TTL | `600` |
+
+Two things to get right, both of which the old instructions got wrong:
+
+- **Name is relative to the zone.** `api.certforge`, not the full hostname —
+  GoDaddy appends `intelliforge.tech` and you would otherwise create
+  `api.certforge.intelliforge.tech.intelliforge.tech`.
+- **The target carries a per-app prefix.** `leqpek9.certforge-api.fly.dev`, not
+  the bare `certforge-api.fly.dev` that the plan and the handover doc both named
+  until 2026-08-28. The bare host does not validate the certificate. Print the
+  live values with `fly certs setup api.certforge.intelliforge.tech -a certforge-api`
+  rather than trusting any document, including this one.
+
+A + AAAA works too — `66.241.125.183` and `2a09:8280:1::163:aa09:0` — but needs
+**both**: the IPv4 is shared, so Fly verifies ownership through the AAAA, and an
+A record alone leaves the certificate stuck at `Not verified`. That is exactly
+what `certs check` is reporting now.
+
+### Step 3 — verify
+
+```
+fly certs check api.certforge.intelliforge.tech -a certforge-api   # -> Ready
+bash scripts/smoke_test.sh                                         # -> 25 passed, 0 failed
+```
+
+No code change and no redeploy: `CERTFORGE_API_URL` already defaults to this
+hostname, which is why it broke in the first place.
+
+Also update `apps/web/.env.example`, which still documents the dead host as the
+default for local dev.
 
 ## The guard
 

@@ -299,9 +299,15 @@ DNS records, Vercel dashboard settings and Fly certificates are account actions 
 
 ```
 certforge.intelliforge.tech       CNAME  cname.vercel-dns.com
-api.certforge.intelliforge.tech   CNAME  certforge-api.fly.dev
-fly certs add api.certforge.intelliforge.tech
+api.certforge.intelliforge.tech   CNAME  leqpek9.certforge-api.fly.dev
+fly certs add api.certforge.intelliforge.tech          # DONE 2026-08-28
 ```
+
+The API CNAME target carries a per-app prefix; the bare `certforge-api.fly.dev`
+that this block named until 2026-08-28 does not validate the certificate. DNS is
+at GoDaddy, where the Name field is relative to the zone — enter `api.certforge`.
+See the plan's *DNS and certificates* section for the A/AAAA alternative and why
+it needs both records.
 
 Rename Vercel project `web` → `certforge`, git-link it to `gengirish/markdown-to-pdf`, Root Directory `apps/web`, `npx turbo-ignore` as the Ignored Build Step. Add `certforge.intelliforge.tech` to Clerk's allowed origins.
 
