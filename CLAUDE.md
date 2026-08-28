@@ -265,12 +265,28 @@ Legacy admin endpoints require `X-Admin-Key` via `_require_admin` plus `_require
 
 Routers in `apps/api/api/routes/`, all mounted under `/api/v1` in `index.py`:
 `orgs`, `studio`, `templates`, `verify`, `passports`, `claims`, `billing`, `webhooks`,
-`developers`. Every one returns the `ApiResponse` envelope from
+`developers`, `credentials`. Every one returns the `ApiResponse` envelope from
 `api/core/envelope.py` (`{success, data, error, meta}`) — unlike the legacy surface.
 
+`routes/credentials.py` is the single-credential resource: `POST`/`GET
+/orgs/{slug}/credentials`, `GET`/`POST .../{public_id}` (`/revoke`). Issuance goes
+through the one shared function, `api/services/issuance.py`'s `issue_credential()` —
+the bulk CSV path (`studio.py`) calls it too, so they cannot drift apart. It resolves
+which `Template` a credential renders with (`resolve_template_id`), and every issuance
+response carries `verify_url`, `badge_url`, and `pdf_url`.
+
 `routes/verify.py` also exports a `public_router` mounted at the site root, for the
-URLs that go inside QR codes: `GET /verify/{credential_id}` (HTML) and
-`GET /credentials/{public_id}/badge.json` (Open Badges 3.0).
+URLs that go inside QR codes: `GET /verify/{credential_id}` (HTML),
+`GET /credentials/{public_id}/badge.json` (Open Badges 3.0), and
+`GET /credentials/{public_id}/pdf` (renders the certificate on demand — nothing is
+stored, unlike `badge.json` which was always computed fresh). Both are readable by ID
+with no auth, same posture as the legacy download route: the ID is the capability.
+`api/services/rendering.py`'s `build_render_variables()` is the one place PDF template
+variables are built, shared by this route and the bulk worker
+(`api/core/worker.py`) so single and bulk issuance can't render differently. An org's
+`primary_color`, `accent_color`, `footer_text`, and `logo_url` flow into it — the
+seeded default templates use the first three; `logo_url` is passed through but none of
+them has a layout slot for it yet.
 
 Bulk issuance runs on Procrastinate (`api/core/worker.py`), embedded in the FastAPI
 lifespan so it scales with the web process.

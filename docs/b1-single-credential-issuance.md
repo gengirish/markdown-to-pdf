@@ -9,20 +9,46 @@ have to be settled before the first line of code.
 pytest` → 91 passed.** Every claim below was checked in the code today, not carried
 over from the earlier plan.
 
-## Status — 2026-08-27, `main` @ `629b454`, 135 tests passing
+## Status — 2026-08-28, `main` @ `fad716b`, 201 tests passing
 
 | | Commit | State |
 |---|---|---|
 | B1.0 | Golden contract test | **not started** — `tests/test_contract_legacy.py` still does not exist |
 | B1.1 | `resolve_principal` | **landed** — `d56557b` |
 | B1.2 | Service layer + single issuance | **landed** — `a403b68` |
-| B1.3 | The rest of the resource | **partly landed** — list, get and revoke in `a403b68`; the status state machine in `629b454`; no `/pdf` route |
+| B1.3 | The rest of the resource | **PDF route landed** — `fad716b` (see D4/D5 below); list, get and revoke in `a403b68`; the status state machine in `629b454` |
 | B1.4 | Batch + usage surface | **not started** |
 | B1.5 | Legacy adapter | not started, and optional by design |
 
-The goal in §1 is met for JSON: an API key issues a credential in one call and the
-verify URL resolves. It is **not** met for the PDF — see D3, D4 and D5, none of which
-were settled by what shipped.
+The goal in §1 is now met end to end: an API key issues a credential in one call, the
+verify URL resolves, and `pdf_url` in the response is a real document — see D4 and D5,
+settled in `fad716b`. D3 (canonical signing) and D6 (idempotency) remain open.
+
+### 2026-08-28 — D4/D5 settled, plus org branding (`fad716b`)
+
+Two parallel sub-agents landed the rest of B1.3 in one commit:
+
+- **D4 (PDF location) and D5 (template resolution) both settled**, exactly per the
+  render-on-demand recommendation below, with two deliberate departures — see each
+  section for detail: the route lives at the site root (`GET /credentials/{public_id}/pdf`,
+  matching `badge.json`'s convention) rather than under `/api/v1`, and it is a plain
+  sync FastAPI handler, not `run_in_threadpool`.
+- `CredentialCreate.template_id` is now accepted on `POST /orgs/{slug}/credentials`, and
+  `_public_urls()` returns a real `pdf_url` alongside `verify_url`/`badge_url`.
+- `services/rendering.py` (new) is the one place that builds PDF template variables;
+  `worker.py`'s bulk path and the new PDF endpoint both call it, closing the `{{date}}`/
+  `{{issuer_name}}` literal-text bug D5 flagged.
+- **Beyond B1's original scope**: `organizations` gained `primary_color`, `accent_color`,
+  `footer_text` (migration `e5a2c9d14f3b`), wired into the three seeded templates so a
+  rendered certificate can carry an org's own colors and footer line instead of always
+  looking like stock CertForge. `logo_url` insertion into the seed templates was
+  deliberately skipped — none of the three layouts has a slot for it without restructuring,
+  and a broken `<img src="">` when an org has no logo is worse than omitting it.
+- The dashboard (`apps/web`) got a `SingleIssueCard` next to the existing bulk-CSV card,
+  so single issuance is no longer API-only.
+- Verified: `cd apps/api && python -m pytest` → 201 passed; `ruff check` clean; CI green
+  including `deploy-api`; live health check and `openapi.json` on `certforge-api.fly.dev`
+  confirm the route is deployed.
 
 Where the code and this plan disagree, the code is what shipped. The note under each
 commit below says which way it went.
@@ -63,11 +89,13 @@ send was attempted or why it failed — see
 [TODOs/email-delivery-observability.md](./TODOs/email-delivery-observability.md).
 
 
-**Next, in order:** the `/verify` 404 on `certforge.intelliforge.tech` (see the smoke
-test below — it is live and it is baked into printed QR codes); template resolution +
-the `/pdf` route (D5 and D4 are one piece of work, and together they are what makes an
-issued credential an actual document); point `studio.py` at the service's quota helper;
-then D3's signing, while it is still free.
+**Next, in order (updated 2026-08-28):** D5/D4 (template resolution + the `/pdf` route)
+landed in `fad716b` — see the entry below. Remaining, in order: point `studio.py` at
+the service's quota helper (B1.4, and it closes a live `-1`-quota bug); D3's signing,
+while it is still free; then B1.0's golden contract test, which B1.5 is blocked on.
+Check whether the `/verify` 404 on `certforge.intelliforge.tech` noted in the smoke
+test below was closed by `c92b8fb` ("Make every CertForge public URL resolve on the
+host it names") — this doc was not re-verified against that commit.
 
 ---
 
@@ -223,6 +251,22 @@ so a credential issued through the API has no document. A1's download button sta
 hidden, and the §1 goal is only half met. Confirmed in production on 2026-08-27: the
 viewer for `CF-2026-XEHQNMFZ` carries the `.download-btn` CSS and no button.
 
+**Settled as recommended, mostly — 2026-08-28, `fad716b`.** `GET
+/credentials/{public_id}/pdf` renders on demand, nothing is stored, and
+`_public_urls()` fills `pdf_url` on issuance. `_get_credential_data()` in `verify.py`
+now computes the viewer's link from `CERTFORGE_API_URL` instead of reading the
+never-populated `Credential.pdf_url` column, so the download button lights up
+unconditionally for every DB-backed credential. Two departures from the
+recommendation:
+
+- **Path is `/credentials/{public_id}/pdf` at the site root**, not
+  `/api/v1/credentials/{id}/pdf` — mounted on `public_router` next to `badge.json`,
+  same convention, same no-auth-required posture (the ID is the capability, as the
+  legacy download route already works).
+- **Not `run_in_threadpool`.** The handler renders inline on the request thread. Under
+  load this repeats H3's mistake on the legacy surface, exactly what the recommendation
+  warned against — worth fixing before this endpoint sees real traffic.
+
 ### D5 — Which template does a single credential use?
 
 `Credential.template_id` is nullable, but `render_credential_pdf` needs an
@@ -241,6 +285,19 @@ it and the route never populates it — a credential issued through `POST
 /orgs/{slug}/credentials` has `template_id = NULL`. Combined with D4, that is the whole
 reason there is still no PDF: no template, nothing to render. This and D4 are the next
 piece of work, and they are one piece, not two.
+
+**Settled, resolution order as recommended — 2026-08-28, `fad716b`.**
+`resolve_template_id()` in `services/issuance.py` implements exactly the 1→2→3 order
+above (explicit `template_id`, scoped to the org or global; then the org's own default;
+then the global default), called from `CredentialCreate` and reused by the `/pdf` route
+for legacy rows with no `template_id`. `date` and `issuer_name` are now populated by
+`services/rendering.py`, so the seeded templates no longer render `{{date}}` literally.
+One departure: **step 4 is a 404 at PDF-render time, not a 422 at issue time.** A
+credential can still be issued with `template_id = NULL` if an org has no template at
+all (a fresh dev DB, mainly) — it just 404s the first time someone requests its PDF,
+rather than being rejected up front. Worth revisiting if that gap ever matters in
+practice; the DB seed ships two global defaults, so it should not be reachable in
+production today.
 
 ### D6 — Idempotency and quota concurrency
 
@@ -465,7 +522,8 @@ twice returns the same `public_id`; a test-mode key sends no email.
 > `badge.json` gate, `passports.py` setting `CLAIMED`. The smoke test above exercised
 > the `badge.json` gate for real — an `issued` credential exports a valid badge.
 >
-> **Not done:** `GET /{id}/pdf` (D4/D5). The credential still has no document.
+> **Done — 2026-08-28, `fad716b`:** `GET /credentials/{public_id}/pdf` (D4/D5). Path and
+> auth posture differ from the spec below (site root, no `/api/v1` prefix — see D4).
 >
 > **Two departures worth knowing:**
 >
@@ -543,10 +601,23 @@ that needs a mode flag.
    the checked tree.
 3. **No `vercel.json` change is needed** (`/api/:path*` covers it), but `_build_llms_txt`
    in `index.py` should learn about `/api/v1/credentials`, since the agent-discovery
-   surface exists to describe the machine-facing API.
+   surface exists to describe the machine-facing API. **Still open, checked 2026-08-28:**
+   `_build_llms_txt` describes only the frozen legacy surface (`/api/certificate`
+   etc.); nothing under `/api/v1` is mentioned, and `fad716b` did not touch it either.
 4. **PDF generation fails locally on Windows** (`TTFError`, the font-locking quirk in
    CLAUDE.md). Do not chase it; assert the `/pdf` route's status and content type
    locally and let CI assert the bytes.
+9. **`tests/test_db.sqlite` can survive a crashed local pytest run and lock on
+   Windows** (`conftest.py`'s `setup_db()` swallows the `OSError` from a failed
+   `os.remove`). When that happens, `Base.metadata.create_all()` is a no-op against the
+   stale file's existing tables, so a model gains a column in code but the test DB never
+   sees it — every test touching that column fails with `OperationalError: no such
+   column`, on tests unrelated to whatever you just changed. Observed 2026-08-28
+   chasing the branding-column tests: `rm test_db.sqlite` failed with "Device or
+   resource busy"; the next `pytest` run passed clean once the lock cleared on its own.
+   Same family of issue as #4 — a Windows-only artifact of on-disk state, not a code
+   defect. If it recurs, look for a leftover `python.exe`/pytest process rather than
+   editing the model.
 5. **`session.bulk_save_objects`** (`studio.py:111`) bypasses ORM defaults — do not copy
    that pattern into the batch path.
 6. **Two quota sources of truth**: `org.monthly_quota` and `BILLING_TIERS[tier]`. The
