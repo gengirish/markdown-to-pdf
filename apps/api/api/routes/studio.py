@@ -14,6 +14,7 @@ from api.models.organization import Organization
 from api.models.template import Template
 from api.models.credential import Credential, CredentialBatch
 from api.core.worker import process_batch
+from api.services.issuance import QuotaExceeded, consume_quota
 
 # Mounted under /api/v1 by api/index.py — the prefix here must NOT repeat it,
 # or every path ends up served at /api/v1/api/v1/...
@@ -65,14 +66,21 @@ async def upload_bulk_csv(
             if "title" not in row or not row["title"].strip():
                 raise HTTPException(status_code=400, detail=f"Row {i+1} is missing 'title'")
 
-        # Create batch
-        from datetime import datetime
-        from api.models.usage import UsageLedger
-        current_period = datetime.utcnow().strftime("%Y-%m")
-        ledger = session.query(UsageLedger).filter_by(org_id=org.id, period=current_period).first()
-        used = ledger.credentials_issued if ledger else 0
-        if used + len(rows) > org.monthly_quota:
-            raise HTTPException(status_code=402, detail=f"Quota exceeded. Available: {org.monthly_quota - used}, Requested: {len(rows)}")
+        # Quota is CONSUMED here, not merely inspected. This read the ledger and
+        # never wrote it back, so bulk issuance was unmetered: fifty credentials
+        # against a fifty quota left the counter at zero and you could do it
+        # again immediately. Single issuance metered correctly the whole time,
+        # which made it worse — the two paths disagreed about what a quota was.
+        #
+        # Through consume_quota rather than a second inline implementation, for
+        # the same reason both issuance paths now share one email sender. It
+        # also retires a duplicate period calculation: this used
+        # datetime.utcnow().strftime("%Y-%m") while the ledger's own writer uses
+        # UsageLedger.current_period(), and nothing kept the two in step.
+        try:
+            consume_quota(session, org, len(rows))
+        except QuotaExceeded as exc:
+            raise HTTPException(status_code=exc.code, detail=exc.message)
 
         batch = CredentialBatch(
             org_id=org.id,
@@ -115,17 +123,35 @@ async def upload_bulk_csv(
             creds.append(cred)
             
         session.bulk_save_objects(creds)
-        
-    # Trigger background worker task
-    # We must await the task dispatch
-    import asyncio
-    asyncio.create_task(process_batch.defer_async(batch_id_str=str(batch.id)))
 
-    return ApiResponse.ok({
-        "batch_id": str(batch.id),
-        "total": batch.total,
-        "status": batch.status
-    })
+        # Queued INSIDE the transaction and awaited, so a batch row cannot be
+        # committed without a job to run it.
+        #
+        # This was asyncio.create_task(...) after the commit, which fails three
+        # ways: the task is never awaited so its exception is swallowed, the
+        # task object is unreferenced so it can be garbage-collected mid-flight,
+        # and the Fly machine scales to zero after the response — potentially
+        # before an un-awaited coroutine ever reaches Postgres. Any of those
+        # left a committed batch with status="pending" and no job, and nothing
+        # reconciles that: there is no reaper, and a batch that will never run
+        # is indistinguishable from one about to start.
+        #
+        # Ordering is deliberate. If the enqueue raises, this propagates and
+        # get_db rolls the batch back, so the caller gets an error and can
+        # retry against a clean slate. The opposite failure — job queued, then
+        # the commit fails — leaves an orphan job, which the worker already
+        # handles by logging "not found or not pending" and returning. An
+        # orphan job is recoverable noise; an orphan batch is a silent hang.
+        await process_batch.defer_async(batch_id_str=str(batch.id))
+
+        # Read while the row is still attached to a live session.
+        result = {
+            "batch_id": str(batch.id),
+            "total": batch.total,
+            "status": batch.status,
+        }
+
+    return ApiResponse.ok(result)
 
 @router.get("/{slug}/batches/{batch_id}", response_model=ApiResponse[dict])
 def get_batch_status(
