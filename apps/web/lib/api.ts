@@ -105,6 +105,20 @@ export interface CredentialPage {
   offset: number;
 }
 
+export interface IssuedCredential {
+  id: string;
+  org: string;
+  recipient_name: string;
+  recipient_email: string;
+  title: string;
+  status: string;
+  issued_at: string;
+  metadata: Record<string, unknown>;
+  verify_url: string;
+  badge_url: string;
+  pdf_url: string;
+}
+
 export interface BulkUploadResult {
   batch_id: string;
   total: number;
@@ -369,6 +383,24 @@ export class CertForgeClient {
       `/api/v1/orgs/${encodeURIComponent(slug)}/credentials/bulk`,
       { method: "POST", form, signal },
     );
+  }
+
+  issueCredential(
+    slug: string,
+    input: { recipientName: string; title: string; recipientEmail?: string; templateId?: string; sendEmail?: boolean },
+    signal?: AbortSignal,
+  ): Promise<IssuedCredential> {
+    return this.request<IssuedCredential>(`/api/v1/orgs/${encodeURIComponent(slug)}/credentials`, {
+      method: "POST",
+      json: {
+        recipient_name: input.recipientName,
+        title: input.title,
+        recipient_email: input.recipientEmail || "",
+        template_id: input.templateId || undefined,
+        send_email: input.sendEmail ?? false,
+      },
+      signal,
+    });
   }
 
   getBatch(slug: string, batchId: string, signal?: AbortSignal): Promise<BatchStatus> {

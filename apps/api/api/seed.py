@@ -30,7 +30,10 @@ DEFAULT_TEMPLATES = [
     {
         "name": "Professional",
         "is_default": True,
-        "variables": ["name", "title", "date", "credential_id", "qr", "issuer_name"],
+        "variables": [
+            "name", "title", "date", "credential_id", "qr", "issuer_name",
+            "logo_url", "primary_color", "accent_color", "footer_text",
+        ],
         "html_source": """<!DOCTYPE html>
 <html>
 <head>
@@ -47,10 +50,10 @@ td { padding: 0; }
 <tr><td style="padding: 24pt 32pt;">
 <table width="100%" style="background-color: #ffffff;">
 <tr><td>
-    <table width="100%" style="background-color: #1e293b;">
+    <table width="100%" style="background-color: {{primary_color}};">
     <tr><td style="padding: 30pt 40pt 26pt;" align="center">
         <table width="100%" cellspacing="0" cellpadding="0">
-            <tr><td align="center" style="font-size: 8pt; letter-spacing: 4pt; color: #d4af37; font-weight: bold; padding-bottom: 4pt; text-align: center;">
+            <tr><td align="center" style="font-size: 8pt; letter-spacing: 4pt; color: {{accent_color}}; font-weight: bold; padding-bottom: 4pt; text-align: center;">
                 {{issuer_name}}
             </td></tr>
             <tr><td align="center" style="font-size: 9pt; letter-spacing: 3pt; color: #d4af37; font-weight: bold; text-align: center; padding-top: 8pt;">
@@ -96,7 +99,7 @@ td { padding: 0; }
     </table>
     <table width="100%" style="background-color: #f8fafc; border-top: 1px solid #edf2f7;">
     <tr><td align="center" style="padding: 10pt 40pt; font-size: 7pt; color: #a0aec0;">
-        Issued via CertForge &middot; Verified &amp; Authentic
+        {{footer_text}}
     </td></tr>
     </table>
 </td></tr>
@@ -109,7 +112,10 @@ td { padding: 0; }
     {
         "name": "Academic",
         "is_default": True,
-        "variables": ["name", "title", "date", "credential_id", "qr", "issuer_name"],
+        "variables": [
+            "name", "title", "date", "credential_id", "qr", "issuer_name",
+            "logo_url", "primary_color", "accent_color", "footer_text",
+        ],
         "html_source": """<!DOCTYPE html>
 <html>
 <head>
@@ -126,12 +132,12 @@ td { padding: 0; }
 <tr><td style="padding: 20pt 28pt;">
 <table width="100%" style="background-color: #ffffff; border: 1.5pt solid #1e40af;">
 <tr><td>
-    <table width="100%" style="background-color: #1e3a5f;">
+    <table width="100%" style="background-color: {{primary_color}};">
     <tr>
         <td style="padding: 0; width: 6pt; background-color: #1e40af;">&nbsp;</td>
         <td style="padding: 22pt 36pt 18pt;">
             <table cellspacing="0" cellpadding="0">
-                <tr><td style="font-size: 7pt; letter-spacing: 2.5pt; color: #93c5fd; font-weight: bold;">{{issuer_name}}</td></tr>
+                <tr><td style="font-size: 7pt; letter-spacing: 2.5pt; color: {{accent_color}}; font-weight: bold;">{{issuer_name}}</td></tr>
                 <tr><td style="font-size: 9pt; color: #d1d5db; padding-top: 4pt; letter-spacing: 1.5pt; font-weight: bold;">CERTIFICATE OF ACHIEVEMENT</td></tr>
             </table>
         </td>
@@ -164,7 +170,7 @@ td { padding: 0; }
     </table>
     <table width="100%" style="background-color: #f8fafc; border-top: 1px solid #e2e8f0;">
     <tr><td align="center" style="padding: 8pt 32pt; font-size: 6.5pt; color: #718096;">
-        Issued via CertForge &middot; Verifiable digital credential
+        {{footer_text}}
     </td></tr>
     </table>
 </td></tr>
@@ -177,7 +183,10 @@ td { padding: 0; }
     {
         "name": "Modern",
         "is_default": True,
-        "variables": ["name", "title", "date", "credential_id", "qr", "issuer_name"],
+        "variables": [
+            "name", "title", "date", "credential_id", "qr", "issuer_name",
+            "logo_url", "primary_color", "accent_color", "footer_text",
+        ],
         "html_source": """<!DOCTYPE html>
 <html>
 <head>
@@ -196,13 +205,13 @@ td { padding: 0; }
 <tr><td>
     <table width="100%" cellspacing="0" cellpadding="0">
     <tr>
-        <td style="padding: 0; height: 4pt; background: linear-gradient(to right, #8b5cf6, #ec4899, #f59e0b);">&nbsp;</td>
+        <td style="padding: 0; height: 4pt; background-color: {{primary_color}};">&nbsp;</td>
     </tr>
     </table>
     <table width="100%">
     <tr><td style="padding: 24pt 40pt 8pt;">
         <table cellspacing="0" cellpadding="0">
-            <tr><td style="font-size: 7pt; letter-spacing: 3pt; color: #a78bfa; font-weight: bold; text-transform: uppercase;">{{issuer_name}}</td></tr>
+            <tr><td style="font-size: 7pt; letter-spacing: 3pt; color: {{accent_color}}; font-weight: bold; text-transform: uppercase;">{{issuer_name}}</td></tr>
         </table>
     </td></tr>
     </table>
@@ -249,7 +258,7 @@ td { padding: 0; }
     </table>
     <table width="100%" style="background-color: #fafafa;">
     <tr><td align="center" style="padding: 10pt 40pt; font-size: 7pt; color: #9ca3af;">
-        Powered by CertForge &middot; certforge.intelliforge.tech
+        {{footer_text}}
     </td></tr>
     </table>
 </td></tr>

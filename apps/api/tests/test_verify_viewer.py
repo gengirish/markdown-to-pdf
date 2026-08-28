@@ -72,23 +72,31 @@ def test_recipient_name_and_title_are_not_injected_as_html(
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in res.text
 
 
-def test_viewer_has_no_link_to_the_nonexistent_download_route(
+def test_viewer_links_the_pdf_endpoint_not_the_nonexistent_download_route(
     client: TestClient, db_session
 ):
-    """The Download PDF button pointed at /api/v1/verify/{id}/download, a 404."""
+    """The Download PDF button used to point at /api/v1/verify/{id}/download, a
+    404, because it read cred.pdf_url — a column nothing has ever populated.
+    It now always links the on-demand PDF endpoint, since every DB-backed
+    credential can be rendered from its template at any time.
+    """
     _issue_credential(db_session, "CF-2026-NOPDF001", slug="no-pdf-org")
 
     res = client.get("/verify/CF-2026-NOPDF001")
 
     assert res.status_code == 200
     assert "/download" not in res.text
-    assert "Download PDF" not in res.text
+    assert "Download PDF" in res.text
+    assert 'href="https://api.certforge.intelliforge.tech/credentials/CF-2026-NOPDF001/pdf"' in res.text
 
 
-def test_viewer_links_the_stored_pdf_when_the_credential_has_one(
+def test_viewer_ignores_the_unused_pdf_url_column(
     client: TestClient, db_session
 ):
-    """A credential that does have a rendered PDF still offers it."""
+    """pdf_url is a legacy column nothing writes to; the viewer must not trust
+    it even when a row happens to have one set — the link is always the
+    computed PDF endpoint.
+    """
     _issue_credential(
         db_session,
         "CF-2026-HASPDF01",
@@ -99,7 +107,8 @@ def test_viewer_links_the_stored_pdf_when_the_credential_has_one(
     res = client.get("/verify/CF-2026-HASPDF01")
 
     assert res.status_code == 200
-    assert 'href="https://cdn.example.com/certs/haspdf01.pdf"' in res.text
+    assert "cdn.example.com" not in res.text
+    assert 'href="https://api.certforge.intelliforge.tech/credentials/CF-2026-HASPDF01/pdf"' in res.text
     assert "Download PDF" in res.text
 
 

@@ -21,11 +21,13 @@ import procrastinate
 from api.core.config import CERTFORGE_WEB_URL, DATABASE_URL
 from api.models import get_db
 from api.models.credential import CredentialBatch, Credential
+from api.models.organization import Organization
 from api.models.template import Template
 from api.core.pdf_renderer import render_credential_pdf
 from api.core.crypto import hmac_sign, generate_credential_id
 from api.models.credential import DELIVERY_FAILED
 from api.services.delivery import deliver_credential_email, may_retry
+from api.services.rendering import build_render_variables
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +168,8 @@ def _process_batch_sync(batch_id: uuid.UUID) -> list[str]:
             session.commit()
             return []
 
+        org = session.query(Organization).filter_by(id=batch.org_id).first()
+
         # Fetch pending credentials for this batch
         # Wait, in the studio, the user uploads CSV, we can either parse it in the route
         # and create `Credential` rows with status="pending", OR we store the CSV in S3
@@ -187,19 +191,22 @@ def _process_batch_sync(batch_id: uuid.UUID) -> list[str]:
         for cred in pending_creds:
             try:
                 # 1. Render PDF
+                #
+                # metadata_ is the base so customer-supplied custom keys survive;
+                # build_render_variables always wins on top of it, exactly as
+                # name/title/credential_id/qr always used to override metadata
+                # here. Shared with the single-issue PDF endpoint
+                # (routes/verify.py) so bulk and single-issue can never again
+                # build this dict two different ways.
                 variables = dict(cred.metadata_)
-                variables["name"] = cred.recipient_name
-                variables["title"] = cred.title
-                variables["credential_id"] = cred.public_id
-                
+                variables.update(build_render_variables(cred, org))
+
                 # This URL is rendered into the QR code and baked into the PDF, so
                 # it is unfixable once a credential is printed. It was hardcoded to
                 # certs.intelliforge.tech — the legacy product — which meant every
                 # CertForge credential shipped pointing at someone else's brand.
                 verify_url = f"{CERTFORGE_WEB_URL}/verify/{cred.public_id}"
-                from api.core.qr import generate_qr_data_uri
-                variables["qr"] = generate_qr_data_uri(verify_url)
-                
+
                 pdf_bytes = render_credential_pdf(template.html_source, variables)
                 
                 # 2. Upload PDF (mocked for now since R2/S3 is deferred to later)

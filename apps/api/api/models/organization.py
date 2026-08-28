@@ -30,6 +30,11 @@ class Organization(Base):
     slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     logo_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Credential PDF branding. Nullable so an org that never set these falls
+    # back to CertForge's own defaults — see services/rendering.py.
+    primary_color: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    accent_color: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    footer_text: Mapped[str | None] = mapped_column(String(255), nullable=True)
     tier: Mapped[str] = mapped_column(String(50), nullable=False, default="community")
     razorpay_sub_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     monthly_quota: Mapped[int] = mapped_column(Integer, nullable=False, default=50)

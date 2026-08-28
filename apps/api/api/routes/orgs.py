@@ -18,10 +18,16 @@ class OrgCreate(BaseModel):
     slug: str
     name: str
     logo_url: str | None = None
+    primary_color: str | None = None
+    accent_color: str | None = None
+    footer_text: str | None = None
 
 class OrgUpdate(BaseModel):
     name: str | None = None
     logo_url: str | None = None
+    primary_color: str | None = None
+    accent_color: str | None = None
+    footer_text: str | None = None
 
 @router.post("", response_model=ApiResponse[dict])
 def create_org(
@@ -54,6 +60,9 @@ def create_org(
             slug=payload.slug,
             name=payload.name,
             logo_url=payload.logo_url,
+            primary_color=payload.primary_color,
+            accent_color=payload.accent_color,
+            footer_text=payload.footer_text,
             tier="community"
         )
         session.add(org)
@@ -85,6 +94,9 @@ def get_org(slug: str):
             "slug": org.slug,
             "name": org.name,
             "logo_url": org.logo_url,
+            "primary_color": org.primary_color,
+            "accent_color": org.accent_color,
+            "footer_text": org.footer_text,
             "tier": org.tier
         })
 
@@ -106,12 +118,21 @@ def update_org(
             org.name = payload.name
         if payload.logo_url is not None:
             org.logo_url = payload.logo_url
-            
+        if payload.primary_color is not None:
+            org.primary_color = payload.primary_color
+        if payload.accent_color is not None:
+            org.accent_color = payload.accent_color
+        if payload.footer_text is not None:
+            org.footer_text = payload.footer_text
+
         return ApiResponse.ok({
             "id": str(org.id),
             "slug": org.slug,
             "name": org.name,
-            "logo_url": org.logo_url
+            "logo_url": org.logo_url,
+            "primary_color": org.primary_color,
+            "accent_color": org.accent_color,
+            "footer_text": org.footer_text
         })
 
 @router.get("/{slug}/members", response_model=ApiResponse[list[dict]])

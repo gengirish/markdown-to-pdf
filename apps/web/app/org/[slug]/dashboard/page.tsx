@@ -9,6 +9,7 @@ import { ApiStatusBadge } from "@/components/dashboard/api-status-badge";
 import { BulkIssueCard } from "@/components/dashboard/bulk-issue-card";
 import { DeveloperCard } from "@/components/dashboard/developer-card";
 import { RecentCredentialsCard } from "@/components/dashboard/recent-credentials-card";
+import { SingleIssueCard } from "@/components/dashboard/single-issue-card";
 import { ErrorNote } from "@/components/dashboard/ui";
 
 export default function OrgDashboard({ params }: { params: Promise<{ slug: string }> }) {
@@ -73,6 +74,7 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
         ) : (
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
             <div className="space-y-8 lg:col-span-2">
+              <SingleIssueCard slug={slug} onIssued={handleIssued} />
               <BulkIssueCard slug={slug} onIssued={handleIssued} />
               <DeveloperCard slug={slug} />
             </div>

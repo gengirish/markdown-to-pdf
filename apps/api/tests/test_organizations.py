@@ -64,6 +64,59 @@ def test_update_org(client: TestClient, mock_clerk):
     assert response.status_code == 200
     assert response.json()["data"]["name"] == "New Name"
 
+def test_create_org_with_branding_fields(client: TestClient, mock_clerk):
+    payload = {
+        "clerk_org_id": "org_brand",
+        "slug": "branded-org",
+        "name": "Branded Org",
+        "primary_color": "#112233",
+        "accent_color": "#aabbcc",
+        "footer_text": "Issued by Branded Org",
+    }
+    client.post("/api/v1/orgs", json=payload)
+
+    response = client.get("/api/v1/orgs/branded-org")
+    data = response.json()["data"]
+    assert data["primary_color"] == "#112233"
+    assert data["accent_color"] == "#aabbcc"
+    assert data["footer_text"] == "Issued by Branded Org"
+
+
+def test_branding_fields_default_to_null(client: TestClient, mock_clerk):
+    payload = {
+        "clerk_org_id": "org_nobrand",
+        "slug": "unbranded-org",
+        "name": "Unbranded Org",
+    }
+    client.post("/api/v1/orgs", json=payload)
+
+    data = client.get("/api/v1/orgs/unbranded-org").json()["data"]
+    assert data["primary_color"] is None
+    assert data["accent_color"] is None
+    assert data["footer_text"] is None
+
+
+def test_update_org_branding_fields(client: TestClient, mock_clerk):
+    payload = {
+        "clerk_org_id": "org_updbrand",
+        "slug": "rebranded-org",
+        "name": "Rebranded Org",
+    }
+    client.post("/api/v1/orgs", json=payload)
+
+    update_payload = {
+        "primary_color": "#000000",
+        "accent_color": "#ffffff",
+        "footer_text": "New footer",
+    }
+    response = client.patch("/api/v1/orgs/rebranded-org", json=update_payload)
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["primary_color"] == "#000000"
+    assert data["accent_color"] == "#ffffff"
+    assert data["footer_text"] == "New footer"
+
+
 def test_list_org_members(client: TestClient, mock_clerk):
     # Create org
     payload = {

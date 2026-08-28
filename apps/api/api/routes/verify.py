@@ -2,16 +2,20 @@
 
 import html
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from api.core.config import CERTFORGE_WEB_URL
+from api.core.config import CERTFORGE_API_URL, CERTFORGE_WEB_URL
 from api.core.envelope import ApiResponse
 from api.core.legacy_tokens import decode_legacy_token, legacy_cert_id
 from api.core.crypto import is_certforge_id
+from api.core.pdf_renderer import render_credential_pdf
 from api.models import get_db
 from api.models.credential import Credential, PUBLICLY_VERIFIABLE
 from api.models.organization import Organization
+from api.models.template import Template
+from api.services.issuance import resolve_template_id
+from api.services.rendering import build_render_variables
 
 # Mounted under /api/v1 by api/index.py — paths here must NOT repeat that prefix.
 router = APIRouter(tags=["Verification"])
@@ -39,7 +43,7 @@ def _get_credential_data(credential_id: str) -> dict | None:
                 "name": cred.recipient_name,
                 "title": cred.title,
                 "issued_at": cred.issued_at.isoformat(),
-                "pdf_url": cred.pdf_url,
+                "pdf_url": f"{CERTFORGE_API_URL}/credentials/{cred.public_id}/pdf",
                 "metadata": cred.metadata_
             }
 
@@ -119,6 +123,44 @@ def get_open_badge_json(public_id: str):
                 }
             }
         }
+
+@public_router.get("/credentials/{public_id}/pdf")
+def get_credential_pdf(public_id: str):
+    """Render a credential's certificate PDF on demand.
+
+    Nothing is stored: every request re-renders from the template and the
+    credential's own data, the same way badge.json is generated fresh rather
+    than cached. This is what makes the viewer's "Download PDF" button work —
+    it used to link at cred.pdf_url, a column nothing has ever populated.
+    """
+    with get_db() as session:
+        cred = session.query(Credential).filter_by(public_id=public_id).first()
+        if not cred or cred.status not in PUBLICLY_VERIFIABLE:
+            raise HTTPException(status_code=404, detail="Credential not found or revoked")
+
+        org = session.query(Organization).filter_by(id=cred.org_id).first()
+
+        template_id = cred.template_id or resolve_template_id(session, org, None)
+        if template_id is None:
+            raise HTTPException(status_code=404, detail="No template available")
+        template = session.query(Template).filter_by(id=template_id).first()
+        if template is None:
+            raise HTTPException(status_code=404, detail="No template available")
+
+        # metadata_ wins for custom keys, same precedence as bulk issuance in
+        # api/core/worker.py — the two must never again build this dict two
+        # different ways.
+        variables = dict(cred.metadata_)
+        variables.update(build_render_variables(cred, org))
+
+        pdf_bytes = render_credential_pdf(template.html_source, variables)
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{public_id}.pdf"'},
+    )
+
 
 @public_router.get("/orgs/{slug}")
 def issuer_profile(slug: str, request: Request):

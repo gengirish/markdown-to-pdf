@@ -24,6 +24,7 @@ from api.core.crypto import generate_credential_id, hmac_sign
 from api.models import get_db
 from api.models.credential import Credential
 from api.models.organization import Organization
+from api.models.template import Template
 from api.models.usage import UsageLedger
 from api.services.delivery import (
     deliver_credential_email,
@@ -85,6 +86,7 @@ class IssuedCredential:
     metadata: dict[str, Any]
     verify_url: str
     badge_url: str
+    pdf_url: str
     #: What happened to the email, always — including "we did not try", which is
     #: a recorded outcome here rather than an absence.
     delivery: dict[str, Any]
@@ -103,18 +105,61 @@ class IssuedCredential:
             "metadata": self.metadata,
             "verify_url": self.verify_url,
             "badge_url": self.badge_url,
+            "pdf_url": self.pdf_url,
             "delivery": self.delivery,
         }
 
 
-def _public_urls(public_id: str) -> tuple[str, str]:
-    """Human-facing verify page and machine-facing badge document."""
+def _public_urls(public_id: str) -> tuple[str, str, str]:
+    """Human-facing verify page, machine-facing badge document, and rendered PDF."""
     from api.core.config import CERTFORGE_API_URL, CERTFORGE_WEB_URL
 
     return (
         f"{CERTFORGE_WEB_URL}/verify/{public_id}",
         f"{CERTFORGE_API_URL}/credentials/{public_id}/badge.json",
+        f"{CERTFORGE_API_URL}/credentials/{public_id}/pdf",
     )
+
+
+def resolve_template_id(
+    session, org: Organization, requested: Optional[uuid.UUID]
+) -> Optional[uuid.UUID]:
+    """Pick the template a credential should render with.
+
+    An explicit request must belong to this org or be a global default — never
+    another org's private template. With nothing requested, prefer this org's
+    own default, then the global default. A fresh dev DB may have neither
+    seeded yet, and that has to degrade to "no template" rather than crash.
+    """
+    if requested is not None:
+        template = (
+            session.query(Template)
+            .filter(
+                Template.id == requested,
+                (Template.org_id == org.id) | (Template.org_id.is_(None)),
+            )
+            .first()
+        )
+        if template is None:
+            raise IssuanceError("Template not found", code=404)
+        return template.id
+
+    own_default = (
+        session.query(Template)
+        .filter_by(org_id=org.id, is_default=True)
+        .order_by(Template.name)
+        .first()
+    )
+    if own_default is not None:
+        return own_default.id
+
+    global_default = (
+        session.query(Template)
+        .filter_by(org_id=None, is_default=True)
+        .order_by(Template.name)
+        .first()
+    )
+    return global_default.id if global_default is not None else None
 
 
 def quota_state(session, org: Organization) -> tuple[int, int]:
@@ -180,6 +225,8 @@ def issue_credential(
         if org is None:
             raise IssuanceError("Organization not found", code=404)
 
+        template_id = resolve_template_id(session, org, request.template_id)
+
         limit, remaining = _consume_quota(session, org, 1)
 
         public_id = _unique_public_id(session)
@@ -193,7 +240,7 @@ def issue_credential(
             public_id=public_id,
             org_id=org.id,
             batch_id=request.batch_id,
-            template_id=request.template_id,
+            template_id=template_id,
             recipient_name=name,
             recipient_email=(request.recipient_email or "").strip(),
             title=title,
@@ -205,7 +252,7 @@ def issue_credential(
         session.add(credential)
         session.flush()
 
-        verify_url, badge_url = _public_urls(public_id)
+        verify_url, badge_url, pdf_url = _public_urls(public_id)
 
         # Delivery goes through services/delivery.py — the same function bulk
         # issuance calls. The TODO this closes asked for the state shape to be
@@ -240,6 +287,7 @@ def issue_credential(
             metadata=metadata,
             verify_url=verify_url,
             badge_url=badge_url,
+            pdf_url=pdf_url,
             delivery=delivery,
             quota_limit=limit,
             quota_remaining=remaining,

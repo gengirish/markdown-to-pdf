@@ -12,6 +12,7 @@ service so the bulk path and the eventual legacy adapter cannot drift from it.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -43,6 +44,7 @@ class CredentialCreate(BaseModel):
     #: Documented in the B1 plan and never implemented until now. Off by default
     #: so no existing caller starts sending mail it did not ask to send.
     send_email: bool = False
+    template_id: Optional[str] = None
 
 
 def _quota_headers(response: Response, limit: int, remaining: int) -> None:
@@ -78,6 +80,13 @@ def create_credential(
     """Issue a single credential."""
     _authorise(slug, principal)
 
+    template_id: Optional[uuid.UUID] = None
+    if payload.template_id:
+        try:
+            template_id = uuid.UUID(payload.template_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid template_id")
+
     try:
         issued = issue_credential(
             slug,
@@ -87,6 +96,7 @@ def create_credential(
                 recipient_email=payload.recipient_email,
                 metadata=payload.metadata,
                 send_email=payload.send_email,
+                template_id=template_id,
             ),
             is_test=principal.is_test,
         )
@@ -196,7 +206,7 @@ def get_credential(
 
         from api.services.issuance import _public_urls
 
-        verify_url, badge_url = _public_urls(c.public_id)
+        verify_url, badge_url, pdf_url = _public_urls(c.public_id)
         return ApiResponse.ok(
             {
                 "id": c.public_id,
@@ -210,6 +220,7 @@ def get_credential(
                 "claimed_at": c.claimed_at.isoformat() if c.claimed_at else None,
                 "verify_url": verify_url,
                 "badge_url": badge_url,
+                "pdf_url": pdf_url,
                 # So support can answer "did they get the email?" from the API
                 # instead of from a Fly log buffer that holds ~100 lines.
                 "delivery": delivery_state(c),
