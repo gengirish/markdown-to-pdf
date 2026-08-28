@@ -222,7 +222,7 @@ def _process_batch_sync(batch_id: uuid.UUID) -> list[str]:
                 # path through it writes a terminal delivery state onto the row,
                 # including the no-address case, which previously wrote nothing
                 # and was indistinguishable afterwards from a rejected send.
-                if deliver_credential_email(cred, verify_url=verify_url):
+                if deliver_credential_email(cred, verify_url=verify_url, org=org):
                     delivered_count += 1
                 elif cred.delivery_status == DELIVERY_FAILED:
                     delivery_failed_count += 1

@@ -295,3 +295,84 @@ def test_the_credential_list_flags_delivery_per_row(client, db_session):
     assert r.status_code == 200, r.text
     statuses = {item["delivery_status"] for item in r.json()["data"]["items"]}
     assert statuses == {DELIVERY_FAILED, NOT_REQUESTED}
+
+
+# -- the message itself --------------------------------------------------------
+#
+# The first version of this was four lines of bare HTML. It delivered fine, and
+# looked nothing like the branded certificate email the legacy product sends —
+# nothing here asserted otherwise, which is why it shipped.
+
+def _sample_credential(db_session, **kw):
+    org = org_with_key(db_session, "email-shape", LIVE_PREFIX + "email-shape-key")
+    cred = Credential(
+        public_id="CF-2026-EMAILTST",
+        org_id=org.id,
+        recipient_name=kw.get("recipient_name", "Ada Lovelace"),
+        recipient_email="ada@example.com",
+        title=kw.get("title", "Analytical Engines"),
+        metadata_={},
+        hmac_signature="x",
+        status="issued",
+        issued_at=datetime(2026, 8, 28, tzinfo=timezone.utc),
+    )
+    return cred, org
+
+
+def test_the_email_carries_the_branded_layout(db_session):
+    from api.services.delivery import build_credential_email
+
+    cred, org = _sample_credential(db_session)
+    subject, text, html = build_credential_email(cred, "https://example.test/v/1", org)
+
+    assert subject == "Your credential for Analytical Engines"
+    for marker in (
+        "Verified &amp; Authentic",
+        "This Credential is Awarded To",
+        "View Your Credential",
+        "Download PDF",
+        "Credential ID",
+        "Ada Lovelace",
+        "Analytical Engines",
+    ):
+        assert marker in html, f"the email lost {marker!r}"
+
+    # Both links, so a recipient whose client blocks the button still has a way.
+    assert "https://example.test/v/1" in html
+    assert "/pdf" in html
+    assert "https://example.test/v/1" in text
+
+
+def test_the_email_uses_the_organizations_branding(db_session):
+    from api.services.delivery import build_credential_email
+
+    cred, org = _sample_credential(db_session)
+    org.primary_color = "#123456"
+    org.accent_color = "#abcdef"
+    org.footer_text = "Issued by the Analytical Society"
+
+    _, _, html = build_credential_email(cred, "https://example.test/v/1", org)
+    assert "#123456" in html
+    assert "#abcdef" in html
+    assert "Issued by the Analytical Society" in html
+
+
+def test_the_email_can_be_rebuilt_without_the_org(db_session):
+    """The retry task loads a row, not a request context. An email that cannot
+    be rebuilt from the credential alone can never be retried."""
+    from api.services.delivery import build_credential_email
+
+    cred, _ = _sample_credential(db_session)
+    _, _, html = build_credential_email(cred, "https://example.test/v/1", None)
+    assert "Ada Lovelace" in html
+    assert "#d4af37" in html, "no fallback accent"
+
+
+def test_recipient_names_are_escaped_into_the_email(db_session):
+    """Names arrive from customer CSVs and this markup lands in a mail client."""
+    from api.services.delivery import build_credential_email
+
+    cred, org = _sample_credential(db_session, recipient_name="<script>alert(1)</script>")
+    _, _, html = build_credential_email(cred, "https://example.test/v/1", org)
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html

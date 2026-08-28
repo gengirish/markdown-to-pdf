@@ -278,7 +278,7 @@ def issue_credential(
                 "Delivery not requested (send_email was not set).",
             )
         else:
-            deliver_credential_email(credential, verify_url=verify_url)
+            deliver_credential_email(credential, verify_url=verify_url, org=org)
 
         delivery = delivery_state(credential)
 
