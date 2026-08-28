@@ -22,15 +22,18 @@ FastAPI process:
 
 ```
 apps/api/            FastAPI backend. Docker image, deployed to Fly.io as `certforge-api`.
-  api/index.py       the legacy surface — ~2800 lines, frozen (see below)
+  api/index.py       the legacy surface — ~2900 lines, frozen (see below)
   api/core/          config, auth (Clerk), crypto, envelope, worker, pdf_renderer, email
-  api/routes/        the /api/v1 CertForge surface
+  api/routes/        the /api/v1 CertForge surface — thin adapters over api/services/
+  api/services/      issuance, delivery, rendering — one implementation per concern,
+                     shared by the single and bulk paths so they cannot drift
   api/models/        SQLAlchemy 2.0 models
   api/migrations/    Alembic
   tests/             pytest — must stay green
   test_api.py        live-server integration script (not pytest)
 apps/legacy-web/     Vite + React 19 SPA. LIVE at certs.intelliforge.tech.
-apps/web/            Next.js 16 + Clerk. The CertForge dashboard, still on mock data.
+apps/web/            Next.js 16 + Clerk. The CertForge dashboard; a real client of
+                     /api/v1 through lib/api.ts — no mock data, no route handlers.
 sdk/                 installable Python client for the legacy API (`pdfcert`)
 e2e/                 Playwright specs, run from the repo root
 examples/            runnable scripts: bulk onboarding, batch verify, webhooks, Zapier
@@ -118,22 +121,51 @@ npx playwright test --ui                     # interactive picker
 E2E_BASE_URL=https://… npm run test:e2e      # run against a deployed URL
 ```
 
+Two files in `apps/api/tests/` are **contract** tests and are the reason
+`index.py` is safe to touch at all:
+
+- `test_contract_legacy.py` pins the freeze contract. Its load-bearing part is
+  three tokens — participation, VTU internship, appreciation — produced by the
+  real encoder against a fixed secret and committed as literals. They stand in
+  for every certificate already printed. Rename a payload key, reorder the JSON,
+  change the separators or alter the signing input and they stop decoding.
+  Nothing else in the suite would notice, because everything else generates its
+  tokens with the same code it is testing.
+- `test_contract_certforge.py` asserts that every URL a credential carries is
+  served by the API **and**, when it names `CERTFORGE_WEB_URL`, carried there by
+  a rewrite in `apps/web/vercel.json`. It reads those URLs off a real issuance
+  rather than a hand-written list, so a newly emitted URL is covered the day it
+  appears. It cannot check DNS — that is what the smoke script is for.
+
+**House rule: a contract test that has never been seen to fail is a comment.**
+Every guard in those files was verified by reintroducing the bug on purpose and
+watching it fail. Keep doing that — two smoke assertions written for the
+`/verify` 404 passed against a demonstrably broken host before they were checked
+this way, because a `404` is also what Next.js returns for an unrouted path and
+`application/json` is also what FastAPI's default 404 returns.
+
 `test_api.py` and `sdk/test_sdk.py` are plain scripts, not pytest — there is no
 per-test selector. Comment out entries in `run_all()` / `__main__` to narrow a run.
 The real suite is `apps/api/tests/`, configured by `apps/api/pytest.ini`; its
 `testpaths = tests` is what stops a bare `pytest` from walking into those two scripts.
 
-CI (`.github/workflows/ci.yml`) runs six jobs: `lint-and-type-check` (ruff),
-`test-unit` (pytest), `test-api`, `test-sdk`, `build-frontend` (`npm run build:web`),
-and `test-e2e`.
+CI (`.github/workflows/ci.yml`) runs seven jobs: `lint` (ruff), `test-unit`
+(pytest), `test-api`, `test-sdk`, `build-frontend` (`npm run build:web`),
+`test-e2e`, and `deploy-api` — the last only on `main`, which is what ships the
+Fly release and runs Alembic through `release_command`.
 
-### Two known potholes
+`scripts/smoke_test.sh` is **not** a CI job. It is read-only and safe against
+production (every check is a GET); run it after any deploy that touches hosts.
+It takes an optional base URL, plus `SMOKE_CERTFORGE_WEB` and
+`SMOKE_CERTFORGE_API` to point the two CertForge host sections elsewhere.
 
-- **The root turbo scripts do not work.** `npm run dev`, `npm run build`, and
-  `npm run lint` all shell out to turbo, and turbo 2.10.8 (what `package-lock.json`
-  pins) refuses to resolve the workspace: *"Missing `devEngines.packageManager` or
-  legacy `packageManager` field in package.json"*. The root `package.json` has
-  neither. Use the per-app commands above until someone adds the field.
+### One known pothole
+
+The root turbo scripts used to be listed here as broken. They work now — the
+`packageManager` field turbo was asking for is in the root `package.json`
+(`npm@10.9.3`), and `npm run lint` resolves the workspace and runs both. The
+per-app commands above are still the faster loop when you are working in one app.
+
 - **PDF generation fails locally on Windows.** The certificate templates load
   `apps/api/api/fonts/EBGaramond-SemiBold.ttf` through `@font-face`; xhtml2pdf copies
   it to a `NamedTemporaryFile` that reportlab then cannot reopen, and
@@ -288,6 +320,35 @@ variables are built, shared by this route and the bulk worker
 seeded default templates use the first three; `logo_url` is passed through but none of
 them has a layout slot for it yet.
 
+### Delivery state, and why it exists
+
+`api/services/delivery.py` is the only credential-email sender; both the bulk
+worker and single issuance call it. Every path through it writes a terminal
+state onto the credential — `delivery_status` is one of `not_requested`,
+`pending`, `sent`, `failed`, `unknown` — plus `delivered_at`, `delivery_error`
+and `delivery_attempts`.
+
+`not_requested` is the state that earns its keep. Delivery used to leave no
+trace: a rejected send wrote one `logger.warning`, and a credential with no
+`recipient_email` took a silent `if` and wrote nothing at all. Minutes later the
+two were identical rows and the log had rolled off, which is how the first
+production batch became unexplainable. **Not sending is a recorded outcome here,
+not an absence.**
+
+Two rules that are easy to break by accident:
+
+- `unknown` is the backfill for rows predating these columns. It is excluded
+  from `DELIVERY_RETRYABLE`, because retrying them would mail people who may
+  have been served months ago. Never guess a value for one.
+- `CredentialBatch.succeeded` / `failed` count **renders**, not sends.
+  `delivered` / `delivery_failed` are separate for exactly that reason — a batch
+  that rendered thirty PDFs and emailed none of them used to report "30
+  succeeded" and nothing else.
+
+Quota works the same way: `api/services/issuance.py`'s `consume_quota()` is the
+one meter, called by both paths. Bulk used to read the ledger without writing it
+back, so bulk issuance went unmetered while single issuance metered correctly.
+
 Bulk issuance runs on Procrastinate (`api/core/worker.py`), embedded in the FastAPI
 lifespan so it scales with the web process.
 
@@ -307,3 +368,27 @@ JSON-LD injected into viewer pages are generated in `apps/api/api/index.py`
   file ownership, and in what order they land.
 - `docs/certificate-internship-vtu.md` — internship field ↔ token-key mapping and the
   college workflow.
+- `docs/TODOs/` — live defects, one file each, in a consistent shape: the finding
+  with reproducible evidence, why it matters, what it does *not* affect, the fix
+  options with their tradeoffs, and a section on why the existing tests missed it.
+  Closed ones keep their `Status` line and stay in place, because the reasoning is
+  the point. Read `certforge-public-urls-404.md` first if you are new here — it is
+  the clearest example of the failure mode this codebase keeps producing.
+
+### The failure mode worth knowing before you start
+
+Four production incidents have shared one structure: **two halves that were each
+correct in isolation, with nothing testing the join.** The API served `/verify/{id}`
+and `apps/web` was deployed at that host, but no rewrite connected them. Rewrites
+forwarded to Fly and Clerk protected only `/org`, but middleware runs first. A send
+branch ran and the credential issued, but a skipped send and a failed send both
+wrote nothing. A path was served and a URL was well-formed, but the hostname had no
+DNS record.
+
+Every one passed review, and most passed a test suite that exercised one side.
+
+So when you add anything spanning a boundary — a host, a deploy, a config file, a
+provider — ask what happens if **one side alone** is correct, and write the
+assertion that fails in that state. Then check that it does fail, by breaking the
+thing on purpose. An assertion that cannot distinguish the outcome it exists to
+detect is worse than none, because it reports success.

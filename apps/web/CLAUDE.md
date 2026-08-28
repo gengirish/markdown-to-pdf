@@ -41,11 +41,36 @@ rather than reaching around it.
 
 - `params` in every dynamic route is a `Promise`. Server components `await` it;
   client components read it with React's `use()`.
-- Clerk v7 removed `<SignedIn>` / `<SignedOut>`. The replacement `<Show>`
-  resolves server-side and needs `clerkMiddleware`, which this app does not
-  install, so branch on `useAuth()` / `useUser()` instead. Server-side `auth()`
-  and `currentUser()` will not work until a `proxy.ts` running
-  `clerkMiddleware()` is added.
+- Clerk v7 removed `<SignedIn>` / `<SignedOut>`; the replacement is `<Show>`.
+  This entry used to say `clerkMiddleware` was not installed — it is now.
+  `proxy.ts` (Next 16's name for middleware) runs it, so server-side `auth()`,
+  `currentUser()` and `<Show>` all work.
+- **`proxy.ts` protects by exception, not by default**, and the namespaces are
+  not interchangeable:
+
+  ```
+  /org/{slug}/...   the signed-in dashboard    protected
+  /orgs/{slug}      the public issuer profile  anonymous, rewritten to the API
+  ```
+
+  The matcher is anchored as `/org/(.*)`. It was `/org(.*)`, which also matches
+  `/orgs/acme` because `(.*)` accepts the `s` — that put an Open Badges
+  `issuer.id` behind auth, so a badge consumer dereferencing it met a sign-in
+  redirect instead of a Profile.
+
+- **A `vercel.json` rewrite does not bypass `proxy.ts`.** Middleware runs first,
+  on rewritten paths too. `/verify`, `/credentials` and `/orgs` are therefore
+  excluded from the matcher: they are pure passthrough to the API, they render
+  nothing in this app, and they are the URLs inside printed QR codes. Running
+  Clerk on them means a Clerk misconfiguration takes credential verification
+  down — which is not hypothetical, it is how a preview deployment answered 500
+  on `/verify`. A test fails if those exclusions are removed.
+
+- **Preview deployments currently 500 on every page.** All three env vars are
+  set on Production only, so `clerkMiddleware` throws `Missing publishableKey`.
+  Fixing it needs Clerk *development-instance* keys; copying production secrets
+  onto preview URLs is real exposure.
+
 - `app/global-error.tsx` is load-bearing: without it, Next prerenders its own
   `/_global-error` through `ClerkProvider` and the build fails when no Clerk
   publishable key is set.
