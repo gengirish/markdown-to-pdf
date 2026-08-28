@@ -72,7 +72,20 @@ export interface OrgProfile {
   slug: string;
   name: string;
   logo_url: string | null;
+  primary_color: string | null;
+  accent_color: string | null;
+  footer_text: string | null;
   tier: string;
+}
+
+/** What `PATCH /orgs/{slug}` accepts. Every field is optional; the server
+ *  leaves anything omitted untouched, so a partial save is a partial save. */
+export interface OrgBrandingUpdate {
+  name?: string;
+  logoUrl?: string | null;
+  primaryColor?: string | null;
+  accentColor?: string | null;
+  footerText?: string | null;
 }
 
 export interface OrgMember {
@@ -88,6 +101,19 @@ export interface TemplateSummary {
   is_default: boolean;
 }
 
+/** Whether the recipient was told, kept apart from whether the credential
+ *  exists. `not_requested` is the one that matters: it means no send was
+ *  attempted, which is a recorded outcome rather than a missing one. */
+export type DeliveryStatus = "not_requested" | "pending" | "sent" | "failed" | "unknown";
+
+export interface DeliveryState {
+  status: DeliveryStatus;
+  delivered_at: string | null;
+  error: string | null;
+  attempts: number;
+  may_retry: boolean;
+}
+
 export interface CredentialSummary {
   id: string;
   recipient_name: string;
@@ -96,6 +122,7 @@ export interface CredentialSummary {
   status: string;
   issued_at: string;
   batch_id: string | null;
+  delivery_status: DeliveryStatus;
 }
 
 export interface CredentialPage {
@@ -117,6 +144,7 @@ export interface IssuedCredential {
   verify_url: string;
   badge_url: string;
   pdf_url: string;
+  delivery: DeliveryState;
 }
 
 export interface BulkUploadResult {
@@ -129,11 +157,22 @@ export interface BatchStatus {
   id: string;
   status: string;
   total: number;
+  /** succeeded/failed count RENDERS, not sends. A batch can render every PDF
+   *  and email nobody; `delivery` is the only thing that says so. */
   succeeded: number;
   failed: number;
+  delivery: BatchDelivery;
   error_report: unknown;
   created_at: string;
   completed_at: string | null;
+}
+
+export interface BatchDelivery {
+  delivered: number;
+  failed: number;
+  /** No address on the row, or delivery was never asked for. Stated rather
+   *  than left to be inferred from a subtraction. */
+  not_requested: number;
 }
 
 export interface ApiKeySummary {
@@ -351,6 +390,27 @@ export class CertForgeClient {
   getOrg(slug: string, signal?: AbortSignal): Promise<OrgProfile> {
     return this.request<OrgProfile>(`/api/v1/orgs/${encodeURIComponent(slug)}`, {
       anonymous: true,
+      signal,
+    });
+  }
+
+  /** Partial update. Only the keys present are sent, so clearing a field is an
+   *  explicit `null` rather than an omission — the server distinguishes them. */
+  updateOrg(
+    slug: string,
+    input: OrgBrandingUpdate,
+    signal?: AbortSignal,
+  ): Promise<OrgProfile> {
+    const json: Record<string, unknown> = {};
+    if (input.name !== undefined) json.name = input.name;
+    if (input.logoUrl !== undefined) json.logo_url = input.logoUrl;
+    if (input.primaryColor !== undefined) json.primary_color = input.primaryColor;
+    if (input.accentColor !== undefined) json.accent_color = input.accentColor;
+    if (input.footerText !== undefined) json.footer_text = input.footerText;
+
+    return this.request<OrgProfile>(`/api/v1/orgs/${encodeURIComponent(slug)}`, {
+      method: "PATCH",
+      json,
       signal,
     });
   }

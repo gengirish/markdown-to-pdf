@@ -6,6 +6,7 @@ import { SignInButton, useAuth } from "@clerk/nextjs";
 
 import { publicApi, toApiError, type OrgProfile } from "@/lib/api";
 import { ApiStatusBadge } from "@/components/dashboard/api-status-badge";
+import { BrandingCard } from "@/components/dashboard/branding-card";
 import { BulkIssueCard } from "@/components/dashboard/bulk-issue-card";
 import { DeveloperCard } from "@/components/dashboard/developer-card";
 import { RecentCredentialsCard } from "@/components/dashboard/recent-credentials-card";
@@ -76,6 +77,7 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
             <div className="space-y-8 lg:col-span-2">
               <SingleIssueCard slug={slug} onIssued={handleIssued} />
               <BulkIssueCard slug={slug} onIssued={handleIssued} />
+              <BrandingCard slug={slug} org={org} onSaved={setOrg} />
               <DeveloperCard slug={slug} />
             </div>
 
