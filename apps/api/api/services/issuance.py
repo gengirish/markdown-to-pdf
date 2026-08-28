@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from api.core.crypto import generate_credential_id, hmac_sign
+from api.core.idempotency import IdempotencyConflict, fingerprint, issuance_store
 from api.models import get_db
 from api.models.credential import Credential
 from api.models.organization import Organization
@@ -70,6 +71,11 @@ class IssueRequest:
     #: Opt-in. Defaults off so that every caller written against the version of
     #: this API that could not send email keeps behaving exactly as it did.
     send_email: bool = False
+    #: Client-supplied `Idempotency-Key`, passed through by the route. Empty or
+    #: None means "no idempotency" and the request behaves exactly as it did
+    #: before this field existed. The header itself is read in the route: this
+    #: layer knows nothing about HTTP.
+    idempotency_key: Optional[str] = None
 
 
 @dataclass
@@ -193,6 +199,28 @@ def consume_quota(session, org: Organization, count: int) -> tuple[int, int]:
     return limit, remaining
 
 
+def _idempotency_fingerprint(request: IssueRequest, is_test: bool) -> str:
+    """Digest of everything that changes what gets issued.
+
+    `idempotency_key` itself is excluded — it is the lookup key, not payload.
+    `is_test` is included because a live and a test credential are different
+    documents even from an identical body, and replaying one as the other
+    would hand back a row of the wrong kind.
+    """
+    return fingerprint(
+        {
+            "recipient_name": (request.recipient_name or "").strip(),
+            "title": (request.title or "").strip(),
+            "recipient_email": (request.recipient_email or "").strip(),
+            "metadata": request.metadata or {},
+            "template_id": request.template_id,
+            "batch_id": request.batch_id,
+            "send_email": request.send_email,
+            "is_test": is_test,
+        }
+    )
+
+
 def _unique_public_id(session) -> str:
     """A credential id nothing else holds.
 
@@ -225,6 +253,29 @@ def issue_credential(
         raise IssuanceError("recipient_name is required")
     if not title:
         raise IssuanceError("title is required")
+
+    # Idempotency is checked here, before the session opens and — critically —
+    # before consume_quota. A replay that fell through to the DB would mint a
+    # second row AND burn a second unit of quota, which is the whole defect
+    # this closes. Returning early is the only correct place for it.
+    #
+    # Scope is the org slug: two orgs sending the same key never collide.
+    key = (request.idempotency_key or "").strip()
+    request_fp = _idempotency_fingerprint(request, is_test) if key else ""
+    if key:
+        try:
+            cached = issuance_store.lookup(org_slug, key, request_fp)
+        except IdempotencyConflict as exc:
+            # Deliberately a 409 and not a silent replay — see the module
+            # docstring in api/core/idempotency.py for why.
+            raise IssuanceError(str(exc), code=409) from exc
+        if cached is not None:
+            logger.info(
+                "Idempotent replay of key for %s -> credential %s",
+                org_slug,
+                cached.public_id,
+            )
+            return cached
 
     with get_db() as session:
         org = session.query(Organization).filter_by(slug=org_slug).first()
@@ -298,6 +349,12 @@ def issue_credential(
             quota_limit=limit,
             quota_remaining=remaining,
         )
+
+    # Stored only after the session has committed. Caching a result whose
+    # transaction then rolled back would hand every retry an id that does not
+    # exist, turning a recoverable failure into a permanent one for that key.
+    if key:
+        issuance_store.store(org_slug, key, request_fp, result)
 
     if is_test:
         logger.info("Issued TEST credential %s for %s (no email, not billed)", public_id, org_slug)

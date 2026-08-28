@@ -15,11 +15,12 @@ from __future__ import annotations
 import uuid
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from api.core.envelope import ApiResponse
 from api.core.principal import Principal, require_org_access, resolve_principal
+from api.core.rate_limit import rate_limit
 from api.models import get_db
 from api.models.credential import Credential
 from api.models.organization import Organization
@@ -70,14 +71,37 @@ def _authorise(slug: str, principal: Principal, roles=("owner", "admin", "issuer
     return org_id
 
 
-@router.post("", response_model=ApiResponse[dict], status_code=201)
+@router.post(
+    "",
+    response_model=ApiResponse[dict],
+    status_code=201,
+    # Rate limited because this is the most expensive thing the process does —
+    # it renders a PDF. Quota bounds the month; this bounds the minute, which
+    # nothing did before. Keyed on the calling principal, so one noisy
+    # integration cannot spend another org's budget.
+    dependencies=[Depends(rate_limit())],
+)
 def create_credential(
     slug: str,
     payload: CredentialCreate,
     response: Response,
     principal: Principal = Depends(resolve_principal),
+    idempotency_key: Optional[str] = Header(
+        None,
+        alias="Idempotency-Key",
+        description=(
+            "Repeat this key to retry safely: the original credential is "
+            "returned instead of a second one being issued, and no quota is "
+            "consumed. Reusing a key with a different body is a 409."
+        ),
+    ),
 ):
-    """Issue a single credential."""
+    """Issue a single credential.
+
+    The header was advertised in the CORS allow-list long before anything read
+    it, so a careful client could send it, believe a retry was safe, and get a
+    duplicate credential plus a second quota charge.
+    """
     _authorise(slug, principal)
 
     template_id: Optional[uuid.UUID] = None
@@ -97,6 +121,7 @@ def create_credential(
                 metadata=payload.metadata,
                 send_email=payload.send_email,
                 template_id=template_id,
+                idempotency_key=idempotency_key,
             ),
             is_test=principal.is_test,
         )

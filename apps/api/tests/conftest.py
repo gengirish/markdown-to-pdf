@@ -6,7 +6,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-TEST_DB_PATH = "test_db.sqlite"
+# Overridable so several suites can run at once against the same checkout
+# without clobbering each other's database — set TEST_DB_PATH per run. The
+# default keeps a bare `pytest` behaving exactly as before.
+TEST_DB_PATH = os.environ.get("TEST_DB_PATH", "test_db.sqlite")
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
 
 from api.models import Base

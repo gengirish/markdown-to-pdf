@@ -1,12 +1,19 @@
 """Verification API endpoints (Public)."""
 
+import base64
 import html
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from api.core.config import CERTFORGE_API_URL, CERTFORGE_WEB_URL
+from api.core.config import (
+    CERT_BRAND_NAME,
+    CERT_ORG_TAGLINE,
+    CERTFORGE_API_URL,
+    CERTFORGE_WEB_URL,
+)
 from api.core.envelope import ApiResponse
+from api.core.qr import generate_qr_data_uri
 from api.core.legacy_tokens import decode_legacy_token, legacy_cert_id
 from api.core.crypto import is_certforge_id
 from api.core.pdf_renderer import render_credential_pdf
@@ -16,6 +23,7 @@ from api.models.organization import Organization
 from api.models.template import Template
 from api.services.issuance import resolve_template_id
 from api.services.rendering import build_render_variables
+from api.viewer_templates import render_credential_viewer, safe_public_url
 
 # Mounted under /api/v1 by api/index.py — paths here must NOT repeat that prefix.
 router = APIRouter(tags=["Verification"])
@@ -37,6 +45,12 @@ def _get_credential_data(credential_id: str) -> dict | None:
             if not cred or cred.status not in PUBLICLY_VERIFIABLE:
                 return None
 
+            # The issuing organization's branding travels with the credential:
+            # CertForge is multi-tenant, so the viewer renders the org that
+            # issued this credential, never the single CERT_* brand the legacy
+            # product reads from the environment.
+            org = session.query(Organization).filter_by(id=cred.org_id).first()
+
             return {
                 "source": "database",
                 "id": cred.public_id,
@@ -44,7 +58,15 @@ def _get_credential_data(credential_id: str) -> dict | None:
                 "title": cred.title,
                 "issued_at": cred.issued_at.isoformat(),
                 "pdf_url": f"{CERTFORGE_API_URL}/credentials/{cred.public_id}/pdf",
-                "metadata": cred.metadata_
+                "metadata": cred.metadata_,
+                "issuer": {
+                    "name": org.name if org else None,
+                    "slug": org.slug if org else None,
+                    "logo_url": org.logo_url if org else None,
+                    "primary_color": org.primary_color if org else None,
+                    "accent_color": org.accent_color if org else None,
+                    "footer_text": org.footer_text if org else None,
+                },
             }
 
     # 2. Check if it's a legacy token payload
@@ -159,6 +181,33 @@ def get_credential_pdf(public_id: str):
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{public_id}.pdf"'},
+    )
+
+
+@public_router.get("/credentials/{public_id}/qr.png")
+def get_credential_qr_png(public_id: str):
+    """The verification QR as a fetchable PNG.
+
+    The viewer embeds the same QR as a data: URI, which is fine for a browser
+    and useless to a link crawler — LinkedIn, WhatsApp and Slack fetch og:image
+    over HTTP. This is that URL, and it is a real image of this credential
+    rather than a placeholder pointing at a file nobody serves.
+
+    Sits under /credentials/ deliberately: that prefix is already in
+    vercel.json's rewrite list and already excluded from the dashboard's Clerk
+    middleware, so it needs no routing change to work in production.
+    """
+    with get_db() as session:
+        cred = session.query(Credential).filter_by(public_id=public_id).first()
+        if not cred or cred.status not in PUBLICLY_VERIFIABLE:
+            raise HTTPException(status_code=404, detail="Credential not found or revoked")
+
+    data_uri = generate_qr_data_uri(f"{CERTFORGE_WEB_URL}/verify/{public_id}")
+    png = base64.b64decode(data_uri.split(",", 1)[1])
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=86400"},
     )
 
 
@@ -280,70 +329,48 @@ async def verify_page(credential_id: str, request: Request):
         return await view_certificate(credential_id, request)
 
     # Recipient names and credential titles arrive from customer-uploaded CSVs
-    # and land on a public page, so they are attacker-controlled and every one
-    # of them is escaped before it reaches the markup. This stays an f-string
-    # rather than becoming a Jinja2 template with autoescaping: Jinja2 is not in
-    # requirements.txt and the container installs nothing beyond it, so
-    # templating would mean taking on a runtime dependency for a page that is
-    # one card with four fields.
-    name = html.escape(str(data["name"]))
-    title = html.escape(str(data["title"]))
-    issued_at = html.escape(str(data["issued_at"]))
-    cred_id = html.escape(str(data["id"]))
+    # and land on a public page, so they are attacker-controlled. Escaping —
+    # along with the URL scheme check that escaping cannot do, and the colour
+    # allowlist that protects the <style> block — all lives in
+    # api/viewer_templates.py, so there is one place to audit it rather than
+    # one per interpolation.
+    cred_id = str(data["id"])
+    page_url = f"{CERTFORGE_WEB_URL}/verify/{cred_id}"
+    issuer = data.get("issuer") or {}
+    issuer_slug = issuer.get("slug")
 
-    # The button used to link to /api/v1/verify/{id}/download, a route that has
-    # never existed and 404s. A credential carries the URL of its rendered PDF
-    # once one has been stored; with nothing stored there is nothing to offer,
-    # so the button is omitted rather than pointed at a dead end. The scheme
-    # check does what escaping cannot: html.escape would pass a `javascript:`
-    # URL straight through into the href.
-    pdf_url = data.get("pdf_url") or ""
-    download_btn = ""
-    if pdf_url.startswith(("https://", "http://", "/")):
-        download_btn = f'<a href="{html.escape(pdf_url)}" class="download-btn">Download PDF</a>'
+    # Multi-tenant: the header carries the issuing organization. CERT_BRAND_NAME
+    # / CERT_ORG_TAGLINE are the legacy product's single brand and are used only
+    # when a credential has no org at all.
+    issuer_name = issuer.get("name") or CERT_BRAND_NAME
 
-    # Generic viewer for new templates
-    return HTMLResponse(f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>{title} - Verified Credential</title>
-        <style>
-            body {{ font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; margin: 0; padding: 2rem; color: #0f172a; text-align: center; }}
-            .card {{ background: white; max-width: 600px; margin: 0 auto; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); border: 1px solid #e2e8f0; }}
-            h1 {{ color: #1e293b; font-size: 1.5rem; margin-bottom: 0.5rem; }}
-            .verified {{ display: inline-flex; align-items: center; background: #dcfce7; color: #166534; padding: 0.25rem 0.75rem; border-radius: 9999px; font-weight: 600; font-size: 0.875rem; margin-bottom: 1.5rem; border: 1px solid #bbf7d0; }}
-            .field {{ margin-bottom: 1rem; text-align: left; }}
-            .label {{ font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; font-weight: 600; margin-bottom: 0.25rem; }}
-            .value {{ font-size: 1.125rem; font-weight: 500; color: #0f172a; }}
-            .download-btn {{ display: inline-block; background: #3b82f6; color: white; text-decoration: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; margin-top: 1.5rem; transition: background 0.2s; }}
-            .download-btn:hover {{ background: #2563eb; }}
-        </style>
-    </head>
-    <body>
-        <div class="card">
-            <div class="verified">
-                <svg style="width: 16px; height: 16px; margin-right: 4px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                Verified Authentic
-            </div>
-            <h1>{name}</h1>
-            <div class="field">
-                <div class="label">Credential Name</div>
-                <div class="value">{title}</div>
-            </div>
-            <div class="field">
-                <div class="label">Issued Date</div>
-                <div class="value">{issued_at}</div>
-            </div>
-            <div class="field">
-                <div class="label">Credential ID</div>
-                <div class="value" style="font-family: monospace;">{cred_id}</div>
-            </div>
+    # og:image has to be a URL a crawler can fetch, so a data: URI is no use
+    # here even though the page itself embeds the QR that way. An org logo is
+    # the best unfurl image when there is one; otherwise the QR PNG endpoint
+    # below, which is a real image of this specific credential rather than a
+    # link to something that does not exist.
+    og_image = (
+        safe_public_url(issuer.get("logo_url"))
+        or f"{CERTFORGE_API_URL}/credentials/{cred_id}/qr.png"
+    )
 
-            {download_btn}
-        </div>
-    </body>
-    </html>
-    """)
+    return HTMLResponse(
+        render_credential_viewer(
+            recipient_name=str(data["name"]),
+            title=str(data["title"]),
+            issued_at=str(data["issued_at"]),
+            credential_id=cred_id,
+            page_url=page_url,
+            badge_url=f"{CERTFORGE_API_URL}/credentials/{cred_id}/badge.json",
+            qr_data_uri=generate_qr_data_uri(page_url),
+            issuer_name=issuer_name,
+            issuer_url=f"{CERTFORGE_WEB_URL}/orgs/{issuer_slug}" if issuer_slug else "",
+            issuer_tagline=CERT_ORG_TAGLINE if not issuer.get("name") else "Verified Credential",
+            pdf_url=data.get("pdf_url") or "",
+            og_image=og_image,
+            logo_url=issuer.get("logo_url"),
+            primary_color=issuer.get("primary_color"),
+            accent_color=issuer.get("accent_color"),
+            footer_text=issuer.get("footer_text"),
+        )
+    )

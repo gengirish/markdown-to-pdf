@@ -164,6 +164,15 @@ RATE_WINDOW = int(_env("RATE_LIMIT_WINDOW_SECONDS", "60") or "60")
 # ignore forwarding headers entirely and trust the socket peer.
 TRUSTED_PROXY_HOPS = int(_env("TRUSTED_PROXY_HOPS", "2") or "2")
 
+# The /api/v1 (CertForge) surface gets its own budget, parsed from its own env
+# vars, so retuning the legacy limiter does not silently retune CertForge and
+# vice versa. The defaults are more generous than legacy's 10/60 because a
+# machine caller working through a batch is expected traffic, not abuse — but
+# they are still small enough to bound how much PDF rendering one caller can
+# demand per minute, which quota (a monthly figure) does not.
+API_V1_RATE_LIMIT = int(_env("API_V1_RATE_LIMIT_MAX_REQUESTS", "60") or "60")
+API_V1_RATE_WINDOW = int(_env("API_V1_RATE_LIMIT_WINDOW_SECONDS", "60") or "60")
+
 # ── Billing tiers ──────────────────────────────────────────────────────────
 
 BILLING_TIERS = {
