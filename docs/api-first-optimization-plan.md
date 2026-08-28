@@ -307,12 +307,12 @@ Five structural gaps, each verified in the code.
 
 **Done:** the prefix strip; the `vercel.json` rewrites for `/verify/*`, `/credentials/*` and `/orgs/*` (in **both** projects — `apps/web` had none at all, which 404'd every CertForge QR code in production); the CORS allow-list; `badge.json` building from `CERTFORGE_WEB_URL`; and `/orgs/{slug}`, which now exists as a public issuer profile.
 
-- **`fly certs add`** — done 2026-08-28, certificate created, status `Not verified`
-  pending DNS. **The CNAME is still not added**, so
-  `api.certforge.intelliforge.tech` does not resolve and every credential's
-  `badge_url` points at nothing. See
-  [TODOs/certforge-api-host-missing.md](./TODOs/certforge-api-host-missing.md);
-  `scripts/smoke_test.sh` fails two checks until it lands.
+- ~~`fly certs add api.certforge.intelliforge.tech`; add the CNAME.~~ **Done
+  2026-08-28.** Certificate issued by Let's Encrypt and active; the CNAME
+  resolves; `badge_url` fetches on every credential ever issued, because the
+  field is computed per request rather than stored. `scripts/smoke_test.sh`
+  reports 25 passed, 0 failed. See
+  [TODOs/certforge-api-host-missing.md](./TODOs/certforge-api-host-missing.md).
 - Rename Vercel `web` → `certforge`, git-link it, root directory `apps/web`, `turbo-ignore` as the ignored build step, add the domain.
 - Add `CERTFORGE_WEB_URL` / `CERTFORGE_API_URL`; leave `SITE_URL` alone.
 - ~~CORS allow-list: `CERTFORGE_WEB_URL` plus Vercel preview origins. Drop `*`.~~ **Done.**

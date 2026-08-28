@@ -1,7 +1,7 @@
 # TODO · `api.certforge.intelliforge.tech` does not exist
 
-**Opened** 2026-08-27 · **Status** open — Fly certificate created 2026-08-28,
-blocked on one DNS record · **Severity** medium — it is in every
+**Opened** 2026-08-27 · **Status** CLOSED — verified in production 2026-08-28 ·
+**Severity** medium — it is in every
 credential handed to an API caller, but not in anything printed · **Trigger**
 post-deploy verification of the delivery-observability change
 
@@ -79,7 +79,7 @@ $ fly certs check api.certforge.intelliforge.tech -a certforge-api
 ! No AAAA records were found for your domain
 ```
 
-### Step 2 — DNS · OPEN, and the only thing blocking this
+### Step 2 — DNS · DONE 2026-08-28
 
 DNS for `intelliforge.tech` is at **GoDaddy** (`ns11`/`ns12.domaincontrol.com`),
 not Vercel — the Vercel account holds no domains, so this cannot be done with
@@ -108,40 +108,67 @@ A + AAAA works too — `66.241.125.183` and `2a09:8280:1::163:aa09:0` — but ne
 A record alone leaves the certificate stuck at `Not verified`. That is exactly
 what `certs check` is reporting now.
 
-### Step 3 — verify
+### Step 3 — verify · DONE 2026-08-28
+
+The CNAME was taken, not A/AAAA:
 
 ```
-fly certs check api.certforge.intelliforge.tech -a certforge-api   # -> Ready
-bash scripts/smoke_test.sh                                         # -> 25 passed, 0 failed
+$ nslookup api.certforge.intelliforge.tech 8.8.8.8
+Name:    leqpek9.certforge-api.fly.dev
+Addresses:  2a09:8280:1::163:aa09:0
+            66.241.125.183
+Aliases:  api.certforge.intelliforge.tech
+
+$ fly certs check api.certforge.intelliforge.tech -a certforge-api
+  Status = Issued · Let's Encrypt · rsa,ecdsa
+  ✓ Certificate is verified and active
+
+$ curl https://api.certforge.intelliforge.tech/api/health
+{"status":"healthy",…,"dependencies":{"database":"connected","email":"ready"}}
+
+$ bash scripts/smoke_test.sh
+25 passed, 0 failed
 ```
 
-No code change and no redeploy: `CERTFORGE_API_URL` already defaults to this
-hostname, which is why it broke in the first place.
+And the thing that actually matters — the `badge_url` of the credential from the
+original incident, fetched at exactly the URL the API had been handing out:
 
-Also update `apps/web/.env.example`, which still documents the dead host as the
-default for local dev.
+```
+$ curl https://api.certforge.intelliforge.tech/credentials/CF-2026-XEHQNMFZ/badge.json
+200 application/json
+{"@context":[…],"id":"urn:uuid:CF-2026-XEHQNMFZ","type":["VerifiableCredential",
+ "OpenBadgeCredential"],"issuer":{"id":"https://certforge.intelliforge.tech/orgs/…"}}
+```
+
+No code change and no redeploy was needed: `CERTFORGE_API_URL` already defaulted
+to this hostname, which is why it broke in the first place. Every credential ever
+issued carries a `badge_url` that now resolves, because the field is computed per
+request rather than stored.
+
+`apps/web/.env.example` was corrected in the same pass — it had named the dead
+host as the local-dev default, handing a new contributor a dashboard that could
+not reach the API. The working host is uncommented and this one is available
+alongside it.
 
 ## The guard
 
 `scripts/smoke_test.sh` gained a *CertForge API host* section that probes this
-host directly and currently fails:
+host directly. It failed from the moment it was written until the DNS record
+landed, which is the whole reason it was written that way:
 
 ```
 CertForge API host
-  FAIL the API host resolves
-       expected: a reachable host
-       actual:   connection failed (no DNS/TLS) for https://api.certforge.intelliforge.tech
-  FAIL badge.json is reachable on the API host
+  PASS the API host resolves and is healthy
+  PASS badge.json is reachable on the API host
 ```
 
 It distinguishes curl's `000` — no DNS, no TLS, no route — from an ordinary
 non-200, because a plain status check reads the former as merely "not 200" and
-says nothing about why.
+says nothing about why. If this regresses — a certificate expiry, a deleted
+record — those two lines say so in the words of the failure.
 
-**These two failures are expected until this TODO is closed.** The smoke script
-is not run by CI (`.github/workflows/ci.yml` has no such job), so nothing is
-gated on them; they are there so the next person who runs it against production
-sees this rather than rediscovering it.
+The script is not a CI job (`.github/workflows/ci.yml` has none), so it gates
+nothing automatically. Run it after any deploy that touches hosts.
 
 ## Why the existing tests missed it
 
@@ -158,9 +185,12 @@ served; the host is not `CERTFORGE_WEB_URL` so check 2 skips it. Nothing asserte
 that the host itself exists — an offline test cannot resolve DNS, which is why
 the guard above is live rather than in pytest.
 
-If this is fixed by creating the hostname, consider whether the offline test
-should additionally assert that every host a credential URL can name appears in
-a small allowlist that someone has to consciously edit.
+That suggested an allowlist of permitted hosts in the offline test. On reflection
+it would not have helped: `CERTFORGE_API_URL` **was** one of the three sanctioned
+constants, so an allowlist check would have passed throughout. The gap was never
+which host was named — it was whether the named host existed, and only a live
+probe can answer that. The smoke section above is the right guard, and it is the
+only one that ever failed on this bug.
 
 ## Related
 
