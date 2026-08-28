@@ -76,6 +76,22 @@ _ASSET_ROOT = os.path.realpath(
 _BLOCKED = os.path.join(_ASSET_ROOT, "__blocked__")
 
 
+def display_font_css() -> str:
+    """The @font-face block for the bundled display face, or "" if absent.
+
+    Exposed to CertForge templates as {{font_face}} so a generated template can
+    use the same serif the legacy certificates do. It references the font by
+    local path, which only resolves because _pdf_link_callback allows the assets
+    directory — that is the single exception, and why it is an exception.
+    """
+    return _participation_font_face()
+
+
+def display_font_family() -> str:
+    """The family name to reference, with a fallback when registration failed."""
+    return _CERT_DISPLAY_FONT_FAMILY if _CERT_FONT_AVAILABLE else "Georgia, serif"
+
+
 def _pdf_link_callback(uri: str, rel: str) -> str:
     """Resolve the bundled fonts, and nothing else.
 
@@ -127,8 +143,9 @@ def render_credential_pdf(html_source: str, variables: dict) -> bytes:
     rendered = html_source
     for key, val in variables.items():
         token = f"{{{{{key}}}}}"
-        # Do not escape the QR data URI
-        if key == "qr":
+        # Not escaped: the QR data URI, and font_face which is CSS. Escaping
+        # either turns working markup into visible gibberish.
+        if key in ("qr", "font_face"):
             rendered = rendered.replace(token, str(val))
         else:
             rendered = rendered.replace(token, html_mod.escape(str(val)))

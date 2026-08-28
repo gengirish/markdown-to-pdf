@@ -21,7 +21,15 @@ def build_render_variables(cred: Credential, org: Organization) -> dict[str, Any
 
     verify_url = f"{CERTFORGE_WEB_URL}/verify/{cred.public_id}"
 
+    # The bundled EB Garamond, exposed as placeholders so a template can use the
+    # same display face the legacy certificates do. font_face is the @font-face
+    # CSS and is injected raw; display_font is the family name to reference, and
+    # falls back to a stack when the font could not be registered.
+    from api.core.pdf_renderer import display_font_css, display_font_family
+
     return {
+        "font_face": display_font_css(),
+        "display_font": display_font_family(),
         "name": cred.recipient_name,
         "title": cred.title,
         "date": cred.issued_at.strftime("%B %d, %Y"),

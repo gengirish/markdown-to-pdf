@@ -174,10 +174,27 @@ def test_the_generated_layout_matches_the_platform_design():
     assert "{{primary_color}}" in html
     assert "{{accent_color}}" in html
 
-    # The structural features shared with api/seed.py's platform templates.
-    assert "#0f172a" in html, "no dark outer frame"
+    # The features that distinguish the legacy certificate from a generic
+    # table. Two earlier versions of this generator rendered and validated
+    # cleanly while looking nothing like the product, so each is pinned.
+    assert "#0f0f23" in html, "no dark outer frame"
     assert "2px solid #d4af37" in html, "no gold rule under the name"
     assert "CREDENTIAL ID" in html, "no date / credential-id panel"
+    assert "Verified &amp; Authentic" in html, "no verified badge"
+    assert "Scan to Verify" in html, "no QR caption block"
+
+    # The bundled display serif. Without these it renders in Helvetica and
+    # stops looking like the same product.
+    assert "{{font_face}}" in html
+    assert "{{display_font}}" in html
+
+
+def test_the_display_font_reaches_a_rendered_credential():
+    """{{font_face}} is only useful if issuance actually supplies it."""
+    from api.services.templates import BUILTIN_VARIABLES
+
+    assert {"font_face", "display_font"} <= BUILTIN_VARIABLES
+    assert custom_placeholders(build_html_from_config({})) <= {"usn", "duration"}
 
 
 def test_the_internship_layout_carries_the_vtu_fields():
