@@ -94,11 +94,42 @@ export interface OrgMember {
   joined_at: string;
 }
 
+/** Guided-form settings. Present only while the template is still generated —
+ *  editing its HTML by hand detaches it and the server sets this to null. */
+export interface TemplateConfig {
+  layout: "participation" | "internship" | "appreciation";
+  heading: string;
+  body: string;
+  closing: string;
+  signature_name: string;
+  signature_title: string;
+  show_qr: boolean;
+  show_logo: boolean;
+  show_footer: boolean;
+}
+
+export interface TemplateDetail {
+  id: string;
+  name: string;
+  variables: string[];
+  is_default: boolean;
+  is_guided: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+  html_source: string;
+  config: TemplateConfig | null;
+}
+
 export interface TemplateSummary {
   id: string;
   name: string;
   variables: string[];
   is_default: boolean;
+  /** Whether the guided form may reopen this one. False means the HTML is
+   *  hand-authored and regenerating would discard the author's edit. */
+  is_guided: boolean;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 /** Whether the recipient was told, kept apart from whether the credential
@@ -377,6 +408,57 @@ export class CertForgeClient {
     return (isRecord(body) ? (body.data as T) : (body as T));
   }
 
+  /** Fetch an endpoint that answers with a file rather than the envelope.
+   *
+   *  Kept separate from request(): that one reads the body as text and parses
+   *  it as JSON, which would corrupt a PDF. Failures still arrive as JSON, so
+   *  the content type decides which of the two this response is. */
+  private async requestBlob(path: string, options: RequestOptions = {}): Promise<Blob> {
+    const headers: Record<string, string> = { Accept: "application/pdf, application/json" };
+    if (options.json !== undefined) headers["Content-Type"] = "application/json";
+
+    if (!options.anonymous && this.getToken) {
+      const token = await this.getToken();
+      if (!token) {
+        throw new ApiError("You need to be signed in to do that.", {
+          status: 401,
+          type: "authentication_error",
+        });
+      }
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(new URL(this.baseUrl + path), {
+        method: options.method ?? "GET",
+        headers,
+        body: options.json !== undefined ? JSON.stringify(options.json) : undefined,
+        signal: options.signal,
+        cache: "no-store",
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      throw new ApiError("Could not reach the CertForge API.", {
+        status: 0,
+        type: "network_error",
+        details: err,
+      });
+    }
+
+    if (!response.headers.get("content-type")?.includes("application/json")) {
+      if (!response.ok) {
+        throw new ApiError(`API returned ${response.status}`, { status: response.status });
+      }
+      return await response.blob();
+    }
+
+    const body = await response.json().catch(() => null);
+    const failure = errorFromBody(response.status, body);
+    if (failure) throw failure;
+    throw new ApiError(`API returned ${response.status}`, { status: response.status });
+  }
+
   // --- system ---
   health(signal?: AbortSignal): Promise<HealthStatus> {
     return this.request<HealthStatus>("/api/health", {
@@ -482,6 +564,81 @@ export class CertForgeClient {
   }
 
   // --- developer settings ---
+  getOrgTemplate(slug: string, id: string, signal?: AbortSignal): Promise<TemplateDetail> {
+    return this.request<TemplateDetail>(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/templates/${encodeURIComponent(id)}`,
+      { signal },
+    );
+  }
+
+  /** Exactly one of htmlSource or config — the server refuses both, because a
+   *  request carrying each has no non-arbitrary answer for which one wins. */
+  createTemplate(
+    slug: string,
+    input: { name: string; htmlSource?: string; config?: Partial<TemplateConfig> },
+    signal?: AbortSignal,
+  ): Promise<TemplateDetail> {
+    return this.request<TemplateDetail>(`/api/v1/orgs/${encodeURIComponent(slug)}/templates`, {
+      method: "POST",
+      json: { name: input.name, html_source: input.htmlSource, config: input.config },
+      signal,
+    });
+  }
+
+  updateTemplate(
+    slug: string,
+    id: string,
+    input: { name?: string; htmlSource?: string; config?: Partial<TemplateConfig> },
+    signal?: AbortSignal,
+  ): Promise<TemplateDetail> {
+    const json: Record<string, unknown> = {};
+    if (input.name !== undefined) json.name = input.name;
+    if (input.htmlSource !== undefined) json.html_source = input.htmlSource;
+    if (input.config !== undefined) json.config = input.config;
+
+    return this.request<TemplateDetail>(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/templates/${encodeURIComponent(id)}`,
+      { method: "PATCH", json, signal },
+    );
+  }
+
+  deleteTemplate(slug: string, id: string, signal?: AbortSignal): Promise<{ deleted: boolean }> {
+    return this.request<{ deleted: boolean }>(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/templates/${encodeURIComponent(id)}`,
+      { method: "DELETE", signal },
+    );
+  }
+
+  setDefaultTemplate(slug: string, id: string, signal?: AbortSignal): Promise<TemplateSummary> {
+    return this.request<TemplateSummary>(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/templates/${encodeURIComponent(id)}/default`,
+      { method: "POST", signal },
+    );
+  }
+
+  /** Copy a global template into this org as an editable starting point. */
+  importTemplate(slug: string, globalId: string, signal?: AbortSignal): Promise<TemplateDetail> {
+    return this.request<TemplateDetail>(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/templates/import/${encodeURIComponent(globalId)}`,
+      { method: "POST", signal },
+    );
+  }
+
+  /** Render sample data and return the PDF. Nothing is saved, so this works
+   *  before a template exists. A PDF rather than HTML on purpose: the dashboard
+   *  must never inject customer-authored markup into its own document. */
+  previewTemplate(
+    slug: string,
+    input: { htmlSource?: string; config?: Partial<TemplateConfig> },
+    signal?: AbortSignal,
+  ): Promise<Blob> {
+    return this.requestBlob(`/api/v1/orgs/${encodeURIComponent(slug)}/templates/preview`, {
+      method: "POST",
+      json: { html_source: input.htmlSource, config: input.config },
+      signal,
+    });
+  }
+
   listApiKeys(slug: string, signal?: AbortSignal): Promise<ApiKeySummary[]> {
     return this.request<ApiKeySummary[]>(`/api/v1/orgs/${encodeURIComponent(slug)}/api-keys`, {
       signal,

@@ -22,11 +22,28 @@ class Template(Base):
         nullable=True,  # NULL = global default template
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    #: The only thing issuance reads. Whether it was hand-written or generated
+    #: from `config`, this is the template.
     html_source: Mapped[str] = mapped_column(Text, nullable=False)
+    #: Placeholders this template uses that issuance does not supply — they come
+    #: from a credential's metadata (a CSV column). Recorded so the UI can say
+    #: where a value has to come from before rows start rendering blank.
     variables: Mapped[dict] = mapped_column(JSON, nullable=False, default=list)
+    #: Guided-form settings, when the template was built that way. NULL means
+    #: the HTML is hand-authored and the form must not reopen against it:
+    #: regenerating from a stale config would discard the author's edit, and
+    #: keeping both would leave two descriptions of one certificate that
+    #: quietly disagree.
+    config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    #: Exclusive per organization — see routes/templates.py's set-default, which
+    #: clears the flag on the org's other templates in the same transaction.
+    #: A global template (org_id NULL) uses it for the platform-wide default.
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
     )
 
     # Relationships

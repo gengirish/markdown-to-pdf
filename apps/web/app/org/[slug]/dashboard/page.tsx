@@ -11,6 +11,7 @@ import { BulkIssueCard } from "@/components/dashboard/bulk-issue-card";
 import { DeveloperCard } from "@/components/dashboard/developer-card";
 import { RecentCredentialsCard } from "@/components/dashboard/recent-credentials-card";
 import { SingleIssueCard } from "@/components/dashboard/single-issue-card";
+import { TemplatesCard } from "@/components/dashboard/templates-card";
 import { ErrorNote } from "@/components/dashboard/ui";
 
 export default function OrgDashboard({ params }: { params: Promise<{ slug: string }> }) {
@@ -77,6 +78,7 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
             <div className="space-y-8 lg:col-span-2">
               <SingleIssueCard slug={slug} onIssued={handleIssued} />
               <BulkIssueCard slug={slug} onIssued={handleIssued} />
+              <TemplatesCard slug={slug} />
               <BrandingCard slug={slug} org={org} onSaved={setOrg} />
               <DeveloperCard slug={slug} />
             </div>
