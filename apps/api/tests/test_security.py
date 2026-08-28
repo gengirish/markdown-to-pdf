@@ -196,3 +196,71 @@ def test_callers_behind_the_proxy_get_separate_buckets():
         assert _check_rate_limit(alice)[0] is True
     assert _check_rate_limit(alice)[0] is False   # Alice is out of budget
     assert _check_rate_limit(bob)[0] is True      # Bob is unaffected
+
+
+# -- JSON-LD injection on the legacy viewer -----------------------------------
+#
+# json.dumps escapes quotes and backslashes but not "<". The HTML parser ends a
+# <script> at the first literal "</script>" regardless of JSON syntax, so a
+# participant name carrying one closed the block and executed. The name is
+# attacker-controlled: anyone who can generate a certificate can put it there,
+# then send the resulting /certificate/{token} link to a victim.
+
+BREAKOUT = "</script><script>alert(document.domain)</script>"
+
+
+def _json_ld_payload(markup: str) -> dict:
+    import json
+
+    return json.loads(markup.split(">", 1)[1].rsplit("<", 1)[0])
+
+
+def test_a_recipient_name_cannot_close_the_json_ld_block():
+    from api.index import _participation_json_ld
+
+    markup = _participation_json_ld(
+        participant_name=BREAKOUT,
+        course_name="C",
+        completion_date="2026-01-01",
+        cert_id="CERT-X",
+        page_url="https://certs.example/certificate/x",
+        brand_name="B",
+        participation_title="T",
+    )
+    assert "</script><script>" not in markup
+    assert markup.count("</script>") == 1, "the block is closed more than once"
+
+
+def test_the_internship_viewer_is_guarded_too():
+    """Both builders share _json_ld_script, and a future third must as well."""
+    from api.index import _internship_json_ld
+    import inspect
+
+    sig = inspect.signature(_internship_json_ld)
+    kwargs = {name: "x" for name in sig.parameters}
+    kwargs["participant_name"] = BREAKOUT
+    markup = _internship_json_ld(**kwargs)
+    assert "</script><script>" not in markup
+
+
+def test_escaping_does_not_change_what_a_consumer_reads():
+    """The fix must be invisible to every JSON-LD reader.
+
+    < is valid JSON and decodes to the same character, so a consumer sees
+    the name exactly as before. If this ever fails, the fix has started
+    corrupting data rather than encoding it.
+    """
+    from api.index import _participation_json_ld
+
+    markup = _participation_json_ld(
+        participant_name=BREAKOUT,
+        course_name="Café & <Co>",
+        completion_date="2026-01-01",
+        cert_id="CERT-X",
+        page_url="https://certs.example/certificate/x",
+        brand_name="B",
+        participation_title="T",
+    )
+    payload = _json_ld_payload(markup)
+    assert payload["awardedTo"]["name"] == BREAKOUT
+    assert payload["about"]["name"] == "Café & <Co>"

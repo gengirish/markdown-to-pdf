@@ -832,11 +832,27 @@ def _resolve_site_url(req: Request | None = None) -> str:
 
 
 def _json_ld_script(payload: dict) -> str:
-    return (
-        '<script type="application/ld+json">'
-        f"{json.dumps(payload, ensure_ascii=False)}"
-        "</script>"
+    """Serialise JSON-LD into a <script> block, safely.
+
+    json.dumps escapes quotes and backslashes but not `<`, so a participant
+    named `</script><script>...` closed this block and executed: the HTML
+    parser ends a script at the first literal `</script>` regardless of JSON
+    syntax. The name is attacker-controlled — anyone who can generate a
+    certificate can put it there, then send the resulting
+    /certificate/{token} link to a victim.
+
+    The escapes below are still valid JSON and decode to the same string, so
+    every JSON-LD consumer sees exactly what it saw before. This changes
+    neither the response shape nor the status code of any frozen endpoint,
+    and neither the SPA nor sdk/pdfcert reads this block at all.
+    """
+    raw = json.dumps(payload, ensure_ascii=False)
+    raw = (
+        raw.replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
     )
+    return f'<script type="application/ld+json">{raw}</script>'
 
 
 def _participation_json_ld(
