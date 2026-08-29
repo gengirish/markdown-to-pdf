@@ -25,6 +25,15 @@ SOURCE_SUFFIXES = {
     ".css", ".scss", ".html", ".toml", ".yml", ".yaml",
 }
 
+# Binary assets are only source when they sit in a test or fixture tree —
+# a stray screenshot elsewhere under apps/ is not worth failing CI over.
+# Added after `*.pdf` was blanket-ignored, which would have silently hidden
+# any PDF fixture committed under apps/api/tests/.
+FIXTURE_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".svg",
+                    ".ttf", ".otf", ".woff", ".woff2", ".docx", ".csv"}
+
+FIXTURE_DIRS = {"tests", "test", "fixtures", "__fixtures__", "testdata"}
+
 # Directories that are build output or vendored dependencies. A file ignored
 # because it sits in one of these is ignored correctly.
 ARTIFACT_DIRS = {
@@ -53,7 +62,10 @@ def is_suspect(path: str) -> bool:
     # Generated type stubs and lockfiles are not hand-written source.
     if path.endswith((".d.ts", ".lock", ".log")):
         return False
-    return PurePosixPath(path).suffix in SOURCE_SUFFIXES
+    suffix = PurePosixPath(path).suffix
+    if suffix in FIXTURE_SUFFIXES:
+        return any(part in FIXTURE_DIRS for part in parts)
+    return suffix in SOURCE_SUFFIXES
 
 
 def main() -> int:

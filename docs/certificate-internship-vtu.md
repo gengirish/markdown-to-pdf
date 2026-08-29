@@ -49,7 +49,7 @@ Participation certificates omit `k` (or use `"certificate_kind": "participation"
 With the API running:
 
 ```bash
-python examples/issue_aayush_internship_certificate.py --out ./Aayush_Kulkarni_Internship_Certificate.pdf
+python examples/issue_internship_certificate.py --out ./internship-certificate.pdf
 ```
 
 ## Templates (for maintainers)

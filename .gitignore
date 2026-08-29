@@ -29,12 +29,12 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
+/build/
+/develop-eggs/
 dist/
-downloads/
-eggs/
-.eggs/
+/downloads/
+/eggs/
+/.eggs/
 # Local databases. test_db.sqlite was listed by name, so any other scratch
 # database — an ad-hoc e2e run, a migration rehearsal — slipped straight past.
 *.sqlite
@@ -43,10 +43,10 @@ eggs/
 
 /lib/
 /lib64/
-parts/
-sdist/
-var/
-wheels/
+/parts/
+/sdist/
+/var/
+/wheels/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
@@ -73,8 +73,15 @@ venv.bak/
 # apps/api/tests/conftest.py) — it is a build artifact, not fixture data.
 apps/api/test_db.sqlite
 .pytest_cache/
-test_output.pdf
-*.pdf
+# Scratch PDFs only. `*.pdf` used to be blanket-ignored here, which also hid
+# any PDF fixture added under apps/api/tests/ — the same class of bug as the
+# unanchored `lib/` rule that swallowed apps/web/lib/. check_tracked_sources.py
+# now covers binary fixtures too, so this staying narrow is enforced.
+/tmp-*.pdf
+/test_output.pdf
+# Local reference documents. The repo is public and these are real business
+# paperwork, not fixtures — kept on disk, never committed.
+/docs/samples/Example_Invoice_For_Reference_Only.pdf
 # Playwright output. Anchored to the root until a run from apps/api dropped a
 # test-results/ there that the root-only pattern did not match.
 test-results/

@@ -7,3 +7,12 @@ node_modules
 sdk/
 examples/
 .github/
+
+# The API runs on Fly (apps/api/Dockerfile), not as a Vercel Function — its
+# tree, the vendored agent skills and the test/doc trees are all dead weight
+# in the build upload. Vercel builds only apps/legacy-web.
+apps/api/
+.agents/
+docs/
+e2e/
+scripts/
