@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import html as html_mod
-from pathlib import Path
-
-BRANDING_DIR = Path(__file__).resolve().parent.parent / "public" / "branding"
 
 # Palette sampled from the IntelliForge SDG event poster (v8). The poster
 # itself is no longer in the repo — it was a 2.5 MB design reference that

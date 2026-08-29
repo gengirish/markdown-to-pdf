@@ -5,8 +5,8 @@ Requires the API running (e.g. uvicorn api.index:app --port 8000) and the course
 registered on the server (fallback list includes "VTU Industry Internship – IntelliForge AI Programme").
 
 Usage:
-  python examples/issue_aayush_internship_certificate.py
-  python examples/issue_aayush_internship_certificate.py --url http://localhost:8000 --out ./Aayush_Internship.pdf
+  python examples/issue_internship_certificate.py
+  python examples/issue_internship_certificate.py --url http://localhost:8000 --out ./internship-certificate.pdf
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ def main() -> None:
     p.add_argument("--url", default="http://localhost:8000", help="Certificate API base URL")
     p.add_argument(
         "--out",
-        default="Aayush_Kulkarni_Internship_Certificate.pdf",
+        default="internship-certificate.pdf",
         help="Output path for downloaded PDF",
     )
     args = p.parse_args()
@@ -39,7 +39,7 @@ def main() -> None:
         sys.exit(1)
 
     body = {
-        "participant_name": "Aayush Kulkarni",
+        "participant_name": "Asha Rao",
         "course_name": course,
         "completion_date": "2026-06-10",
         "instructor_name": "IntelliForge Program Lead",
