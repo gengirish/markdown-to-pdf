@@ -55,6 +55,34 @@ for p in /llms.txt /robots.txt /sitemap.xml /.well-known/ai-plugin.json; do
   check_status "GET $p is 200" "$p" 200
 done
 
+head_ "Static assets"
+# The SPA build and the static files were two halves that nothing joined:
+# vite's publicDir defaulted to apps/legacy-web/public, which does not exist,
+# so the repo-root public/ never reached dist/. Asserting a 200 here would be
+# worse than useless — /favicon.svg answered 200 for months by falling through
+# to the SPA catch-all in vercel.json and serving index.html as the icon. The
+# content type is the only thing that told the two apart.
+CT="$(ctype "$BASE/favicon.svg")"
+case "$CT" in image/svg+xml*) ok "/favicon.svg is an SVG, not the SPA shell" ;;
+  *) bad "/favicon.svg is an SVG" "image/svg+xml" "$CT" ;; esac
+check_contains "  ... and its body is really SVG" "/favicon.svg" "<svg"
+CT="$(ctype "$BASE/branding/india-flag.png")"
+case "$CT" in image/png*) ok "/branding/ assets are served" ;;
+  *) bad "/branding/ assets are served" "image/png" "$CT" ;; esac
+
+# The join that actually matters: /.well-known/ai-plugin.json advertises a
+# logo_url to any agent that reads it. Follow the URL the API publishes rather
+# than a path hardcoded here, so this fails if either side moves.
+LOGO="$(get "$BASE/.well-known/ai-plugin.json" | tr ',' '
+' | grep '"logo_url"' | cut -d'"' -f4)"
+if [ -z "$LOGO" ]; then
+  bad "ai-plugin.json advertises a logo_url" "a URL" "no logo_url key"
+else
+  CT="$(ctype "$LOGO")"
+  case "$CT" in image/*) ok "the advertised logo_url resolves to an image" ;;
+    *) bad "the advertised logo_url resolves to an image ($LOGO)" "image/*" "$CT" ;; esac
+fi
+
 head_ "Route table"
 OPENAPI="$(get "$BASE/openapi.json")"
 case "$OPENAPI" in
