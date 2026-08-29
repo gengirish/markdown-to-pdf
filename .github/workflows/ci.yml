@@ -122,6 +122,18 @@ jobs:
       # turbo-only regression cannot pass while the deploy breaks, or vice versa.
       - run: npm run build:web
 
+      # The build succeeding says nothing about the static files reaching the
+      # output — vite's publicDir pointed at a directory that did not exist, so
+      # dist/ built cleanly and green for months while /favicon.svg served the
+      # SPA shell and /branding/* 404'd in production. The smoke script catches
+      # it after a deploy; this catches it before one.
+      - name: Static assets reach the build output
+        run: |
+          for f in favicon.svg branding/india-flag.png; do
+            test -s "apps/legacy-web/dist/$f"               || { echo "::error::apps/legacy-web/dist/$f missing from the build output"; exit 1; }
+          done
+          echo "static assets present in dist/"
+
   test-e2e:
     runs-on: ubuntu-latest
     env:
