@@ -148,6 +148,11 @@ class Credential(Base):
     metadata_: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
     pdf_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     hmac_signature: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Which signing rule produced `hmac_signature`. NULL means the row predates
+    # canonical signing, when the signature covered the public_id alone and was
+    # read by nothing; such a row is reported as `unverified`, never as valid.
+    # See api/core/credential_signature.py.
+    signature_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     legacy_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(
         String(50), nullable=False, default="issued"

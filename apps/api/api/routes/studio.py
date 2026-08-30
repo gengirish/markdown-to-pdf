@@ -3,12 +3,14 @@
 import csv
 import uuid
 import codecs
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 
 from api.core.envelope import ApiResponse
 from api.core.principal import Principal, resolve_principal, require_org_access
-from api.core.crypto import generate_credential_id, hmac_sign
+from api.core.credential_signature import sign_credential
+from api.core.crypto import generate_credential_id
 from api.models import get_db
 from api.models.organization import Organization
 from api.models.template import Template
@@ -103,11 +105,7 @@ async def upload_bulk_csv(
         creds = []
         for row in rows:
             public_id = generate_credential_id()
-            # Sign the basic payload to ensure authenticity if verified via legacy ways,
-            # though new credentials should be verified by DB lookup.
-            # We still need a signature per DB schema.
-            signature = hmac_sign(public_id)
-            
+
             cred = Credential(
                 public_id=public_id,
                 org_id=org.id,
@@ -117,9 +115,19 @@ async def upload_bulk_csv(
                 recipient_email=row.get("email", "").strip(),
                 title=row["title"].strip(),
                 metadata_=dict(row),
-                hmac_signature=signature,
-                status="pending"
+                hmac_signature="",
+                status="pending",
+                # Set explicitly rather than left to the column default: the
+                # signature covers issued_at, and a default applied at flush
+                # time would land after signing, so the staged row would carry
+                # a signature over a timestamp it does not have.
+                issued_at=datetime.now(timezone.utc),
             )
+            # Signed here and signed again in the worker, which rewrites
+            # issued_at when the render succeeds. Signing only once, in either
+            # place, leaves a window where the row's signature does not match
+            # its own fields.
+            sign_credential(cred)
             creds.append(cred)
             
         session.bulk_save_objects(creds)

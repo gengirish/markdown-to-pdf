@@ -20,7 +20,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from api.core.crypto import generate_credential_id, hmac_sign
+from api.core.credential_signature import sign_credential
+from api.core.crypto import generate_credential_id
 from api.core.idempotency import IdempotencyConflict, fingerprint, issuance_store
 from api.models import get_db
 from api.models.credential import Credential
@@ -302,10 +303,18 @@ def issue_credential(
             recipient_email=(request.recipient_email or "").strip(),
             title=title,
             metadata_=metadata,
-            hmac_signature=hmac_sign(public_id),
+            # Placeholder only: the column is NOT NULL and the real signature
+            # cannot be computed until every signed field is set. sign_credential
+            # overwrites this two lines down, and the row is never added to the
+            # session in between.
+            hmac_signature="",
             status="issued",
             issued_at=datetime.now(timezone.utc),
         )
+        # Signs what the credential claims — recipient, title, issue date,
+        # metadata — not just its id, which is all the signature used to cover.
+        # Every public read path checks this before it renders.
+        sign_credential(credential)
         session.add(credential)
         session.flush()
 

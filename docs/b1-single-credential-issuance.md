@@ -22,7 +22,7 @@ over from the earlier plan.
 
 The goal in §1 is now met end to end: an API key issues a credential in one call, the
 verify URL resolves, and `pdf_url` in the response is a real document — see D4 and D5,
-settled in `fad716b`. D3 (canonical signing) and D6 (idempotency) remain open.
+settled in `fad716b`. D6 (idempotency) landed since; D3 (canonical signing) landed 2026-08-30.
 
 ### 2026-08-28 — D4/D5 settled, plus org branding (`fad716b`)
 
@@ -90,9 +90,10 @@ send was attempted or why it failed — see
 
 
 **Next, in order (updated 2026-08-28):** D5/D4 (template resolution + the `/pdf` route)
-landed in `fad716b` — see the entry below. Remaining, in order: point `studio.py` at
-the service's quota helper (B1.4, and it closes a live `-1`-quota bug); D3's signing,
-while it is still free; then B1.0's golden contract test, which B1.5 is blocked on.
+landed in `fad716b` — see the entry below. D3's signing landed 2026-08-30; see that
+section. Remaining, in order: point `studio.py` at the service's quota helper
+(B1.4, and it closes a live `-1`-quota bug); then B1.0's golden contract test,
+which B1.5 is blocked on.
 Check whether the `/verify` 404 on `certforge.intelliforge.tech` noted in the smoke
 test below was closed by `c92b8fb` ("Make every CertForge public URL resolve on the
 host it names") — this doc was not re-verified against that commit.
@@ -222,9 +223,34 @@ compacts. Store the scheme version in `metadata_["sig_v"]` so it can be rotated 
 without guessing. CertForge credentials are not in circulation yet, so this is the last
 cheap moment to fix it; after the first real customer it becomes a migration.
 
-**Not settled.** `issuance.py` still calls `hmac_sign(public_id)`. Every credential
-issued from here on carries a signature that attests to nothing but its own ID, and the
-window in which fixing that costs nothing is closing.
+**Settled 2026-08-30, as recommended with two departures.**
+`api/core/credential_signature.py` signs a canonical JSON payload of
+`{public_id, org_id, recipient_name, recipient_email, title, issued_at, metadata}`,
+sorted keys, prefixed with the scheme name and version.
+
+- **The version lives in its own column, `credentials.signature_version`
+  (migration `b8f3c15d0a72`), not in `metadata_["sig_v"]`.** `metadata_` is
+  signed, and a verifier that has to read the version out of the payload it is
+  about to verify has an ordering problem the first time the scheme changes.
+  It is also customer-controlled: bulk issuance stores the whole CSV row there.
+- **`status` and the delivery columns are deliberately unsigned**, along with
+  `claimed_*`, `revoked_at`, `pdf_url`, `batch_id` and `template_id`. The
+  signature answers "is this what was issued?"; `status` answers "is it still
+  valid?", and the read paths already gate on that. A signature covering a
+  field the product mutates in normal use invalidates itself the first time
+  someone claims a credential.
+
+Rows written before this carry `signature_version = NULL` and report as
+`unverified` — never as valid, and never re-signed, because the only source
+for a backfill is the row as it stands today. That is the same rule
+`delivery_status = "unknown"` follows.
+
+Verified on every public read path — the viewer, `badge.json`, the PDF and the
+v1 JSON verify route all answer **409** with `error.type = "signature_mismatch"`
+rather than rendering. `GET /orgs/{slug}/credentials/{id}` deliberately does the
+opposite and reports the mismatch in a `signature` object, since the org is who
+would investigate it. `tests/test_credential_signature.py`; every guard was
+confirmed by reintroducing the defect and watching the right test fail.
 
 ### D4 — Where does the PDF live?
 
@@ -433,8 +459,9 @@ revoked key gets 401; all 91 existing tests still pass.
 >   of making an API key holder name the org it is already scoped to. Defensible; just
 >   note that §1's one-line `curl` in this document is now wrong.
 > - **Steps 1, 2, 3, 5 of the service are there** — validation, quota, collision-safe
->   ID allocation, `status="issued"` on commit. **Steps 4 and 6 are not**: signing is
->   still `hmac_sign(public_id)` (D3), and there is no delivery to skip in test mode,
+>   ID allocation, `status="issued"` on commit. **Step 6 is not** — and step 4,
+>   signing, landed later, on 2026-08-30 (D3). At the time of this entry there was
+>   no delivery to skip in test mode,
 >   because nothing emails or fires a webhook from this path at all. `is_test` reaches
 >   the row as `metadata["_test"]`, so the distinction is recorded and will bind the
 >   moment delivery exists.

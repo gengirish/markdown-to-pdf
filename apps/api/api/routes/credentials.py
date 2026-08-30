@@ -18,6 +18,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
+from api.core.credential_signature import signature_state
 from api.core.envelope import ApiResponse
 from api.core.principal import Principal, require_org_access, resolve_principal
 from api.core.rate_limit import rate_limit
@@ -253,6 +254,12 @@ def get_credential(
                 # So support can answer "did they get the email?" from the API
                 # instead of from a Fly log buffer that holds ~100 lines.
                 "delivery": delivery_state(c),
+                # Reported rather than enforced here, unlike the public routes
+                # which refuse a mismatch outright. This is the org's own
+                # record: an owner needs to SEE that one of their credentials
+                # no longer matches its signature, and a 409 would hide the
+                # row that tells them which one.
+                "signature": signature_state(c),
             }
         )
 

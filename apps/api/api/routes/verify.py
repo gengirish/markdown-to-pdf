@@ -2,6 +2,7 @@
 
 import base64
 import html
+import logging
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -11,6 +12,12 @@ from api.core.config import (
     CERT_ORG_TAGLINE,
     CERTFORGE_API_URL,
     CERTFORGE_WEB_URL,
+)
+from api.core.credential_signature import (
+    INVALID,
+    VALID,
+    credential_signature_status,
+    signature_state,
 )
 from api.core.envelope import ApiResponse
 from api.core.qr import generate_qr_data_uri
@@ -25,12 +32,61 @@ from api.services.issuance import resolve_template_id
 from api.services.rendering import build_render_variables
 from api.viewer_templates import render_credential_viewer, safe_public_url
 
+logger = logging.getLogger(__name__)
+
 # Mounted under /api/v1 by api/index.py — paths here must NOT repeat that prefix.
 router = APIRouter(tags=["Verification"])
 
 # Mounted at the site root: these are the URLs printed on certificates and
 # embedded in QR codes, so they must stay short and stable.
 public_router = APIRouter(tags=["Verification"])
+
+
+SIGNATURE_MISMATCH_MESSAGE = (
+    "This credential's contents do not match the signature it was issued with."
+)
+
+
+class SignatureMismatch(Exception):
+    """A credential whose stored fields no longer match its own signature.
+
+    Deliberately not folded into the "not found" path. A 404 says the ID is
+    unknown; this says the ID is known and what the database now holds is not
+    what was issued, which is the one outcome an integrity check exists to
+    report. Collapsing the two would mean the check ran and told nobody.
+    """
+
+    def __init__(self, public_id: str):
+        super().__init__(SIGNATURE_MISMATCH_MESSAGE)
+        self.public_id = public_id
+
+
+def _check_signature(cred) -> str:
+    """Verify a credential before anything renders it. Returns its status.
+
+    UNVERIFIED passes: those rows predate canonical signing and their
+    certificates are already in the world with QR codes on them. They are
+    reported as unverified rather than shown as verified — see
+    api/core/credential_signature.py.
+    """
+    status = credential_signature_status(cred)
+    if status == INVALID:
+        # Worth a log line on its own: reaching here means a credential's row
+        # was changed by something that could not re-sign it.
+        logger.warning(
+            "Credential %s failed signature verification; refusing to serve it.",
+            cred.public_id,
+        )
+        raise SignatureMismatch(cred.public_id)
+    return status
+
+
+def _verified_or_409(cred) -> None:
+    """_check_signature for the routes that answer with the bare error body."""
+    try:
+        _check_signature(cred)
+    except SignatureMismatch as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 def _get_credential_data(credential_id: str) -> dict | None:
@@ -45,6 +101,9 @@ def _get_credential_data(credential_id: str) -> dict | None:
             if not cred or cred.status not in PUBLICLY_VERIFIABLE:
                 return None
 
+            signature = signature_state(cred)
+            _check_signature(cred)
+
             # The issuing organization's branding travels with the credential:
             # CertForge is multi-tenant, so the viewer renders the org that
             # issued this credential, never the single CERT_* brand the legacy
@@ -57,6 +116,9 @@ def _get_credential_data(credential_id: str) -> dict | None:
                 "name": cred.recipient_name,
                 "title": cred.title,
                 "issued_at": cred.issued_at.isoformat(),
+                # What was actually checked, in the caller's own words rather
+                # than implied by a 200. `unverified` is not `valid`.
+                "signature": signature,
                 "pdf_url": f"{CERTFORGE_API_URL}/credentials/{cred.public_id}/pdf",
                 "metadata": cred.metadata_,
                 "issuer": {
@@ -78,6 +140,17 @@ def _get_credential_data(credential_id: str) -> dict | None:
             cid = legacy_cert_id(decoded)
             return {
                 "source": "legacy",
+                # A legacy certificate is its token: decode_legacy_token
+                # returns None unless the HMAC over the whole payload checks
+                # out, so reaching this line IS the verification. Reported in
+                # the same field as a row signature so a client has one place
+                # to look, with the scheme named rather than implied.
+                "signature": {
+                    "status": VALID,
+                    "scheme": "legacy_url_token",
+                    "version": None,
+                    "covers": ["the entire token payload"],
+                },
                 "id": cid,
                 "name": decoded.get("n", "Unknown"),
                 "title": decoded.get("c", decoded.get("r", "Participation Certificate")),
@@ -90,7 +163,19 @@ def _get_credential_data(credential_id: str) -> dict | None:
 @router.get("/verify/{credential_id}", response_model=ApiResponse[dict])
 def verify_api(credential_id: str):
     """JSON API to verify a credential."""
-    data = _get_credential_data(credential_id)
+    try:
+        data = _get_credential_data(credential_id)
+    except SignatureMismatch as exc:
+        # Returned here rather than raised as an HTTPException so the reason is
+        # machine-readable: the shared handler derives `type` from the status
+        # code alone, and "conflict" does not tell an integration that the
+        # credential failed verification.
+        return JSONResponse(
+            status_code=409,
+            content=ApiResponse.fail(
+                str(exc), code=409, error_type="signature_mismatch"
+            ).model_dump(),
+        )
     if not data:
         raise HTTPException(status_code=404, detail="Credential not found or invalid signature")
     return ApiResponse.ok(data)
@@ -105,6 +190,11 @@ def get_open_badge_json(public_id: str):
         # exists as far as the viewer is concerned.
         if not cred or cred.status not in PUBLICLY_VERIFIABLE:
             raise HTTPException(status_code=404, detail="Credential not found or revoked")
+
+        # An Open Badge is the machine-readable assertion itself. Exporting one
+        # from a row that does not match its signature would hand a verifier a
+        # document saying we vouch for contents we never signed.
+        _verified_or_409(cred)
 
         org = session.query(Organization).filter_by(id=cred.org_id).first()
 
@@ -159,6 +249,10 @@ def get_credential_pdf(public_id: str):
         cred = session.query(Credential).filter_by(public_id=public_id).first()
         if not cred or cred.status not in PUBLICLY_VERIFIABLE:
             raise HTTPException(status_code=404, detail="Credential not found or revoked")
+
+        # The PDF is the artefact people print and hand over. It is the last
+        # place to serve unverified contents.
+        _verified_or_409(cred)
 
         org = session.query(Organization).filter_by(id=cred.org_id).first()
 
@@ -311,7 +405,16 @@ def issuer_profile(slug: str, request: Request):
 @public_router.get("/verify/{credential_id}", response_class=HTMLResponse)
 async def verify_page(credential_id: str, request: Request):
     """HTML public viewer for a credential."""
-    data = _get_credential_data(credential_id)
+    try:
+        data = _get_credential_data(credential_id)
+    except SignatureMismatch:
+        # A person is reading this one, so it answers in HTML — and says which
+        # of the two failures happened, rather than the generic 404 below.
+        return HTMLResponse(
+            "<h1>Credential Could Not Be Verified</h1>"
+            f"<p>{html.escape(SIGNATURE_MISMATCH_MESSAGE)}</p>",
+            status_code=409,
+        )
     if not data:
         return HTMLResponse(
             "<h1>Invalid or Revoked Credential</h1><p>This credential could not be verified.</p>",

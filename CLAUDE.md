@@ -320,6 +320,38 @@ variables are built, shared by this route and the bulk worker
 seeded default templates use the first three; `logo_url` is passed through but none of
 them has a layout slot for it yet.
 
+### What a credential's signature covers
+
+`api/core/credential_signature.py` is the only place a `Credential`'s
+`hmac_signature` is produced or checked, and both halves have to stay that way:
+the column previously had two writers and no readers, and each writer signed
+`hmac_sign(public_id)` — so renaming a recipient in the database left the
+signature matching, and the viewer, `badge.json` and the PDF all rendered the
+new name.
+
+- **Signed:** `public_id`, `org_id`, `recipient_name`, `recipient_email`,
+  `title`, `issued_at`, `metadata`. Canonical JSON, sorted keys, scheme-and-
+  version prefix.
+- **Not signed, on purpose:** `status`, `claimed_*`, `revoked_at`, every
+  `delivery_*`, `pdf_url`, `batch_id`, `template_id`. Those change over a
+  credential's life; a signature covering them would invalidate itself the
+  first time the product worked normally. The signature says *what was issued*,
+  not *whether it is still valid* — `status` says that, and the read paths gate
+  on it separately.
+- **`signature_version`** records which rule signed a row. `NULL` means the row
+  predates canonical signing and is reported `unverified`, never valid, and
+  never re-signed — a backfill could only sign what the row says today, which
+  is manufacturing the evidence. Same rule as `delivery_status = "unknown"`.
+- **Every public read path verifies before it renders** (`routes/verify.py`):
+  the viewer, `badge.json`, `/credentials/{id}/pdf` and the v1 JSON verify
+  route answer **409** with `error.type = "signature_mismatch"`. The org-facing
+  `GET /orgs/{slug}/credentials/{id}` deliberately does not refuse — it returns
+  the status, because the org is who investigates.
+
+Bulk issuance signs **twice**: once when `studio.py` stages the pending row and
+again in `worker.py`, which rewrites `issued_at` on a successful render. Drop
+either and bulk credentials verify as tampered.
+
 ### Delivery state, and why it exists
 
 `api/services/delivery.py` is the only credential-email sender; both the bulk

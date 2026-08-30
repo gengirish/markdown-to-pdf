@@ -24,7 +24,7 @@ from api.models.credential import CredentialBatch, Credential
 from api.models.organization import Organization
 from api.models.template import Template
 from api.core.pdf_renderer import render_credential_pdf
-from api.core.crypto import hmac_sign, generate_credential_id
+from api.core.credential_signature import sign_credential
 from api.models.credential import DELIVERY_FAILED
 from api.services.delivery import deliver_credential_email, may_retry
 from api.services.rendering import build_render_variables
@@ -240,6 +240,11 @@ def _process_batch_sync(batch_id: uuid.UUID) -> list[str]:
 
                 cred.status = "issued"
                 cred.issued_at = datetime.now(timezone.utc)
+                # Re-signed because issued_at just changed, and the signature
+                # covers it. The staged signature was over the timestamp the
+                # row had when the batch was uploaded; leaving it would make
+                # every bulk-issued credential verify as tampered.
+                sign_credential(cred)
                 success_count += 1
                 
             except Exception as e:
