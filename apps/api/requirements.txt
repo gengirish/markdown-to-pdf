@@ -7,6 +7,14 @@ reportlab==4.2.5
 qrcode==8.0
 Pillow==11.1.0
 psycopg2-binary==2.9.10
+# Cloudflare R2 is S3-compatible; boto3 is how a Python backend on Fly talks to
+# it. Vercel Blob has no Python SDK, which is why storage is R2 and not Blob.
+boto3==1.40.69
+# Reads an uploaded certificate design (api/services/vision.py). Imported
+# lazily, so the API boots without it — but the route that needs it must say
+# "not installed" rather than "could not be read", which is why _require_sdk
+# exists there.
+anthropic==0.86.0
 # Clerk session tokens are RS256; the [crypto] extra pulls in `cryptography`,
 # without which PyJWT cannot verify them. Pinned deliberately: api/core/auth.py
 # refuses to authenticate at all if this import fails.

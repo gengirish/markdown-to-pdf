@@ -30,6 +30,14 @@ class UsageLedger(Base):
     credentials_issued: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0
     )
+    #: Calls to the vision model that reads an uploaded certificate design.
+    #: Counted apart from credentials because they are a different unit with a
+    #: different cost — each one is a paid API call, and charging it against a
+    #: certificate allowance would make the two meters disagree about what a
+    #: quota is. NULL on rows written before this column existed; treated as 0.
+    vision_imports: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=0
+    )
 
     # Relationships
     organization: Mapped["Organization"] = relationship()

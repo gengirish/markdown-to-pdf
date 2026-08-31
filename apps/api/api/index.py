@@ -1250,8 +1250,28 @@ async def root():
 
 
 @app.get("/api/health", tags=["System"])
-async def health_check():
-    """Health check. Returns 200 if the service is running."""
+async def health_check(deep: str = ""):
+    """Health check. Returns 200 if the service is running.
+
+    `?deep=storage` additionally asks the object store whether the bucket
+    answers. It is opt-in because it is a network round trip and this endpoint
+    is otherwise instant — but it is the only check that can tell "four
+    environment variables are set" apart from "the credentials are right".
+    A typo'd secret is present and wrong, and without this it surfaces as a 502
+    on a customer's first upload. scripts/smoke_test.sh is read-only and can
+    never exercise the write path that would otherwise find it.
+
+    Additive keys only. The legacy response shape is frozen, and
+    tests/test_contract_legacy.py pins that these keys never disappear.
+    """
+    from api.core.storage import bucket_reachable, storage_available
+
+    if deep == "storage":
+        problem = bucket_reachable()
+        storage_state = "ready" if problem is None else f"error: {problem}"
+    else:
+        storage_state = "configured" if storage_available() else "not_configured"
+
     return {
         "status": "healthy",
         "service": "pdf-cert-generator-api",
@@ -1259,6 +1279,9 @@ async def health_check():
         "dependencies": {
             "database": "connected" if DB_AVAILABLE else "not_configured",
             "email": "ready" if _agentmail_ready else ("configured" if _agentmail_client else "not_configured"),
+            # Template artwork. "configured" is a claim about env vars only;
+            # ?deep=storage is the claim about the bucket.
+            "storage": storage_state,
         },
     }
 

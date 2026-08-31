@@ -352,6 +352,87 @@ Bulk issuance signs **twice**: once when `studio.py` stages the pending row and
 again in `worker.py`, which rewrites `issued_at` on a successful render. Drop
 either and bulk credentials verify as tampered.
 
+### Template artwork, and why the image is never in the HTML
+
+An org can upload its own certificate design and have credentials rendered onto
+it — a **traced** template. Three files own that:
+
+- `api/models/template_asset.py` — the uploaded image, one row per image per org
+  (`UniqueConstraint(org_id, checksum)`), with `templates.background_asset_id`
+  pointing at it under `ondelete="RESTRICT"`.
+- `api/core/storage.py` — Cloudflare R2 through boto3, the only module that
+  knows the bucket exists. R2 rather than Vercel Blob because this backend is
+  Python on Fly and Blob has no Python SDK.
+- `api/services/backgrounds.py` — turns an asset into the `{{background}}` data
+  URI a render needs, memoised by **checksum** (an id whose bytes changed would
+  otherwise serve the old image forever).
+
+**The image can never live in `html_source`.** `MAX_HTML_BYTES` is 256 KB and a
+150 dpi A4-landscape design is ~940 KB as a data URI. It arrives at render time
+as `{{background}}` instead, which keeps a traced template's HTML at a few
+hundred bytes. `_pdf_link_callback` still refuses to fetch anything — that is
+the control that stops a template author turning a render into a server-side
+request, and the background does not get an exception to it.
+
+Things that follow, all load-bearing:
+
+- **Only re-encoded bytes are ever stored.** `_reencode` in `routes/templates.py`
+  decodes with Pillow, applies EXIF rotation, converts to RGB, downscales to
+  2480px and writes JPEG. EXIF, ICC, PNG chunks and appended polyglot payloads
+  do not survive that. It is what makes "an uploaded image is inert" true rather
+  than hopeful, and it is why the dashboard may render one in an `<img>` while
+  the rule against injecting customer *markup* stands. SVG is refused outright.
+- **The put happens inside the transaction that inserts the row.** The rollback
+  is what guarantees no row names a missing object; writing the object after the
+  commit would leave exactly that orphan.
+- **Both render paths must pass `template`.** `build_render_variables(cred, org,
+  template, background)` defaults `template` to None, so a caller that forgets it
+  still works — and a credential then carries its artwork through one path and
+  not the other. `worker.py` and `routes/verify.py` are the two callers.
+  `worker.py` also hoists the resolve out of its loop, so a 500-row batch reads
+  the image once.
+- **`background` is in `BUILTIN_VARIABLES`.** A name in that set that
+  `build_render_variables` does not produce renders blank — for a background,
+  that is a plain white certificate with no error anywhere.
+- **Traced templates use Helvetica, not the bundled serif.** The artwork carries
+  the customer's typography, and the `@font-face` block that would load EB
+  Garamond is the Windows failure below. Declaring `font-family: GaramondPDF`
+  without it silently renders Helvetica anyway, which is worse than choosing it.
+- `config["kind"]` is `guided` (default when absent) or `traced`, and
+  `normalise_config` / `build_html_from_config` both dispatch on it. A traced
+  spec put through the guided branch comes out as an empty guided form, silently
+  — `DEFAULT_CONFIG` drops every key it does not know.
+
+### Reading a design with a model
+
+`api/services/vision.py` is the only place an Anthropic client is constructed.
+`POST /orgs/{slug}/templates/from-image` sends the artwork to `claude-opus-5`
+and gets back a traced spec — where the name, title, date and QR belong.
+
+**The model proposes; the canvas decides.** Everything it returns is clamped by
+`normalise_traced_config` and then corrected by a person dragging boxes, which
+is why a nonsense answer is clamped rather than refused: a layout 20mm out is
+worth more than an error, because a human was always the next step.
+
+Three rules that are not negotiable:
+
+- **`variable` is a closed enum, re-checked after parsing.** An invented name
+  like `recipient_full_name` is not builtin, so it would be treated as a CSV
+  column and render blank on every credential forever. A field in the wrong
+  place is visible on screen; a field bound to nothing is not.
+- **`stop_reason` is checked before `.content`.** On a refusal there is no
+  layout to read, and reading it raises something unrelated to what happened.
+- **The call is metered before it is made** (`UsageLedger.vision_imports`,
+  `VISION_IMPORTS_PER_MONTH`). A counter that only counts successes is one an
+  error loop walks straight past, and a call that reached the model cost money
+  either way. It is a separate column from `credentials_issued` because a
+  design reading is not a credential — one meter for two units would make
+  "quota exceeded" mean two things.
+
+Cost is roughly $0.05–0.20 per call. Billing is still mocked and the template
+tier gate was removed because nobody could reach a paid tier, so that counter is
+the only thing standing between a new org and an Anthropic bill.
+
 ### Delivery state, and why it exists
 
 `api/services/delivery.py` is the only credential-email sender; both the bulk

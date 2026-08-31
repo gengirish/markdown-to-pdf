@@ -79,6 +79,51 @@ CLERK_JWKS_URL = _env("CLERK_JWKS_URL")
 AGENTMAIL_API_KEY = _env("AGENTMAIL_API_KEY")
 AGENTMAIL_INBOX_ID = _env("AGENTMAIL_INBOX_ID", "support@intelliforge.tech")
 
+# ── Object storage (Cloudflare R2) ─────────────────────────────────────────
+#
+# Template artwork. R2 rather than Vercel Blob because this backend is Python
+# on Fly and R2 is S3-compatible, so boto3 speaks it; Vercel Blob has no Python
+# SDK and would mean hand-rolling signed requests.
+#
+# No defaults and NO LOCAL-FILESYSTEM FALLBACK. A dev-writes-to-disk /
+# prod-writes-to-R2 split works everywhere it is tested and silently loses
+# every image on a machine that scales to zero — the same shape as every
+# incident in this repo's history. Unconfigured means the upload route answers
+# 503 and says so.
+
+R2_ACCOUNT_ID = _env("R2_ACCOUNT_ID")
+R2_ACCESS_KEY_ID = _env("R2_ACCESS_KEY_ID")
+R2_SECRET_ACCESS_KEY = _env("R2_SECRET_ACCESS_KEY")
+R2_BUCKET = _env("R2_BUCKET")
+#: Override for a local MinIO or an S3-compatible store that is not R2. When
+#: empty the endpoint is derived from the account id.
+R2_ENDPOINT = _env("R2_ENDPOINT")
+
+STORAGE_AVAILABLE = bool(
+    R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY and R2_BUCKET and (R2_ACCOUNT_ID or R2_ENDPOINT)
+)
+
+#: Read and connect timeouts for the object store, in seconds. A bulk batch
+#: renders inside a worker thread; a hung GET there stalls the whole batch.
+STORAGE_TIMEOUT_SEC = 10.0
+
+# ── Anthropic (reading an uploaded certificate design) ─────────────────────
+#
+# Used by services/vision.py and nothing else. Unset means the "read my design"
+# endpoint answers 503; every other way of building a template still works,
+# which is why this is a gate and not a boot requirement.
+#
+# Each call costs roughly $0.05-0.20, so the route it powers is metered per org
+# (VISION_IMPORTS_PER_MONTH) as well as rate limited.
+
+ANTHROPIC_API_KEY = _env("ANTHROPIC_API_KEY")
+VISION_AVAILABLE = bool(ANTHROPIC_API_KEY)
+
+#: Per org, per calendar month. Billing is still mocked, so tier gating cannot
+#: bound this — anyone who can create an org could otherwise run up an
+#: Anthropic bill with a loop.
+VISION_IMPORTS_PER_MONTH = int(_env("VISION_IMPORTS_PER_MONTH", "10") or "10")
+
 # ── Email settings ─────────────────────────────────────────────────────────
 
 EMAIL_SEND_TIMEOUT_SEC = 20.0

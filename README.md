@@ -233,6 +233,10 @@ Copy [`.env.example`](.env.example) as a starting point.
 | `RATE_LIMIT_WINDOW_SECONDS` | No | Rate-limit window in seconds (default: `60`) |
 | `TRUSTED_PROXY_HOPS` | No | Reverse proxies in front of the app, used to pick the caller out of `X-Forwarded-For` (default: `2`, for browser → Vercel → Fly). Set to `0` to ignore forwarding headers |
 | `AGENTMAIL_API_KEY` | No | AgentMail API key for email delivery |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | For template artwork | Cloudflare R2, where an uploaded certificate design is stored. All four (or `R2_ENDPOINT` in place of the account id) or none: unset means the upload endpoint answers 503. There is **no local-filesystem fallback** — a storage backend that differs between dev and production works everywhere it is tested and loses every image on a Fly machine that scales to zero. `GET /api/health?deep=storage` asks whether the bucket actually answers, which is a different claim from the variables being set |
+| `R2_ENDPOINT` | No | S3-compatible endpoint override, for a local MinIO. Otherwise derived from `R2_ACCOUNT_ID` |
+| `ANTHROPIC_API_KEY` | For design reading | Powers `POST /orgs/{slug}/templates/from-image`, which reads an uploaded certificate design and proposes where each field goes. Unset means that one endpoint answers 503; every other way of building a template still works |
+| `VISION_IMPORTS_PER_MONTH` | No | Design readings per org per calendar month (default: `10`). Each one is a paid model call at roughly $0.05–0.20, and billing is still mocked, so this is what bounds the spend |
 | `AGENTMAIL_INBOX_ID` | No | AgentMail inbox address |
 | `PROCRASTINATE_APPLY_SCHEMA` | No | `1` applies the job-queue schema on boot. Deployments leave it `0` and apply it in the release step |
 | `SITE_URL` | No | Canonical public URL of the certificate product (e.g. `https://certs.intelliforge.tech`). Printed QR codes resolve through it, so it must never be repointed once certificates are in the wild |

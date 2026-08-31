@@ -27,6 +27,7 @@ from api.core.pdf_renderer import render_credential_pdf
 from api.core.credential_signature import sign_credential
 from api.models.credential import DELIVERY_FAILED
 from api.services.delivery import deliver_credential_email, may_retry
+from api.services.backgrounds import background_data_uri
 from api.services.rendering import build_render_variables
 
 logger = logging.getLogger(__name__)
@@ -184,6 +185,13 @@ def _process_batch_sync(batch_id: uuid.UUID) -> list[str]:
         
         pending_creds = session.query(Credential).filter_by(batch_id=batch.id, status="pending").all()
         
+        # Resolved once for the whole batch rather than per credential: the
+        # artwork is ~1 MB and every row of this batch renders the same
+        # template, so re-reading it per row would be N round trips to object
+        # storage for one image. The LRU in services/backgrounds.py would
+        # mostly absorb that, but "mostly" is not a plan for a 500-row batch.
+        batch_background = background_data_uri(template)
+
         success_count = 0
         failed_count = 0
         # Counted apart from success/failed, which measure RENDERS. A batch that
@@ -205,7 +213,9 @@ def _process_batch_sync(batch_id: uuid.UUID) -> list[str]:
                 # (routes/verify.py) so bulk and single-issue can never again
                 # build this dict two different ways.
                 variables = dict(cred.metadata_)
-                variables.update(build_render_variables(cred, org))
+                variables.update(
+                    build_render_variables(cred, org, template, batch_background)
+                )
 
                 # This URL is rendered into the QR code and baked into the PDF, so
                 # it is unfixable once a credential is printed. It was hardcoded to

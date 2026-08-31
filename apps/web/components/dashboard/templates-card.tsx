@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   toApiError,
   type TemplateConfig,
   type TemplateDetail,
   type TemplateSummary,
+  type TracedConfig,
 } from "@/lib/api";
 import { useCertForge } from "@/lib/use-api";
+import { TemplateCanvas } from "./template-canvas";
 import { Card, EmptyNote, ErrorNote, Skeleton } from "./ui";
 
 const INPUT =
@@ -37,10 +39,47 @@ const DEFAULT_CONFIG: TemplateConfig = {
   show_footer: true,
 };
 
+/** Where the fields start on a freshly uploaded design: A4 landscape with the
+ *  boxes roughly where a certificate usually puts them. Mirrors
+ *  DEFAULT_TRACED_CONFIG on the server, which is what a save is normalised
+ *  against — the two drifting means the canvas shows one layout and the PDF
+ *  prints another. */
+const DEFAULT_TRACED: TracedConfig = {
+  kind: "traced",
+  page_width_mm: 297,
+  page_height_mm: 210,
+  fields: [
+    { variable: "name", label: "Recipient name", x_mm: 40, y_mm: 88, w_mm: 217, h_mm: 18, font_pt: 30, color: "#1a202c", align: "center", bold: false },
+    { variable: "title", label: "Achievement / course", x_mm: 50, y_mm: 112, w_mm: 197, h_mm: 12, font_pt: 15, color: "#2d3748", align: "center", bold: false },
+    { variable: "date", label: "Issue date", x_mm: 40, y_mm: 168, w_mm: 70, h_mm: 8, font_pt: 10, color: "#4a5568", align: "left", bold: false },
+    { variable: "credential_id", label: "Credential ID", x_mm: 40, y_mm: 178, w_mm: 70, h_mm: 6, font_pt: 8, color: "#718096", align: "left", bold: false },
+    { variable: "qr", label: "Verification QR code", x_mm: 242, y_mm: 158, w_mm: 26, h_mm: 26, font_pt: 8, color: "#000000", align: "center", bold: false },
+  ],
+};
+
+function isTraced(config: TemplateDetail["config"]): config is TracedConfig {
+  return !!config && (config as TracedConfig).kind === "traced";
+}
+
+/** The page shape follows the artwork, not A4. A portrait design laid out on a
+ *  landscape page prints with the fields in the wrong half of it. */
+function pageForAspect(ratio: number): { page_width_mm: number; page_height_mm: number } {
+  return ratio >= 1
+    ? { page_width_mm: 297, page_height_mm: Math.round((297 / ratio) * 100) / 100 }
+    : { page_width_mm: Math.round(297 * ratio * 100) / 100, page_height_mm: 297 };
+}
+
 type Editor =
   | { mode: "closed" }
   | { mode: "guided"; id: string | null; name: string; config: TemplateConfig }
-  | { mode: "html"; id: string | null; name: string; html: string };
+  | { mode: "html"; id: string | null; name: string; html: string }
+  | {
+      mode: "traced";
+      id: string | null;
+      name: string;
+      config: TracedConfig;
+      assetId: string;
+    };
 
 export function TemplatesCard({ slug }: { slug: string }) {
   const api = useCertForge();
@@ -52,6 +91,9 @@ export function TemplatesCard({ slug }: { slug: string }) {
   const [editor, setEditor] = useState<Editor>({ mode: "closed" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** What the model said about its own reading. Cleared whenever the editor
+   *  changes shape, so it can never describe a template it did not produce. */
+  const [reading, setReading] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -80,11 +122,29 @@ export function TemplatesCard({ slug }: { slug: string }) {
       setBusy(true);
       try {
         const detail: TemplateDetail = await api.getOrgTemplate(slug, id);
-        setEditor(
-          detail.config
-            ? { mode: "guided", id: detail.id, name: detail.name, config: detail.config }
-            : { mode: "html", id: detail.id, name: detail.name, html: detail.html_source },
-        );
+        if (isTraced(detail.config) && detail.background_asset_id) {
+          setEditor({
+            mode: "traced",
+            id: detail.id,
+            name: detail.name,
+            config: detail.config,
+            assetId: detail.background_asset_id,
+          });
+        } else if (detail.config) {
+          setEditor({
+            mode: "guided",
+            id: detail.id,
+            name: detail.name,
+            config: detail.config as TemplateConfig,
+          });
+        } else {
+          setEditor({
+            mode: "html",
+            id: detail.id,
+            name: detail.name,
+            html: detail.html_source,
+          });
+        }
       } catch (err) {
         setError(toApiError(err).message);
       } finally {
@@ -102,7 +162,13 @@ export function TemplatesCard({ slug }: { slug: string }) {
       const payload =
         editor.mode === "guided"
           ? { name: editor.name, config: editor.config }
-          : { name: editor.name, htmlSource: editor.html };
+          : editor.mode === "traced"
+            ? {
+                name: editor.name,
+                config: editor.config,
+                backgroundAssetId: editor.assetId,
+              }
+            : { name: editor.name, htmlSource: editor.html };
 
       if (editor.id) await api.updateTemplate(slug, editor.id, payload);
       else await api.createTemplate(slug, payload);
@@ -125,7 +191,11 @@ export function TemplatesCard({ slug }: { slug: string }) {
     try {
       const blob = await api.previewTemplate(
         slug,
-        editor.mode === "guided" ? { config: editor.config } : { htmlSource: editor.html },
+        editor.mode === "guided"
+          ? { config: editor.config }
+          : editor.mode === "traced"
+            ? { config: editor.config, backgroundAssetId: editor.assetId }
+            : { htmlSource: editor.html },
       );
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank", "noopener");
@@ -138,6 +208,43 @@ export function TemplatesCard({ slug }: { slug: string }) {
       setBusy(false);
     }
   }, [api, slug, editor]);
+
+  /** Have the model place the fields, then hand the result to the canvas.
+   *
+   *  It replaces the boxes and nothing else — the artwork and the template name
+   *  stay as they are, so a reading that comes back badly costs one click to
+   *  undo by dragging rather than a re-upload. */
+  const readDesign = useCallback(async () => {
+    if (editor.mode !== "traced") return;
+    setBusy(true);
+    setError(null);
+    setReading(null);
+    try {
+      const result = await api.createTemplateFromImage(slug, {
+        assetId: editor.assetId,
+        name: editor.name || "Imported design",
+      });
+      setEditor({
+        mode: "traced",
+        id: result.id,
+        name: result.name,
+        assetId: editor.assetId,
+        config: result.config as TracedConfig,
+      });
+      setReading(
+        result.needs_review
+          ? `Read with ${result.confidence} confidence — check every box before issuing.${
+              result.notes ? ` ${result.notes}` : ""
+            }`
+          : `Fields placed. ${result.imports_remaining} design readings left this month.`,
+      );
+      await reload();
+    } catch (err) {
+      setError(toApiError(err).message);
+    } finally {
+      setBusy(false);
+    }
+  }, [api, slug, editor, reload]);
 
   const act = useCallback(
     async (fn: () => Promise<unknown>) => {
@@ -170,6 +277,21 @@ export function TemplatesCard({ slug }: { slug: string }) {
             >
               New
             </button>
+            <UploadDesignButton
+              slug={slug}
+              disabled={busy}
+              onUploaded={(asset) => {
+                setReading(null);
+                setEditor({
+                  mode: "traced",
+                  id: null,
+                  name: "",
+                  assetId: asset.id,
+                  config: { ...DEFAULT_TRACED, ...pageForAspect(asset.aspect_ratio) },
+                });
+              }}
+              onError={setError}
+            />
             <button
               onClick={() =>
                 setEditor({ mode: "html", id: null, name: "", html: STARTER_HTML })
@@ -229,14 +351,18 @@ export function TemplatesCard({ slug }: { slug: string }) {
         </>
       ) : (
         <TemplateEditor
+          slug={slug}
           editor={editor}
           busy={busy}
+          reading={reading}
           onChange={setEditor}
           onSave={save}
           onPreview={preview}
+          onReadDesign={readDesign}
           onCancel={() => {
             setEditor({ mode: "closed" });
             setError(null);
+            setReading(null);
           }}
         />
       )}
@@ -301,18 +427,24 @@ function TemplateRow({
 }
 
 function TemplateEditor({
+  slug,
   editor,
   busy,
+  reading,
   onChange,
   onSave,
   onPreview,
+  onReadDesign,
   onCancel,
 }: {
+  slug: string;
   editor: Exclude<Editor, { mode: "closed" }>;
   busy: boolean;
+  reading: string | null;
   onChange: (next: Editor) => void;
   onSave: () => void;
   onPreview: () => void;
+  onReadDesign: () => void;
   onCancel: () => void;
 }) {
   return (
@@ -332,6 +464,35 @@ function TemplateEditor({
           config={editor.config}
           onChange={(config) => onChange({ ...editor, config })}
         />
+      ) : editor.mode === "traced" ? (
+        <>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={onReadDesign}
+              disabled={busy}
+              className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-200 transition-colors hover:border-indigo-500/60 disabled:opacity-50"
+            >
+              {busy ? "Reading…" : "Place the fields for me"}
+            </button>
+            <span className="text-xs text-zinc-500">
+              Reads your design and guesses where each field goes. You can drag them
+              afterwards — and you always could.
+            </span>
+          </div>
+          {reading ? (
+            <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              {reading}
+            </p>
+          ) : null}
+        <TemplateCanvas
+          slug={slug}
+          assetId={editor.assetId}
+          config={editor.config}
+          disabled={busy}
+          onChange={(config) => onChange({ ...editor, config })}
+        />
+        </>
       ) : (
         <label className="block">
           <span className="mb-2 block text-sm font-medium text-zinc-300">
@@ -354,7 +515,7 @@ function TemplateEditor({
         </label>
       )}
 
-      {editor.mode === "guided" && editor.id ? (
+      {editor.mode !== "html" && editor.id ? (
         <button
           onClick={() =>
             onChange({
@@ -370,8 +531,8 @@ function TemplateEditor({
           }
           className="text-xs text-zinc-400 underline underline-offset-2 hover:text-zinc-200"
         >
-          Switch to hand-written HTML — this is one-way, the guided form will no longer
-          apply to this template
+          Switch to hand-written HTML — this is one-way, the editor will no longer apply
+          to this template
         </button>
       ) : null}
 
@@ -509,5 +670,62 @@ function Toggle({
       />
       {label}
     </label>
+  );
+}
+
+/** Upload artwork and open the canvas on it.
+ *
+ *  A hidden file input behind a button, rather than the invisible-overlay drop
+ *  zone the CSV card uses: this sits in a row of small header buttons, and an
+ *  absolutely positioned input would cover its neighbours. */
+function UploadDesignButton({
+  slug,
+  disabled,
+  onUploaded,
+  onError,
+}: {
+  slug: string;
+  disabled: boolean;
+  onUploaded: (asset: { id: string; aspect_ratio: number }) => void;
+  onError: (message: string) => void;
+}) {
+  const api = useCertForge();
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={async (event) => {
+          const file = event.target.files?.[0];
+          // Cleared immediately so choosing the same file twice still fires a
+          // change event — otherwise a failed upload cannot be retried without
+          // picking a different file first.
+          event.target.value = "";
+          if (!file) return;
+
+          setUploading(true);
+          try {
+            onUploaded(await api.uploadTemplateAsset(slug, file));
+          } catch (err) {
+            onError(toApiError(err).message);
+          } finally {
+            setUploading(false);
+          }
+        }}
+      />
+      <button
+        type="button"
+        disabled={disabled || uploading}
+        onClick={() => inputRef.current?.click()}
+        className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:border-indigo-500/60 hover:text-white disabled:opacity-50"
+      >
+        {uploading ? "Uploading…" : "Upload a design"}
+      </button>
+    </>
   );
 }

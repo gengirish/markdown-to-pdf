@@ -35,6 +35,19 @@ class Template(Base):
     #: keeping both would leave two descriptions of one certificate that
     #: quietly disagree.
     config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    #: The uploaded artwork this template is drawn on, when it has one. The
+    #: id lives here and NOWHERE else — in particular not in `config`, which
+    #: would be two descriptions of one certificate that can disagree. The
+    #: generator only needs to know whether a background exists, not which.
+    #:
+    #: RESTRICT, not CASCADE: deleting the artwork a previously issued
+    #: credential renders from would break re-rendering its PDF, which
+    #: delete_org_template already refuses to allow for the template itself.
+    background_asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("template_assets.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     #: Exclusive per organization — see routes/templates.py's set-default, which
     #: clears the flag on the org's other templates in the same transaction.
     #: A global template (org_id NULL) uses it for the platform-wide default.

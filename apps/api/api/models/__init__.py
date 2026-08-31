@@ -90,6 +90,7 @@ def init_db():
 # Import all models so they register with Base.metadata
 from api.models.organization import Organization, OrgMember  # noqa: F401, E402
 from api.models.template import Template  # noqa: F401, E402
+from api.models.template_asset import TemplateAsset  # noqa: F401, E402
 from api.models.credential import Credential, CredentialBatch  # noqa: F401, E402
 from api.models.passport import Passport, PassportCredential  # noqa: F401, E402
 from api.models.api_key import ApiKey, WebhookEndpoint  # noqa: F401, E402

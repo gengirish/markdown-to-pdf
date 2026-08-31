@@ -49,6 +49,9 @@ class Organization(Base):
     credentials: Mapped[list] = relationship(
         "Credential", back_populates="organization", cascade="all, delete-orphan"
     )
+    template_assets: Mapped[list] = relationship(
+        "TemplateAsset", back_populates="organization", cascade="all, delete-orphan"
+    )
     templates: Mapped[list] = relationship(
         "Template", back_populates="organization", cascade="all, delete-orphan"
     )

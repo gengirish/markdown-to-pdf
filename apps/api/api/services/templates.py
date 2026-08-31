@@ -39,6 +39,12 @@ BUILTIN_VARIABLES = frozenset({
     # is the family name to reference in a font-family declaration.
     "font_face",
     "display_font",
+    # A traced template's artwork, as a data: URI. Listed here so
+    # custom_placeholders() does not report it and tell the author it has to
+    # come from their CSV. build_render_variables must produce it — a name in
+    # this set that it does not supply renders blank, which for a background
+    # means a plain white certificate and no error anywhere.
+    "background",
 })
 
 MAX_HTML_BYTES = 256 * 1024
@@ -144,12 +150,34 @@ DEFAULT_CONFIG: dict[str, Any] = {
 }
 
 
+#: Which generator a config drives. Absent means "guided", so every config
+#: written before traced templates existed normalises byte-identically — that
+#: is pinned by a test, because a silent change here would rewrite the HTML of
+#: every guided template on its next save.
+KIND_GUIDED = "guided"
+KIND_TRACED = "traced"
+KINDS = (KIND_GUIDED, KIND_TRACED)
+
+
+def config_kind(config: dict[str, Any] | None) -> str:
+    kind = (config or {}).get("kind", KIND_GUIDED)
+    return kind if kind in KINDS else KIND_GUIDED
+
+
 def normalise_config(config: dict[str, Any] | None) -> dict[str, Any]:
     """Fill in what the caller left out, and drop what we do not know.
 
     Unknown keys are discarded rather than stored: a config that carries fields
     the generator ignores looks like it is doing something and is not.
+
+    Dispatches on `kind`. A traced config must NOT go through the guided branch
+    below — it merges against a flat DEFAULT_CONFIG and drops everything else,
+    so a traced spec would come out the other side as an empty guided form with
+    no error raised anywhere.
     """
+    if config_kind(config) == KIND_TRACED:
+        return normalise_traced_config(config)
+
     merged = dict(DEFAULT_CONFIG)
     for key, value in (config or {}).items():
         if key in DEFAULT_CONFIG:
@@ -157,6 +185,324 @@ def normalise_config(config: dict[str, Any] | None) -> dict[str, Any]:
     if merged["layout"] not in LAYOUTS:
         merged["layout"] = DEFAULT_CONFIG["layout"]
     return merged
+
+
+# -- the traced generator (a template drawn on uploaded artwork) ---------------
+#
+# A traced template is the customer's own certificate design with fields placed
+# on top of it. The design is an uploaded image that arrives at render time as
+# {{background}}; the fields are @frame blocks, which is how xhtml2pdf does
+# absolute positioning. Everything here is generated, so the output passes
+# validate_template_html by construction — and is validated anyway, because the
+# generator is the code most likely to grow a bug that emits a URL.
+
+#: What a traced field may be bound to. A CLOSED set, deliberately: an open
+#: string means a vision model returning "recipient_full_name" produces a field
+#: that is not builtin, so it becomes a custom CSV variable and renders blank on
+#: every credential forever with nothing raising. Anything else must declare
+#: itself a `custom:` binding, which the UI reports as needing a CSV column.
+TRACED_VARIABLES = (
+    "name",
+    "title",
+    "date",
+    "credential_id",
+    "issuer_name",
+    "qr",
+    "logo_url",
+    "footer_text",
+)
+
+#: Rendered as an <img> rather than as text.
+TRACED_IMAGE_VARIABLES = ("qr", "logo_url")
+
+MAX_TRACED_FIELDS = 12
+
+#: Page dimensions outside this are not a page. A spec that says 0x0 or 5000mm
+#: gets overridden by the artwork's own aspect ratio instead.
+MIN_PAGE_MM = 100.0
+MAX_PAGE_MM = 450.0
+
+MIN_FONT_PT = 4.0
+MAX_FONT_PT = 96.0
+
+_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
+_CUSTOM_VAR = re.compile(r"^custom:([a-z0-9][a-z0-9_-]{0,39})$")
+
+#: A4 landscape with the fields where a certificate usually puts them. This is
+#: what an upload produces before anyone has dragged anything, and before the
+#: vision model exists it is the only traced layout there is.
+DEFAULT_TRACED_CONFIG: dict[str, Any] = {
+    "kind": "traced",
+    "page_width_mm": 297.0,
+    "page_height_mm": 210.0,
+    "fields": [
+        {
+            "variable": "name",
+            "label": "Recipient",
+            "x_mm": 40.0, "y_mm": 88.0, "w_mm": 217.0, "h_mm": 18.0,
+            "font_pt": 30.0, "color": "#1a202c", "align": "center", "bold": False,
+        },
+        {
+            "variable": "title",
+            "label": "Achievement",
+            "x_mm": 50.0, "y_mm": 112.0, "w_mm": 197.0, "h_mm": 12.0,
+            "font_pt": 15.0, "color": "#2d3748", "align": "center", "bold": False,
+        },
+        {
+            "variable": "date",
+            "label": "Date",
+            "x_mm": 40.0, "y_mm": 168.0, "w_mm": 70.0, "h_mm": 8.0,
+            "font_pt": 10.0, "color": "#4a5568", "align": "left", "bold": False,
+        },
+        {
+            "variable": "credential_id",
+            "label": "Credential ID",
+            "x_mm": 40.0, "y_mm": 178.0, "w_mm": 70.0, "h_mm": 6.0,
+            "font_pt": 8.0, "color": "#718096", "align": "left", "bold": False,
+        },
+        {
+            "variable": "qr",
+            "label": "Verification QR",
+            "x_mm": 242.0, "y_mm": 158.0, "w_mm": 26.0, "h_mm": 26.0,
+            "font_pt": 8.0, "color": "#000000", "align": "center", "bold": False,
+        },
+    ],
+}
+
+
+def _finite(value: Any, fallback: float) -> float:
+    """A float that is safe to interpolate into CSS.
+
+    NaN and inf format as "nan"/"inf", which xhtml2pdf reads as a zero-sized
+    frame — a field that silently does not render. Both are exactly what a
+    hand-edited JSON body, or a vision model, can produce.
+    """
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    if out != out or out in (float("inf"), float("-inf")):
+        return fallback
+    return out
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def normalise_traced_field(
+    field: Any, page_w: float, page_h: float
+) -> "dict[str, Any] | None":
+    """One field, clamped onto the page. None when it cannot be salvaged.
+
+    Clamps rather than rejects, on purpose: the canvas exists so a person can
+    correct a bad guess, and a template that refuses to save because one box is
+    5mm off the edge helps nobody. What it will not do is accept an unknown
+    variable name — that is the one error a human cannot see on screen, because
+    a misbound field renders blank rather than wrong.
+    """
+    if not isinstance(field, dict):
+        return None
+
+    raw_var = str(field.get("variable", "")).strip()
+    if raw_var in TRACED_VARIABLES or _CUSTOM_VAR.match(raw_var):
+        variable = raw_var
+    else:
+        return None
+
+    font_pt = _clamp(_finite(field.get("font_pt"), 12.0), MIN_FONT_PT, MAX_FONT_PT)
+
+    w = _finite(field.get("w_mm"), 0.0)
+    h = _finite(field.get("h_mm"), 0.0)
+    # A zero or negative box is a negative-dimension frame, which xhtml2pdf
+    # warns about and then does not draw. Size it from the font instead.
+    if w <= 0:
+        w = min(page_w, 80.0)
+    if h <= 0:
+        h = max(4.0, font_pt * 0.5)
+
+    x = _clamp(_finite(field.get("x_mm"), 0.0), 0.0, max(0.0, page_w - 1))
+    y = _clamp(_finite(field.get("y_mm"), 0.0), 0.0, max(0.0, page_h - 1))
+    w = _clamp(w, 1.0, page_w - x)
+    h = _clamp(h, 1.0, page_h - y)
+
+    color = str(field.get("color", "")).strip()
+    if not _COLOR.match(color):
+        color = "#1a202c"
+
+    align = str(field.get("align", "")).strip().lower()
+    if align not in ("left", "center", "right"):
+        align = "left"
+
+    return {
+        "variable": variable,
+        "label": str(field.get("label", "") or variable)[:80],
+        "x_mm": round(x, 2),
+        "y_mm": round(y, 2),
+        "w_mm": round(w, 2),
+        "h_mm": round(h, 2),
+        "font_pt": round(font_pt, 2),
+        "color": color.lower(),
+        "align": align,
+        "bold": bool(field.get("bold", False)),
+    }
+
+
+def normalise_traced_config(config: "dict[str, Any] | None") -> dict[str, Any]:
+    """Clamp a traced spec into something that can be rendered.
+
+    `aspect_ratio`, when given, is the artwork's own width/height, and it wins
+    over an implausible page size: the image is ground truth about its own
+    shape, while a page size is a guess by whatever produced the spec.
+    """
+    cfg = config or {}
+
+    page_w = _finite(cfg.get("page_width_mm"), DEFAULT_TRACED_CONFIG["page_width_mm"])
+    page_h = _finite(cfg.get("page_height_mm"), DEFAULT_TRACED_CONFIG["page_height_mm"])
+    if not (MIN_PAGE_MM <= page_w <= MAX_PAGE_MM and MIN_PAGE_MM <= page_h <= MAX_PAGE_MM):
+        ratio = _finite(cfg.get("aspect_ratio"), 0.0)
+        if ratio > 0:
+            # The longer edge becomes A4's 297mm, so the page matches the art.
+            page_w, page_h = (297.0, 297.0 / ratio) if ratio >= 1 else (297.0 * ratio, 297.0)
+            page_w = _clamp(page_w, MIN_PAGE_MM, MAX_PAGE_MM)
+            page_h = _clamp(page_h, MIN_PAGE_MM, MAX_PAGE_MM)
+        else:
+            page_w = DEFAULT_TRACED_CONFIG["page_width_mm"]
+            page_h = DEFAULT_TRACED_CONFIG["page_height_mm"]
+
+    raw_fields = cfg.get("fields")
+    if not isinstance(raw_fields, list):
+        raw_fields = DEFAULT_TRACED_CONFIG["fields"]
+
+    fields: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in raw_fields:
+        field = normalise_traced_field(raw, page_w, page_h)
+        if field is None:
+            continue
+        # One box per variable. Two {{name}} frames print the recipient twice,
+        # which reads as a rendering bug to whoever receives the certificate.
+        if field["variable"] in seen:
+            continue
+        seen.add(field["variable"])
+        fields.append(field)
+        if len(fields) >= MAX_TRACED_FIELDS:
+            break
+
+    return {
+        "kind": KIND_TRACED,
+        "page_width_mm": round(page_w, 2),
+        "page_height_mm": round(page_h, 2),
+        "fields": fields,
+    }
+
+
+def build_traced_html(config: dict[str, Any], has_background: bool) -> str:
+    """Generate background + @frame HTML from a traced spec.
+
+    @frame is xhtml2pdf's absolute positioning: each one names a
+    `-pdf-frame-content` id and the matching element in the body is drawn
+    there. Frames CLIP — a name wider than its box flows onto a second page —
+    which is why every box gets width headroom before it is drawn.
+    """
+    cfg = normalise_traced_config(config)
+    page_w, page_h = cfg["page_width_mm"], cfg["page_height_mm"]
+
+    background_rule = ""
+    if has_background:
+        # Substituted in at render time and never stored here: at ~940 KB as a
+        # data URI the artwork does not fit inside MAX_HTML_BYTES.
+        background_rule = '  background-image: url("{{background}}");\n'
+
+    frames: list[str] = []
+    bodies: list[str] = []
+    for index, field in enumerate(cfg["fields"]):
+        # 15% headroom, because a long recipient name in a snug frame is the
+        # single most common way a fixed-geometry layout breaks in the field —
+        # and it breaks by pushing the text onto a blank second page.
+        #
+        # Which SIDE the headroom is added to follows the alignment, or the
+        # headroom moves the text. A centred box grown only to the right is no
+        # longer centred on the artwork it was placed against, and the person
+        # who dragged it into place never touched it.
+        x, y = field["x_mm"], field["y_mm"]
+        extra = field["w_mm"] * 0.15
+        if field["align"] == "center":
+            x = max(0.0, x - extra / 2)
+        elif field["align"] == "right":
+            x = max(0.0, x - extra)
+        width = min(field["w_mm"] + extra, page_w - x)
+        height = min(field["h_mm"] * 1.15, page_h - y)
+        frames.append(
+            f'  @frame f{index} {{ -pdf-frame-content: c{index};'
+            f' left: {round(x, 2)}mm; top: {y}mm;'
+            f' width: {round(width, 2)}mm; height: {round(height, 2)}mm; }}'
+        )
+
+        variable = field["variable"]
+        placeholder = "{{" + variable.replace("custom:", "") + "}}"
+
+        if variable in TRACED_IMAGE_VARIABLES:
+            # Width only: a QR is square and a logo should keep its own
+            # proportions rather than be stretched to the box.
+            px = max(1, round(width * 3.78))
+            bodies.append(
+                f'<div id="c{index}" style="text-align:{field["align"]};">'
+                f'<img src="{placeholder}" width="{px}" /></div>'
+            )
+            continue
+
+        weight = "font-weight:bold;" if field["bold"] else ""
+        bodies.append(
+            f'<div id="c{index}" style="font-size:{field["font_pt"]}pt;'
+            f'color:{field["color"]};text-align:{field["align"]};{weight}'
+            f'font-family:{TRACED_FONT_FAMILY};">{placeholder}</div>'
+        )
+
+    return TRACED_SHELL.format(
+        page_width=page_w,
+        page_height=page_h,
+        background=background_rule,
+        frames="\n".join(frames),
+        body="\n".join(bodies),
+    )
+
+
+#: A traced template deliberately does NOT pull in the bundled display serif.
+#:
+#: The artwork carries the customer's typography; our brand face is the wrong
+#: default on someone else's design. And the @font-face block that would load
+#: it is the known Windows failure documented in CLAUDE.md — xhtml2pdf copies
+#: the TTF to a temporary file reportlab cannot reopen, so every render raises
+#: there while working in Docker. Dropping the block instead of keeping it makes
+#: local rendering work, and it avoids the worse outcome: declaring
+#: `font-family: GaramondPDF` with no @font-face, which renders Helvetica
+#: silently while the template claims otherwise.
+#:
+#: A per-field font from a small allowlist is the honest way to offer a choice
+#: here later.
+TRACED_FONT_FAMILY = "Helvetica, Arial, sans-serif"
+
+#: Braces are doubled where they must survive .format() into CSS.
+TRACED_SHELL = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+@page {{
+  size: {page_width}mm {page_height}mm;
+  margin: 0;
+{background}{frames}
+}}
+body {{ font-family: Helvetica, Arial, sans-serif; margin: 0; padding: 0; }}
+div {{ margin: 0; padding: 0; }}
+</style>
+</head>
+<body>
+{body}
+</body>
+</html>
+"""
 
 
 def _esc(value: Any) -> str:
@@ -171,8 +517,17 @@ def _esc(value: Any) -> str:
     return html_mod.escape(str(value or ""))
 
 
-def build_html_from_config(config: dict[str, Any]) -> str:
-    """Generate template HTML from guided settings.
+def build_html_from_config(
+    config: dict[str, Any], has_background: bool = False
+) -> str:
+    """Generate template HTML from a config — guided settings or a traced spec.
+
+    `has_background` is whether the template has artwork behind it, NOT which
+    artwork. The asset id lives on Template.background_asset_id and nowhere
+    else: keeping it here as well would be two records of one fact that can
+    disagree, which is what the module docstring above is about.
+
+    The guided generator, from here down:
 
     Ported from the legacy participation certificate
     (api/certificate_templates.py CERTIFICATE_PARTICIPATION_HTML) rather than
@@ -197,6 +552,9 @@ def build_html_from_config(config: dict[str, Any]) -> str:
     Nested tables with inline styles because that is xhtml2pdf's whole CSS
     subset, and `@page size` is what makes it landscape.
     """
+    if config_kind(config) == KIND_TRACED:
+        return build_traced_html(config, has_background)
+
     cfg = normalise_config(config)
 
     logo = (
@@ -422,4 +780,8 @@ def sample_variables() -> dict[str, str]:
         "footer_text": "Preview — not a real credential",
         "usn": "1XX00XX000",
         "duration": "4 weeks",
+        # Overwritten by the preview route when the template has artwork. ""
+        # here so a traced template previewed without one renders its fields on
+        # blank paper rather than leaving a literal {{background}} in the CSS.
+        "background": "",
     }

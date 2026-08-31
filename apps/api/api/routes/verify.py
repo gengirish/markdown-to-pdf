@@ -267,7 +267,11 @@ def get_credential_pdf(public_id: str):
         # api/core/worker.py — the two must never again build this dict two
         # different ways.
         variables = dict(cred.metadata_)
-        variables.update(build_render_variables(cred, org))
+        # `template` is passed because the variable builder needs it to resolve
+        # the traced-template artwork. The bulk worker passes it too; a
+        # credential must not carry its background through one path and lose it
+        # through the other — this route is the one a printed QR code reaches.
+        variables.update(build_render_variables(cred, org, template))
 
         pdf_bytes = render_credential_pdf(template.html_source, variables)
 

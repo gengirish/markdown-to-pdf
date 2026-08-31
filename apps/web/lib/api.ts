@@ -94,6 +94,58 @@ export interface OrgMember {
   joined_at: string;
 }
 
+/** One placed field on a traced template. Coordinates are millimetres from
+ *  the top-left of the page, which is what the generated @frame rules use — the
+ *  canvas converts to pixels for display and never stores pixels. */
+export interface TracedField {
+  /** A builtin name, or `custom:<slug>` for a CSV column. The server refuses
+   *  anything else: an unknown name would bind to nothing and render blank on
+   *  every credential, which looks like a design choice rather than a fault. */
+  variable: string;
+  label: string;
+  x_mm: number;
+  y_mm: number;
+  w_mm: number;
+  h_mm: number;
+  font_pt: number;
+  color: string;
+  align: "left" | "center" | "right";
+  bold: boolean;
+}
+
+/** A template drawn on uploaded artwork. */
+export interface TracedConfig {
+  kind: "traced";
+  page_width_mm: number;
+  page_height_mm: number;
+  fields: TracedField[];
+}
+
+/** What a design reading reports about itself, alongside the template. */
+export interface TemplateFromImageMeta {
+  /** The model said it was unsure, or placed nothing. Every box needs checking
+   *  regardless; this is when to say so loudly. */
+  needs_review: boolean;
+  confidence: "high" | "medium" | "low";
+  notes: string;
+  /** Fields it proposed that were refused — an unknown or repeated binding. */
+  dropped_fields: string[];
+  imports_remaining: number;
+}
+
+/** Uploaded certificate artwork. The bytes are always a JPEG the API
+ *  re-encoded — never the file that was uploaded. */
+export interface TemplateAsset {
+  id: string;
+  mime: string;
+  width_px: number;
+  height_px: number;
+  byte_size: number;
+  checksum: string;
+  aspect_ratio: number;
+  created_at: string | null;
+}
+
 /** Guided-form settings. Present only while the template is still generated —
  *  editing its HTML by hand detaches it and the server sets this to null. */
 export interface TemplateConfig {
@@ -117,7 +169,9 @@ export interface TemplateDetail {
   created_at: string | null;
   updated_at: string | null;
   html_source: string;
-  config: TemplateConfig | null;
+  config: TemplateConfig | TracedConfig | null;
+  /** The artwork this template is drawn on, when it has any. */
+  background_asset_id: string | null;
 }
 
 export interface TemplateSummary {
@@ -130,6 +184,7 @@ export interface TemplateSummary {
   is_guided: boolean;
   created_at: string | null;
   updated_at: string | null;
+  background_asset_id: string | null;
 }
 
 /** Whether the recipient was told, kept apart from whether the credential
@@ -575,12 +630,22 @@ export class CertForgeClient {
    *  request carrying each has no non-arbitrary answer for which one wins. */
   createTemplate(
     slug: string,
-    input: { name: string; htmlSource?: string; config?: Partial<TemplateConfig> },
+    input: {
+      name: string;
+      htmlSource?: string;
+      config?: Partial<TemplateConfig> | TracedConfig;
+      backgroundAssetId?: string | null;
+    },
     signal?: AbortSignal,
   ): Promise<TemplateDetail> {
     return this.request<TemplateDetail>(`/api/v1/orgs/${encodeURIComponent(slug)}/templates`, {
       method: "POST",
-      json: { name: input.name, html_source: input.htmlSource, config: input.config },
+      json: {
+        name: input.name,
+        html_source: input.htmlSource,
+        config: input.config,
+        background_asset_id: input.backgroundAssetId,
+      },
       signal,
     });
   }
@@ -588,13 +653,23 @@ export class CertForgeClient {
   updateTemplate(
     slug: string,
     id: string,
-    input: { name?: string; htmlSource?: string; config?: Partial<TemplateConfig> },
+    input: {
+      name?: string;
+      htmlSource?: string;
+      config?: Partial<TemplateConfig> | TracedConfig;
+      /** "" unbinds the artwork; omitting the key leaves it alone. The two are
+       *  different on purpose — a rename must not silently drop a background. */
+      backgroundAssetId?: string | null;
+    },
     signal?: AbortSignal,
   ): Promise<TemplateDetail> {
     const json: Record<string, unknown> = {};
     if (input.name !== undefined) json.name = input.name;
     if (input.htmlSource !== undefined) json.html_source = input.htmlSource;
     if (input.config !== undefined) json.config = input.config;
+    if (input.backgroundAssetId !== undefined) {
+      json.background_asset_id = input.backgroundAssetId;
+    }
 
     return this.request<TemplateDetail>(
       `/api/v1/orgs/${encodeURIComponent(slug)}/templates/${encodeURIComponent(id)}`,
@@ -629,14 +704,84 @@ export class CertForgeClient {
    *  must never inject customer-authored markup into its own document. */
   previewTemplate(
     slug: string,
-    input: { htmlSource?: string; config?: Partial<TemplateConfig> },
+    input: {
+      htmlSource?: string;
+      config?: Partial<TemplateConfig> | TracedConfig;
+      backgroundAssetId?: string | null;
+    },
     signal?: AbortSignal,
   ): Promise<Blob> {
     return this.requestBlob(`/api/v1/orgs/${encodeURIComponent(slug)}/templates/preview`, {
       method: "POST",
-      json: { html_source: input.htmlSource, config: input.config },
+      json: {
+        html_source: input.htmlSource,
+        config: input.config,
+        background_asset_id: input.backgroundAssetId,
+      },
       signal,
     });
+  }
+
+  /** Upload the artwork a template is drawn on.
+   *
+   *  Multipart, like the bulk CSV upload — the server re-encodes whatever
+   *  arrives, so what comes back describes a JPEG it produced rather than the
+   *  file that was sent. Uploading the same image twice returns the same asset. */
+  uploadTemplateAsset(slug: string, file: File, signal?: AbortSignal): Promise<TemplateAsset> {
+    const form = new FormData();
+    form.append("file", file);
+
+    return this.request<TemplateAsset>(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/template-assets`,
+      { method: "POST", form, signal },
+    );
+  }
+
+  listTemplateAssets(slug: string, signal?: AbortSignal): Promise<TemplateAsset[]> {
+    return this.request<TemplateAsset[]>(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/template-assets`,
+      { signal },
+    );
+  }
+
+  /** The stored image itself, for the canvas to place fields on.
+   *
+   *  A Blob rather than a URL the browser fetches directly: the route is
+   *  authenticated, and an <img src> carries no Authorization header. The
+   *  caller owns the object URL and must revoke it on unmount. */
+  templateAssetImage(slug: string, id: string, signal?: AbortSignal): Promise<Blob> {
+    return this.requestBlob(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/template-assets/${encodeURIComponent(id)}/image`,
+      { signal },
+    );
+  }
+
+  /** Ask the model where this design's fields belong, and create a template
+   *  with them placed.
+   *
+   *  Slow — tens of seconds — and metered per organization, because every call
+   *  is a paid request. `needs_review` means the model said it was guessing;
+   *  the boxes still need checking either way, which is what the canvas is. */
+  createTemplateFromImage(
+    slug: string,
+    input: { assetId: string; name: string },
+    signal?: AbortSignal,
+  ): Promise<TemplateDetail & TemplateFromImageMeta> {
+    return this.request<TemplateDetail & TemplateFromImageMeta>(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/templates/from-image`,
+      { method: "POST", json: { asset_id: input.assetId, name: input.name }, signal },
+    );
+  }
+
+  deleteTemplateAsset(
+    slug: string,
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<{ deleted: boolean }> {
+    return this.request<{ deleted: boolean }>(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/template-assets/${encodeURIComponent(id)}`,
+      { method: "DELETE", signal },
+    );
   }
 
   listApiKeys(slug: string, signal?: AbortSignal): Promise<ApiKeySummary[]> {
