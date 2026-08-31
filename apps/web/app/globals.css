@@ -64,8 +64,63 @@
   --cf-shadow-lift: 0 1px 2px rgb(23 23 26 / 0.04), 0 20px 48px -32px rgb(23 23 26 / 0.28);
 }
 
+/* Dark values, in two selectors that must be edited together — every
+ * property below appears in both, and the two exist for different readers:
+ *
+ *   [data-theme="dark"]                     an explicit choice (the toggle in
+ *                                            SiteHeader / the dashboard header)
+ *   @media (prefers-color-scheme: dark)      the system default, but only when
+ *     :root:not([data-theme])                nothing has been chosen yet —
+ *                                            :not([data-theme]) is what lets an
+ *                                            explicit "light" win over a dark
+ *                                            OS setting
+ *
+ * The duplication is deliberate rather than a CSS variable indirection: a
+ * visitor with JavaScript disabled never gets a data-theme attribute (it is
+ * set by an inline script in layout.tsx, before paint, to avoid a flash of
+ * the wrong theme), and for that visitor the @media block is the only path to
+ * a dark theme at all. Collapsing it into one block driven only by the
+ * attribute would silently drop system-preference support for anyone
+ * scripting cannot reach.
+ */
+:root[data-theme="dark"] {
+  --cf-ground: #131316;
+  --cf-surface: #1b1b1f;
+  --cf-surface-sunken: #1f1f24;
+  --cf-well: #26262c;
+
+  --cf-ink: #f4f2ef;
+  --cf-muted: #a8a49c;
+  --cf-faint: #8a857a;
+  --cf-placeholder: #6b6862;
+
+  --cf-hair: #2c2c33;
+  --cf-hair-soft: #26262c;
+  --cf-hair-strong: #3a3a42;
+
+  /* Lifted from #0E6B58, which fails contrast on this ground. */
+  --cf-accent: #4fb89d;
+  --cf-accent-hover: #6fcbb2;
+  --cf-accent-wash: #14322b;
+  --cf-accent-line: #1f4c41;
+
+  --cf-warn: #d9a441;
+  --cf-warn-ink: #e8bf7a;
+  --cf-warn-wash: #33280f;
+  --cf-warn-line: #4a3a18;
+
+  --cf-danger: #e08b82;
+  --cf-danger-wash: #35201e;
+  --cf-danger-line: #4c2f2c;
+
+  --cf-info: #8aa4e0;
+
+  --cf-shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 20px 44px -28px rgb(0 0 0 / 0.7);
+  --cf-shadow-lift: 0 1px 2px rgb(0 0 0 / 0.4), 0 20px 48px -32px rgb(0 0 0 / 0.65);
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --cf-ground: #131316;
     --cf-surface: #1b1b1f;
     --cf-surface-sunken: #1f1f24;
@@ -80,7 +135,6 @@
     --cf-hair-soft: #26262c;
     --cf-hair-strong: #3a3a42;
 
-    /* Lifted from #0E6B58, which fails contrast on this ground. */
     --cf-accent: #4fb89d;
     --cf-accent-hover: #6fcbb2;
     --cf-accent-wash: #14322b;

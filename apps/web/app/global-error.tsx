@@ -24,7 +24,11 @@ export default function GlobalError({
   return (
     <html lang="en">
       <body className="antialiased">
-        <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a] px-6 text-ink">
+        {/* No RootLayout here (this file replaces it entirely on a crash), so
+         *  the theme bootstrap script never runs and data-theme is never set.
+         *  The CSS @media fallback in globals.css still applies -- this page
+         *  follows the OS setting, just without a toggle to override it. */}
+        <div className="flex min-h-screen items-center justify-center bg-ground px-6 text-ink">
           <div className="w-full max-w-md rounded-2xl border border-hair bg-surface p-8 text-center">
             <h1 className="text-2xl font-medium text-ink">Something broke</h1>
             <p className="mt-3 text-sm text-muted">

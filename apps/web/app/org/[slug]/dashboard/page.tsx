@@ -6,6 +6,7 @@ import { SignInButton, useAuth } from "@clerk/nextjs";
 
 import { publicApi, toApiError, type OrgProfile } from "@/lib/api";
 import { ApiStatusBadge } from "@/components/dashboard/api-status-badge";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandingCard } from "@/components/dashboard/branding-card";
 import { IssueWizard } from "@/components/dashboard/issue-wizard";
 import { DeveloperCard } from "@/components/dashboard/developer-card";
@@ -46,11 +47,11 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
   const handleIssued = useCallback(() => setIssuedToken((current) => current + 1), []);
 
   if (!isLoaded) {
-    return <div className="min-h-screen bg-[#0a0a0a]" />;
+    return <div className="min-h-screen bg-ground" />;
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] p-6 font-sans text-ink sm:p-8">
+    <div className="min-h-screen bg-ground p-6 font-sans text-ink sm:p-8">
       <header className="mx-auto mb-12 flex max-w-6xl flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="mb-2 text-3xl font-semibold tracking-tight text-ink">
@@ -61,7 +62,10 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
             {org ? <span className="ml-2 text-faint">· {org.tier} plan</span> : null}
           </p>
         </div>
-        <ApiStatusBadge />
+        <div className="flex items-center gap-3">
+          <ApiStatusBadge />
+          <ThemeToggle />
+        </div>
       </header>
 
       <main className="mx-auto max-w-6xl">

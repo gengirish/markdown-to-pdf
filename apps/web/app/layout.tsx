@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
+import Script from "next/script";
+
+import { THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
 /** The redesign's two faces.
@@ -43,8 +46,27 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-      <html lang="en" className={`${spaceGrotesk.variable} ${jetbrainsMono.variable}`}>
-        <body className="antialiased">{children}</body>
+      <html
+        lang="en"
+        suppressHydrationWarning
+        className={`${spaceGrotesk.variable} ${jetbrainsMono.variable}`}
+      >
+        <body className="antialiased">
+          {/* beforeInteractive: Next.js hoists this into <head> and runs it
+           *  before the page paints, which is the whole point -- it sets
+           *  data-theme ahead of any stylesheet applying, so there is no
+           *  frame of the wrong theme to flash. Placed as the first child of
+           *  <body> because that is where Next.js documents and tests this
+           *  pattern; beforeInteractive scripts are only valid in the root
+           *  layout at all. suppressHydrationWarning on <html> is needed
+           *  alongside it: this script sets an attribute React did not
+           *  render, and without the flag React would flag that as a
+           *  server/client mismatch on every single page. */}
+          <Script id="theme-bootstrap" strategy="beforeInteractive">
+            {THEME_BOOTSTRAP_SCRIPT}
+          </Script>
+          {children}
+        </body>
       </html>
     </ClerkProvider>
   );
