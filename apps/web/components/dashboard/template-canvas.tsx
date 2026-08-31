@@ -25,6 +25,20 @@ const BINDABLE: { variable: string; label: string }[] = [
 
 const IMAGE_FIELDS = new Set(["qr", "logo_url"]);
 
+/** Millimetres of box height needed per point of font size.
+ *
+ *  Kept in step with MIN_HEIGHT_MM_PER_PT in
+ *  apps/api/api/services/templates.py, which is where it is enforced. Applied
+ *  here too so the box you drag is the box that renders: the server grows an
+ *  undersized box on save, and without this the canvas would show one size and
+ *  the PDF print another. Below the server's threshold the text does not
+ *  overflow or wrap — it disappears. */
+const MIN_HEIGHT_MM_PER_PT = 0.6;
+
+function minHeightFor(field: TracedField) {
+  return IMAGE_FIELDS.has(field.variable) ? 4 : field.font_pt * MIN_HEIGHT_MM_PER_PT;
+}
+
 /** Placed at the middle of the page rather than at the origin: a new box in the
  *  top-left corner usually lands on the artwork's border and has to be dragged
  *  before it can even be seen. */
@@ -159,7 +173,11 @@ export function TemplateCanvas({
     } else {
       setField(drag.index, {
         w_mm: clamp(origin.w_mm + dx, 5, config.page_width_mm - origin.x_mm),
-        h_mm: clamp(origin.h_mm + dy, 4, config.page_height_mm - origin.y_mm),
+        h_mm: clamp(
+          origin.h_mm + dy,
+          minHeightFor(origin),
+          config.page_height_mm - origin.y_mm,
+        ),
       });
     }
   };
@@ -301,7 +319,16 @@ function FieldControls({
               min={4}
               max={96}
               value={field.font_pt}
-              onChange={(e) => onChange({ font_pt: Number(e.target.value) })}
+              onChange={(e) => {
+                const font_pt = Number(e.target.value);
+                // Grown with the font, not left behind by it: typing 30 into a
+                // box sized for 10 is the same trap approached from the other
+                // side, and the server would silently grow it on save anyway.
+                onChange({
+                  font_pt,
+                  h_mm: Math.max(field.h_mm, font_pt * MIN_HEIGHT_MM_PER_PT),
+                });
+              }}
               className="w-20 rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-sm text-zinc-100"
             />
           </label>

@@ -32,6 +32,7 @@ from api.services.templates import (
     build_html_from_config,
     normalise_config,
     normalise_traced_config,
+    normalise_traced_field,
     validate_template_html,
 )
 
@@ -450,10 +451,31 @@ def test_a_guided_config_is_untouched_by_the_traced_branch():
     assert "fields" not in before
 
 
+def _renders_text(config: dict, name: str = "Ada Lovelace") -> bool:
+    """Did the text actually make it into the PDF?
+
+    Page count cannot answer this. When a frame is too short for its font,
+    xhtml2pdf does not wrap, does not paginate and does not raise — it drops
+    the field, and the document is still one page. The only reliable signal is
+    that rendering WITH the text produces a different document from rendering
+    without it; a dropped field makes the two identical.
+    """
+    from api.core.pdf_renderer import render_credential_pdf
+    from api.services.templates import sample_variables
+
+    html = build_html_from_config(config, False)
+
+    def size(value: str) -> int:
+        variables = sample_variables()
+        variables.update(name=value, font_face="", display_font="Helvetica")
+        return len(render_credential_pdf(html, variables))
+
+    return size(name) > size("") + 40
+
+
 def test_a_long_name_still_fits_on_one_page(store):
-    """Frames clip, and text that does not fit flows onto a second page — a
-    blank sheet with one word on it, which is what actually reaches a recipient
-    when a fixed layout is too tight."""
+    """Frames clip, and text that does not fit is lost — either onto a second
+    page or, worse, into nothing at all."""
     from api.core.pdf_renderer import render_credential_pdf
     from api.services.templates import sample_variables
 
@@ -464,6 +486,55 @@ def test_a_long_name_still_fits_on_one_page(store):
     variables["display_font"] = "Helvetica"
 
     assert pdf_page_count(render_credential_pdf(html, variables)) == 1
+    # Page count alone passes while the name is missing entirely, which is how
+    # this test used to give a clean bill of health to a blank certificate.
+    assert _renders_text(DEFAULT_TRACED_CONFIG, "Bartholomew Fitzgerald-Wintermute III")
+
+
+@pytest.mark.parametrize("font_pt", [8, 12, 20, 30, 48])
+def test_a_box_too_small_for_its_font_never_empties_the_field(font_pt):
+    """The worst failure this feature can produce, and the least visible one.
+
+    Below roughly 0.5mm of box height per point, xhtml2pdf silently drops the
+    text: no error, no second page, just blank paper where the recipient's name
+    belongs. Nothing downstream notices — the canvas shows the box, the save
+    succeeds, the PDF renders, and the certificate goes out nameless.
+
+    So a box smaller than its font demands is grown, and if the page cannot
+    spare the room the font shrinks instead. Asked-for-but-smaller is legible;
+    absent is not.
+    """
+    config = {
+        "kind": "traced",
+        "page_width_mm": 297.0,
+        "page_height_mm": 210.0,
+        # Half the height this font needs — what a person gets by dragging a
+        # corner in a bit too far.
+        "fields": [
+            {
+                "variable": "name", "label": "n",
+                "x_mm": 20.0, "y_mm": 20.0, "w_mm": 250.0,
+                "h_mm": font_pt * 0.25,
+                "font_pt": font_pt, "color": "#102a57",
+                "align": "left", "bold": False,
+            }
+        ],
+    }
+
+    assert _renders_text(config), f"{font_pt}pt text vanished from its box"
+
+
+def test_a_box_at_the_page_edge_shrinks_the_font_rather_than_the_text():
+    """When the page cannot give the box the height its font needs."""
+    field = normalise_traced_field(
+        {"variable": "name", "font_pt": 30, "h_mm": 13, "w_mm": 200,
+         "x_mm": 40, "y_mm": 205},
+        297.0, 210.0,
+    )
+
+    assert field["h_mm"] <= 5.0
+    assert field["font_pt"] < 30
+    assert field["font_pt"] * 0.6 <= field["h_mm"] + 0.01
 
 
 # ── the joins ───────────────────────────────────────────────────────────────

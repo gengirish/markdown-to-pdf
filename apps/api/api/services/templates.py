@@ -225,6 +225,19 @@ MAX_PAGE_MM = 450.0
 MIN_FONT_PT = 4.0
 MAX_FONT_PT = 96.0
 
+#: Millimetres of box height needed per point of font size.
+#:
+#: MEASURED, not guessed. Below roughly 0.5mm/pt xhtml2pdf does not wrap the
+#: text, does not push it to a second page and does not raise — it drops the
+#: field entirely, leaving blank paper where the recipient's name should be.
+#: The threshold was swept from 8pt to 60pt and sat between 0.475 and 0.562;
+#: 0.6 keeps margin across that whole range.
+#:
+#: This is the worst failure this feature can produce, because it is invisible
+#: at every stage before the certificate is in someone's hands: the canvas
+#: shows the box, the save succeeds, the PDF renders, and the name is missing.
+MIN_HEIGHT_MM_PER_PT = 0.6
+
 _COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 _CUSTOM_VAR = re.compile(r"^custom:([a-z0-9][a-z0-9_-]{0,39})$")
 
@@ -319,12 +332,23 @@ def normalise_traced_field(
     if w <= 0:
         w = min(page_w, 80.0)
     if h <= 0:
-        h = max(4.0, font_pt * 0.5)
+        h = font_pt * MIN_HEIGHT_MM_PER_PT
 
     x = _clamp(_finite(field.get("x_mm"), 0.0), 0.0, max(0.0, page_w - 1))
     y = _clamp(_finite(field.get("y_mm"), 0.0), 0.0, max(0.0, page_h - 1))
     w = _clamp(w, 1.0, page_w - x)
-    h = _clamp(h, 1.0, page_h - y)
+
+    # Grown to whatever this font needs, THEN clamped to the page. A person
+    # dragging a box smaller than its text gets a box that quietly grows back,
+    # which is visible; the alternative is a field that renders as nothing.
+    h = _clamp(max(h, font_pt * MIN_HEIGHT_MM_PER_PT), 1.0, page_h - y)
+
+    # If the page cannot spare that height — a box near the bottom edge — the
+    # font gives way instead. Between "smaller than asked for" and "absent",
+    # smaller is the only one the recipient can still read.
+    affordable_pt = h / MIN_HEIGHT_MM_PER_PT
+    if font_pt > affordable_pt:
+        font_pt = max(MIN_FONT_PT, affordable_pt)
 
     color = str(field.get("color", "")).strip()
     if not _COLOR.match(color):
