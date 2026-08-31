@@ -398,6 +398,16 @@ Things that follow, all load-bearing:
   the customer's typography, and the `@font-face` block that would load EB
   Garamond is the Windows failure below. Declaring `font-family: GaramondPDF`
   without it silently renders Helvetica anyway, which is worse than choosing it.
+- **A box too small for its font silently swallows the text.** Below roughly
+  0.5mm of height per point, xhtml2pdf does not wrap it, does not paginate it
+  and does not raise — the field renders as nothing. `MIN_HEIGHT_MM_PER_PT`
+  (0.6, measured across 8–60pt) grows an undersized box, and where the page has
+  no room to grow it the font shrinks instead. This is the worst failure the
+  feature can produce, because every stage before the recipient sees it looks
+  correct: the canvas shows the box, the save succeeds, the PDF renders, one
+  page, no error. **Page count cannot detect it** — a dropped field still
+  yields one page — which is why the test renders with and without the value
+  and compares the two documents.
 - `config["kind"]` is `guided` (default when absent) or `traced`, and
   `normalise_config` / `build_html_from_config` both dispatch on it. A traced
   spec put through the guided branch comes out as an empty guided form, silently
