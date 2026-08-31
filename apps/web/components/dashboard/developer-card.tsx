@@ -36,9 +36,9 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-zinc-800">
-      <div className="flex items-center justify-between gap-4 border-b border-zinc-800 bg-zinc-800/50 px-4 py-3">
-        <h3 className="font-medium text-zinc-200">{title}</h3>
+    <div className="overflow-hidden rounded-xl border border-hair">
+      <div className="flex items-center justify-between gap-4 border-b border-hair bg-well px-4 py-3">
+        <h3 className="font-medium text-ink">{title}</h3>
         {action}
       </div>
       <div className="space-y-4 p-4">{children}</div>
@@ -112,23 +112,23 @@ function ApiKeysPanel({ slug }: { slug: string }) {
         <button
           onClick={generate}
           disabled={busy}
-          className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-indigo-500 disabled:bg-zinc-700 disabled:text-zinc-400"
+          className="rounded-md bg-accent px-3 py-1.5 text-sm text-ground transition-colors hover:bg-accent-hover disabled:opacity-50"
         >
           Generate new key
         </button>
       }
     >
       {created ? (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-4">
-          <p className="text-sm font-medium text-amber-300">
+        <div className="rounded-lg border border-warn-line bg-warn-wash p-4">
+          <p className="text-sm font-medium text-warn-ink">
             Copy this key now — it is never shown again.
           </p>
-          <code className="mt-2 block break-all font-mono text-xs text-amber-100">
+          <code className="mt-2 block break-all font-mono text-xs text-warn-ink">
             {created.raw_key}
           </code>
           <button
             onClick={() => setCreated(null)}
-            className="mt-3 text-xs text-amber-300/80 underline hover:text-amber-200"
+            className="mt-3 text-xs text-warn-ink underline hover:text-warn-ink"
           >
             Dismiss
           </button>
@@ -145,15 +145,15 @@ function ApiKeysPanel({ slug }: { slug: string }) {
         keys.map((key) => (
           <div key={key.id} className="flex items-center justify-between gap-4 text-sm">
             <div>
-              <p className="font-medium text-zinc-300">{key.label}</p>
-              <p className="mt-1 text-zinc-500">
+              <p className="font-medium text-ink">{key.label}</p>
+              <p className="mt-1 text-faint">
                 Created {formatDate(key.created_at)} · Last used {formatDate(key.last_used_at)}
               </p>
             </div>
             <button
               onClick={() => revoke(key.id)}
               disabled={busy}
-              className="text-red-400 transition-colors hover:text-red-300 disabled:text-zinc-600"
+              className="text-danger transition-colors hover:text-danger disabled:opacity-50"
             >
               Revoke
             </button>
@@ -235,7 +235,7 @@ function WebhooksPanel({ slug }: { slug: string }) {
       action={
         <button
           onClick={() => setAdding((current) => !current)}
-          className="rounded-md bg-zinc-700 px-3 py-1.5 text-sm text-white transition-colors hover:bg-zinc-600"
+          className="rounded-md bg-well px-3 py-1.5 text-sm text-ink transition-colors hover:bg-well"
         >
           {adding ? "Cancel" : "Add endpoint"}
         </button>
@@ -247,12 +247,12 @@ function WebhooksPanel({ slug }: { slug: string }) {
             value={url}
             onChange={(event) => setUrl(event.target.value)}
             placeholder="https://example.com/hooks/certforge"
-            className="flex-1 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-indigo-500/60 focus:outline-none"
+            className="flex-1 rounded-lg border border-hair bg-surface px-3 py-2 text-sm text-ink placeholder:text-faint focus:border-accent focus:outline-none"
           />
           <button
             onClick={add}
             disabled={busy || !url.trim()}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-500"
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-ground transition-colors hover:bg-accent-hover disabled:opacity-50"
           >
             Save
           </button>
@@ -260,16 +260,16 @@ function WebhooksPanel({ slug }: { slug: string }) {
       ) : null}
 
       {created ? (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-4">
-          <p className="text-sm font-medium text-amber-300">
+        <div className="rounded-lg border border-warn-line bg-warn-wash p-4">
+          <p className="text-sm font-medium text-warn-ink">
             Signing secret — shown once. Store it before leaving this page.
           </p>
-          <code className="mt-2 block break-all font-mono text-xs text-amber-100">
+          <code className="mt-2 block break-all font-mono text-xs text-warn-ink">
             {created.secret}
           </code>
           <button
             onClick={() => setCreated(null)}
-            className="mt-3 text-xs text-amber-300/80 underline hover:text-amber-200"
+            className="mt-3 text-xs text-warn-ink underline hover:text-warn-ink"
           >
             Dismiss
           </button>
@@ -286,15 +286,15 @@ function WebhooksPanel({ slug }: { slug: string }) {
         webhooks.map((webhook) => (
           <div key={webhook.id} className="flex items-center justify-between gap-4 text-sm">
             <div className="min-w-0">
-              <p className="truncate font-medium text-zinc-300">{webhook.url}</p>
-              <p className="mt-1 text-zinc-500">
+              <p className="truncate font-medium text-ink">{webhook.url}</p>
+              <p className="mt-1 text-faint">
                 Events: {webhook.events.length > 0 ? webhook.events.join(", ") : "none"}
               </p>
             </div>
             <button
               onClick={() => remove(webhook.id)}
               disabled={busy}
-              className="shrink-0 text-red-400 transition-colors hover:text-red-300 disabled:text-zinc-600"
+              className="shrink-0 text-danger transition-colors hover:text-danger disabled:opacity-50"
             >
               Delete
             </button>

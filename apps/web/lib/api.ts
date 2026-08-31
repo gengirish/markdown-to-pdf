@@ -311,12 +311,34 @@ export interface ClaimResult {
 }
 
 export interface VerifiedCredential {
+  /** "database" for a CertForge credential, "legacy" for one decoded from a
+   *  signed URL token. The two carry different fields — see below. */
   source: string;
   id: string;
   name: string;
   title: string;
   issued_at: string;
   metadata: Record<string, unknown> | null;
+  /** What the API checked before serving this, in its own words. `unverified`
+   *  means the credential predates canonical signing and nothing was checked —
+   *  it is NOT a pass, and must never be rendered as one. */
+  signature?: {
+    status: "valid" | "unverified" | "invalid";
+    scheme: string;
+    version: number | null;
+    covers: string[];
+  };
+  /** Present for database-backed credentials only; a legacy token carries no
+   *  organization. */
+  issuer?: {
+    name: string | null;
+    slug: string | null;
+    logo_url: string | null;
+    primary_color: string | null;
+    accent_color: string | null;
+    footer_text: string | null;
+  };
+  pdf_url?: string;
 }
 
 export interface HealthStatus {
@@ -855,6 +877,19 @@ export class CertForgeClient {
   /** Public, human-readable verification page. Served by the API host, not this app. */
   verificationPageUrl(credentialId: string): string {
     return `${this.baseUrl}/verify/${encodeURIComponent(credentialId)}`;
+  }
+
+  /** The Open Badges 3.0 document for a credential — the machine-readable half
+   *  of the same claim the verification page makes in prose. Public and
+   *  unauthenticated, like the page: the ID is the capability. */
+  badgeUrl(credentialId: string): string {
+    return `${this.baseUrl}/credentials/${encodeURIComponent(credentialId)}/badge.json`;
+  }
+
+  /** The certificate itself, rendered on demand. Nothing is stored, so this URL
+   *  is always current with the credential and its template. */
+  certificatePdfUrl(credentialId: string): string {
+    return `${this.baseUrl}/credentials/${encodeURIComponent(credentialId)}/pdf`;
   }
 }
 

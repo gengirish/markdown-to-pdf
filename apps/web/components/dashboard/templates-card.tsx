@@ -14,7 +14,7 @@ import { TemplateCanvas } from "./template-canvas";
 import { Card, EmptyNote, ErrorNote, Skeleton } from "./ui";
 
 const INPUT =
-  "w-full rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-100 focus:border-indigo-500/60 focus:outline-none";
+  "w-full rounded-lg border border-hair bg-surface px-4 py-2.5 text-sm text-ink focus:border-accent focus:outline-none";
 
 const STARTER_HTML = `<html>
   <body style="font-family:Helvetica,Arial,sans-serif;">
@@ -273,7 +273,7 @@ export function TemplatesCard({ slug }: { slug: string }) {
               onClick={() =>
                 setEditor({ mode: "guided", id: null, name: "", config: DEFAULT_CONFIG })
               }
-              className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:border-indigo-500/60 hover:text-white"
+              className="rounded-lg border border-hair-strong px-3 py-1.5 text-sm text-ink transition-colors hover:border-accent hover:text-ink"
             >
               New
             </button>
@@ -296,7 +296,7 @@ export function TemplatesCard({ slug }: { slug: string }) {
               onClick={() =>
                 setEditor({ mode: "html", id: null, name: "", html: STARTER_HTML })
               }
-              className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:border-indigo-500/60 hover:text-white"
+              className="rounded-lg border border-hair-strong px-3 py-1.5 text-sm text-ink transition-colors hover:border-accent hover:text-ink"
             >
               Write HTML
             </button>
@@ -330,8 +330,8 @@ export function TemplatesCard({ slug }: { slug: string }) {
           )}
 
           {globals.length > 0 ? (
-            <div className="mt-6 border-t border-zinc-800 pt-5">
-              <p className="mb-3 text-sm text-zinc-400">
+            <div className="mt-6 border-t border-hair pt-5">
+              <p className="mb-3 text-sm text-muted">
                 Start from a platform template — it is copied, so your edits stay yours.
               </p>
               <div className="flex flex-wrap gap-2">
@@ -340,7 +340,7 @@ export function TemplatesCard({ slug }: { slug: string }) {
                     key={g.id}
                     disabled={busy}
                     onClick={() => act(() => api.importTemplate(slug, g.id))}
-                    className="rounded-lg border border-zinc-800 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:border-indigo-500/60 hover:text-white disabled:opacity-50"
+                    className="rounded-lg border border-hair px-3 py-1.5 text-sm text-ink transition-colors hover:border-accent hover:text-ink disabled:opacity-50"
                   >
                     Import “{g.name}”
                   </button>
@@ -390,17 +390,17 @@ function TemplateRow({
   onDelete: () => void;
 }) {
   return (
-    <li className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-800 px-4 py-3">
+    <li className="flex flex-wrap items-center gap-3 rounded-lg border border-hair px-4 py-3">
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-zinc-200">
+        <p className="truncate text-sm font-medium text-ink">
           {template.name}
           {template.is_default ? (
-            <span className="ml-2 rounded bg-indigo-500/15 px-2 py-0.5 text-xs text-indigo-300">
+            <span className="ml-2 rounded bg-accent-wash px-2 py-0.5 text-xs text-accent">
               default
             </span>
           ) : null}
         </p>
-        <p className="mt-0.5 text-xs text-zinc-500">
+        <p className="mt-0.5 text-xs text-faint">
           {template.is_guided ? "Guided" : "Custom HTML"}
           {/* Named because a row without this key renders the field blank, and
               a blank line on a certificate is not obviously a data problem. */}
@@ -410,15 +410,15 @@ function TemplateRow({
         </p>
       </div>
       <div className="flex shrink-0 gap-3 text-xs">
-        <button onClick={onEdit} disabled={busy} className="text-indigo-400 hover:text-indigo-300 disabled:opacity-50">
+        <button onClick={onEdit} disabled={busy} className="text-accent hover:text-accent disabled:opacity-50">
           Edit
         </button>
         {!template.is_default ? (
-          <button onClick={onDefault} disabled={busy} className="text-zinc-400 hover:text-zinc-200 disabled:opacity-50">
+          <button onClick={onDefault} disabled={busy} className="text-muted hover:text-ink disabled:opacity-50">
             Make default
           </button>
         ) : null}
-        <button onClick={onDelete} disabled={busy} className="text-zinc-500 hover:text-red-400 disabled:opacity-50">
+        <button onClick={onDelete} disabled={busy} className="text-faint hover:text-danger disabled:opacity-50">
           Delete
         </button>
       </div>
@@ -450,7 +450,7 @@ function TemplateEditor({
   return (
     <div className="space-y-4">
       <label className="block">
-        <span className="mb-2 block text-sm font-medium text-zinc-300">Template name</span>
+        <span className="mb-2 block text-sm font-medium text-ink">Template name</span>
         <input
           type="text"
           value={editor.name}
@@ -471,17 +471,17 @@ function TemplateEditor({
               type="button"
               onClick={onReadDesign}
               disabled={busy}
-              className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-200 transition-colors hover:border-indigo-500/60 disabled:opacity-50"
+              className="rounded-lg border border-hair-strong px-3 py-1.5 text-sm text-ink transition-colors hover:border-accent disabled:opacity-50"
             >
               {busy ? "Reading…" : "Place the fields for me"}
             </button>
-            <span className="text-xs text-zinc-500">
+            <span className="text-xs text-faint">
               Reads your design and guesses where each field goes. You can drag them
               afterwards — and you always could.
             </span>
           </div>
           {reading ? (
-            <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+            <p className="rounded-lg border border-warn-line bg-warn-wash px-3 py-2 text-xs text-warn-ink">
               {reading}
             </p>
           ) : null}
@@ -495,7 +495,7 @@ function TemplateEditor({
         </>
       ) : (
         <label className="block">
-          <span className="mb-2 block text-sm font-medium text-zinc-300">
+          <span className="mb-2 block text-sm font-medium text-ink">
             HTML source
           </span>
           <textarea
@@ -505,7 +505,7 @@ function TemplateEditor({
             onChange={(e) => onChange({ ...editor, html: e.target.value })}
             className={`${INPUT} resize-y font-mono text-xs leading-relaxed`}
           />
-          <span className="mt-2 block text-xs text-zinc-500">
+          <span className="mt-2 block text-xs text-faint">
             Placeholders: {"{{name}}"}, {"{{title}}"}, {"{{date}}"}, {"{{qr}}"},{" "}
             {"{{credential_id}}"}, {"{{issuer_name}}"}, {"{{logo_url}}"},{" "}
             {"{{primary_color}}"}, {"{{accent_color}}"}, {"{{footer_text}}"}. Any other
@@ -529,7 +529,7 @@ function TemplateEditor({
               html: STARTER_HTML,
             })
           }
-          className="text-xs text-zinc-400 underline underline-offset-2 hover:text-zinc-200"
+          className="text-xs text-muted underline underline-offset-2 hover:text-ink"
         >
           Switch to hand-written HTML — this is one-way, the editor will no longer apply
           to this template
@@ -540,21 +540,21 @@ function TemplateEditor({
         <button
           onClick={onCancel}
           disabled={busy}
-          className="rounded-lg px-4 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 disabled:opacity-50"
+          className="rounded-lg px-4 py-2.5 text-sm text-muted hover:text-ink disabled:opacity-50"
         >
           Cancel
         </button>
         <button
           onClick={onPreview}
           disabled={busy}
-          className="rounded-lg border border-zinc-700 px-4 py-2.5 text-sm text-zinc-200 transition-colors hover:border-indigo-500/60 disabled:opacity-50"
+          className="rounded-lg border border-hair-strong px-4 py-2.5 text-sm text-ink transition-colors hover:border-accent disabled:opacity-50"
         >
           Preview PDF
         </button>
         <button
           onClick={onSave}
           disabled={busy || !editor.name}
-          className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-500"
+          className="rounded-lg bg-accent px-6 py-2.5 text-sm font-medium text-ground transition-colors hover:bg-accent-hover disabled:opacity-50"
         >
           {busy ? "Working…" : "Save template"}
         </button>
@@ -577,7 +577,7 @@ function GuidedFields({
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="block">
-          <span className="mb-2 block text-sm font-medium text-zinc-300">Base layout</span>
+          <span className="mb-2 block text-sm font-medium text-ink">Base layout</span>
           <select
             value={config.layout}
             onChange={(e) => set("layout", e.target.value as TemplateConfig["layout"])}
@@ -626,7 +626,7 @@ function GuidedFields({
         />
       </div>
 
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-faint">
         The recipient name, credential title, date and colours come from the credential and
         your branding — they are not set here.
       </p>
@@ -645,7 +645,7 @@ function TextField({
 }) {
   return (
     <label className="block">
-      <span className="mb-2 block text-sm font-medium text-zinc-300">{label}</span>
+      <span className="mb-2 block text-sm font-medium text-ink">{label}</span>
       <input type="text" value={value} onChange={(e) => onChange(e.target.value)} className={INPUT} />
     </label>
   );
@@ -661,12 +661,12 @@ function Toggle({
   onChange: (next: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-2 text-sm text-zinc-300">
+    <label className="flex items-center gap-2 text-sm text-ink">
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-indigo-600 focus:ring-indigo-500/60"
+        className="h-4 w-4 rounded border-hair-strong bg-surface text-accent focus:ring-accent"
       />
       {label}
     </label>
@@ -722,7 +722,7 @@ function UploadDesignButton({
         type="button"
         disabled={disabled || uploading}
         onClick={() => inputRef.current?.click()}
-        className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:border-indigo-500/60 hover:text-white disabled:opacity-50"
+        className="rounded-lg border border-hair-strong px-3 py-1.5 text-sm text-ink transition-colors hover:border-accent hover:text-ink disabled:opacity-50"
       >
         {uploading ? "Uploading…" : "Upload a design"}
       </button>

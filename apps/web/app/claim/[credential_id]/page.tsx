@@ -4,6 +4,8 @@ import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { SignInButton, useAuth } from "@clerk/nextjs";
 
+import { SiteHeader } from "@/components/site-header";
+import { Eyebrow, ErrorNote, Mono, buttonClass } from "@/components/dashboard/ui";
 import { publicApi, toApiError, type VerifiedCredential } from "@/lib/api";
 import { useCertForge } from "@/lib/use-api";
 
@@ -24,6 +26,7 @@ export default function ClaimCredentialPage({
   const { isLoaded, isSignedIn } = useAuth();
   const api = useCertForge();
   const [state, setState] = useState<ClaimState>({ phase: "loading" });
+  const [copied, setCopied] = useState(false);
 
   // Show what is actually being claimed before asking for a signature. The
   // public verify endpoint is the only read of a single credential that exists.
@@ -74,116 +77,154 @@ export default function ClaimCredentialPage({
     }
   }, [api, credentialId]);
 
+  const step = state.phase === "claimed" ? 2 : 1;
+
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-zinc-950 px-6 text-white selection:bg-indigo-500/30">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-900/20 via-zinc-950 to-zinc-950" />
+    <div className="min-h-screen bg-ground">
+      <SiteHeader />
 
-      <div className="z-10 w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900/50 p-8 text-center shadow-2xl backdrop-blur-xl">
-        {state.phase === "loading" || !isLoaded ? (
-          <div className="space-y-6">
-            <div className="mx-auto h-16 w-16 animate-spin rounded-full border-t-2 border-indigo-500" />
-            <p className="text-zinc-400">Looking up this credential…</p>
+      <main className="mx-auto max-w-[620px] px-6 pb-24 pt-12 sm:px-8">
+        {state.phase !== "unavailable" ? (
+          <div className="mb-5">
+            <Eyebrow>Claim · step {step} of 2</Eyebrow>
           </div>
-        ) : state.phase === "unavailable" ? (
-          <div className="space-y-5">
-            <IconBubble tone="red">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </IconBubble>
-            <h1 className="text-2xl text-zinc-100">Credential unavailable</h1>
-            <p className="text-zinc-400">{state.message}</p>
-            <p className="font-mono text-xs text-zinc-600">{credentialId}</p>
-          </div>
-        ) : state.phase === "claimed" ? (
-          <div className="space-y-6">
-            <IconBubble tone="emerald">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </IconBubble>
-            <h1 className="text-3xl font-light text-zinc-100">Added to your passport</h1>
-            <p className="text-zinc-400">
-              “{state.credential.title}” is now linked to your CertForge passport.
-            </p>
-            <Link
-              href={`/passport/${state.username}`}
-              className="block w-full rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-3 font-medium text-white transition-colors hover:bg-zinc-700"
-            >
-              View my passport
-            </Link>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <IconBubble tone="indigo">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </IconBubble>
+        ) : null}
 
-            <div className="space-y-1">
-              <h1 className="text-2xl font-light tracking-tight text-zinc-100">
-                {state.credential.title}
-              </h1>
-              <p className="text-zinc-400">Issued to {state.credential.name}</p>
-              <p className="font-mono text-xs text-zinc-600">{state.credential.id}</p>
-            </div>
+        <div className="overflow-hidden rounded-xl border border-hair bg-surface shadow-[var(--cf-shadow-card)]">
+          <div
+            className={`h-1 ${
+              state.phase === "unavailable"
+                ? "bg-danger"
+                : state.phase === "claimed"
+                  ? "bg-accent"
+                  : "bg-hair"
+            }`}
+          />
 
-            {state.phase === "failed" ? (
-              <p className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-                {state.message}
-              </p>
-            ) : null}
-
-            {isSignedIn ? (
-              <button
-                onClick={claim}
-                disabled={state.phase === "claiming"}
-                className="w-full rounded-lg bg-indigo-600 px-4 py-3 font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
-              >
-                {state.phase === "claiming" ? "Claiming…" : "Add to my passport"}
-              </button>
-            ) : (
-              <>
-                <p className="text-sm text-zinc-400">
-                  Sign in to add this credential to your permanent CertForge passport.
+          <div className="p-7 sm:p-8">
+            {state.phase === "loading" || !isLoaded ? (
+              <div className="space-y-4" aria-busy>
+                <div className="h-7 w-2/3 animate-pulse rounded bg-well" />
+                <div className="h-24 animate-pulse rounded-lg bg-well" />
+                <p className="text-sm text-muted">Looking up this credential…</p>
+              </div>
+            ) : state.phase === "unavailable" ? (
+              <div>
+                <h1 className="mb-2.5 font-display text-[26px] font-semibold tracking-[-0.025em] text-ink">
+                  Credential unavailable
+                </h1>
+                <p className="mb-4 text-sm leading-relaxed text-muted">{state.message}</p>
+                <Mono className="text-xs text-faint">{credentialId}</Mono>
+                <div className="mt-6">
+                  <Link href="/" className={`${buttonClass("secondary")} no-underline`}>
+                    Back to CertForge
+                  </Link>
+                </div>
+              </div>
+            ) : state.phase === "claimed" ? (
+              <div>
+                <span
+                  aria-hidden
+                  className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-accent-line bg-accent-wash text-xl text-accent"
+                >
+                  ✓
+                </span>
+                <h1 className="mb-2.5 font-display text-[30px] font-semibold tracking-[-0.03em] text-ink">
+                  It&rsquo;s yours.
+                </h1>
+                <p className="mb-6 text-sm leading-relaxed text-muted">
+                  “{state.credential.title}” now lives at a passport URL only you can change.
+                  Nothing else to set up.
                 </p>
-                <SignInButton mode="modal">
-                  <button className="w-full rounded-lg bg-indigo-600 px-4 py-3 font-medium text-white transition-colors hover:bg-indigo-500">
-                    Sign in to claim
+
+                <div className="mb-6 rounded-lg border border-hair-soft bg-sunken p-4">
+                  <div className="mb-2">
+                    <Eyebrow>Your passport</Eyebrow>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <Mono className="text-sm text-ink">/passport/{state.username}</Mono>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard
+                          ?.writeText(`${window.location.origin}/passport/${state.username}`)
+                          .then(() => {
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 2000);
+                          });
+                      }}
+                      className="text-xs text-accent hover:underline"
+                    >
+                      {copied ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                </div>
+
+                <Link
+                  href={`/passport/${state.username}`}
+                  className={`${buttonClass("primary")} no-underline`}
+                >
+                  Open my passport
+                </Link>
+              </div>
+            ) : (
+              <div>
+                <h1 className="mb-2.5 font-display text-[26px] font-semibold leading-tight tracking-[-0.025em] text-ink">
+                  {state.credential.issuer?.name
+                    ? `${state.credential.issuer.name} issued you a credential.`
+                    : "You have been issued a credential."}
+                </h1>
+                <p className="mb-6 text-sm leading-relaxed text-muted">
+                  It already verifies publicly. Claiming it just puts it in a passport you control —
+                  and it never changes whether the credential is valid.
+                </p>
+
+                <div className="mb-6 rounded-lg border border-hair-soft bg-sunken p-5">
+                  <div className="text-[15px] font-medium leading-snug text-ink">
+                    {state.credential.title}
+                  </div>
+                  <div className="mt-3 h-px bg-hair-soft" />
+                  <div className="mt-3 text-sm text-muted">
+                    Awarded to <strong className="font-medium text-ink">{state.credential.name}</strong>
+                  </div>
+                  <Mono className="mt-1.5 block text-xs text-faint">{state.credential.id}</Mono>
+                </div>
+
+                {state.phase === "failed" ? (
+                  <div className="mb-5">
+                    <ErrorNote>{state.message}</ErrorNote>
+                  </div>
+                ) : null}
+
+                {isSignedIn ? (
+                  <button
+                    onClick={claim}
+                    disabled={state.phase === "claiming"}
+                    className={buttonClass("primary")}
+                  >
+                    {state.phase === "claiming" ? "Claiming…" : "Claim into my passport"}
                   </button>
-                </SignInButton>
-              </>
+                ) : (
+                  <>
+                    <SignInButton mode="modal">
+                      <button className={buttonClass("primary")}>Sign in to claim</button>
+                    </SignInButton>
+                    <p className="mt-3.5 text-xs leading-relaxed text-faint">
+                      Signing in is how the passport knows it is yours.{" "}
+                      <a
+                        href={publicApi.verificationPageUrl(credentialId)}
+                        className="text-accent no-underline hover:underline"
+                      >
+                        Not you? See who this belongs to
+                      </a>
+                    </p>
+                  </>
+                )}
+              </div>
             )}
           </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function IconBubble({
-  tone,
-  children,
-}: {
-  tone: "indigo" | "emerald" | "red";
-  children: React.ReactNode;
-}) {
-  const tones = {
-    indigo: "bg-indigo-500/10 text-indigo-400",
-    emerald: "bg-emerald-500/10 text-emerald-400",
-    red: "bg-red-500/10 text-red-400",
-  } as const;
-
-  return (
-    <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${tones[tone]}`}>
-      <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        {children}
-      </svg>
+        </div>
+      </main>
     </div>
   );
 }

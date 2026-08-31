@@ -80,44 +80,44 @@ export function SingleIssueCard({ slug, onIssued }: { slug: string; onIssued: ()
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="block">
-          <span className="mb-2 block text-sm font-medium text-zinc-300">Recipient name</span>
+          <span className="mb-2 block text-sm font-medium text-ink">Recipient name</span>
           <input
             type="text"
             value={recipientName}
             onChange={(event) => setRecipientName(event.target.value)}
-            className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-100 focus:border-indigo-500/60 focus:outline-none"
+            className="w-full rounded-lg border border-hair bg-surface px-4 py-2.5 text-sm text-ink focus:border-accent focus:outline-none"
           />
         </label>
 
         <label className="block">
-          <span className="mb-2 block text-sm font-medium text-zinc-300">Title</span>
+          <span className="mb-2 block text-sm font-medium text-ink">Title</span>
           <input
             type="text"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-100 focus:border-indigo-500/60 focus:outline-none"
+            className="w-full rounded-lg border border-hair bg-surface px-4 py-2.5 text-sm text-ink focus:border-accent focus:outline-none"
           />
         </label>
 
         <label className="block">
-          <span className="mb-2 block text-sm font-medium text-zinc-300">
+          <span className="mb-2 block text-sm font-medium text-ink">
             Recipient email (optional)
           </span>
           <input
             type="email"
             value={recipientEmail}
             onChange={(event) => setRecipientEmail(event.target.value)}
-            className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-100 focus:border-indigo-500/60 focus:outline-none"
+            className="w-full rounded-lg border border-hair bg-surface px-4 py-2.5 text-sm text-ink focus:border-accent focus:outline-none"
           />
         </label>
 
         {templates && templates.length > 0 ? (
           <label className="block">
-            <span className="mb-2 block text-sm font-medium text-zinc-300">Template</span>
+            <span className="mb-2 block text-sm font-medium text-ink">Template</span>
             <select
               value={templateId}
               onChange={(event) => setTemplateId(event.target.value)}
-              className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-100 focus:border-indigo-500/60 focus:outline-none"
+              className="w-full rounded-lg border border-hair bg-surface px-4 py-2.5 text-sm text-ink focus:border-accent focus:outline-none"
             >
               <option value="">Auto (org default)</option>
               {templates.map((template) => (
@@ -131,12 +131,12 @@ export function SingleIssueCard({ slug, onIssued }: { slug: string; onIssued: ()
         ) : null}
       </div>
 
-      <label className="mt-4 flex items-center gap-2 text-sm text-zinc-300">
+      <label className="mt-4 flex items-center gap-2 text-sm text-ink">
         <input
           type="checkbox"
           checked={sendEmail}
           onChange={(event) => setSendEmail(event.target.checked)}
-          className="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-indigo-600 focus:ring-indigo-500/60"
+          className="h-4 w-4 rounded border-hair-strong bg-surface text-accent focus:ring-accent"
         />
         Send email to recipient
       </label>
@@ -145,11 +145,11 @@ export function SingleIssueCard({ slug, onIssued }: { slug: string; onIssued: ()
         <button
           onClick={issue}
           disabled={disabled}
-          className="flex items-center gap-2 rounded-lg bg-indigo-600 px-6 py-3 font-medium text-white transition-colors hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-500"
+          className="flex items-center gap-2 rounded-lg bg-accent px-6 py-3 font-medium text-ground transition-colors hover:bg-accent-hover disabled:opacity-50"
         >
           {submitting ? (
             <>
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-400 border-t-white" />
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-hair-strong border-t-white" />
               Issuing…
             </>
           ) : (
@@ -171,7 +171,7 @@ export function SingleIssueCard({ slug, onIssued }: { slug: string; onIssued: ()
 
 function IssueResult({ result }: { result: IssuedCredential }) {
   return (
-    <div className="mt-6 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-emerald-300">
+    <div className="mt-6 rounded-xl border border-accent-line bg-accent-wash p-4 text-accent">
       <h4 className="font-medium">Issued</h4>
       <p className="mt-1 text-sm opacity-90">
         {result.recipient_name} — {result.title}
@@ -182,7 +182,7 @@ function IssueResult({ result }: { result: IssuedCredential }) {
           href={result.verify_url}
           target="_blank"
           rel="noreferrer"
-          className="underline underline-offset-2 hover:text-emerald-200"
+          className="underline underline-offset-2 hover:text-accent"
         >
           Verify page
         </a>
@@ -190,7 +190,7 @@ function IssueResult({ result }: { result: IssuedCredential }) {
           href={result.pdf_url}
           target="_blank"
           rel="noreferrer"
-          className="underline underline-offset-2 hover:text-emerald-200"
+          className="underline underline-offset-2 hover:text-accent"
         >
           Download PDF
         </a>
@@ -198,7 +198,7 @@ function IssueResult({ result }: { result: IssuedCredential }) {
           href={result.badge_url}
           target="_blank"
           rel="noreferrer"
-          className="underline underline-offset-2 hover:text-emerald-200"
+          className="underline underline-offset-2 hover:text-accent"
         >
           Badge JSON
         </a>
@@ -219,7 +219,7 @@ function DeliveryNote({ delivery }: { delivery: DeliveryState | undefined }) {
 
   if (delivery.status === "failed") {
     return (
-      <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+      <p className="mt-2 rounded-lg border border-warn-line bg-warn-wash px-3 py-2 text-sm text-warn-ink">
         The credential was issued, but the email did not send
         {delivery.error ? `: ${delivery.error}` : "."}
         {delivery.may_retry ? " It will be retried automatically." : ""}

@@ -96,38 +96,38 @@ export function BrandingCard({
             />
 
             <label className="block sm:col-span-2">
-              <span className="mb-2 block text-sm font-medium text-zinc-300">Logo URL</span>
+              <span className="mb-2 block text-sm font-medium text-ink">Logo URL</span>
               <input
                 type="url"
                 value={logoUrl}
                 placeholder="https://…"
                 onChange={(event) => setLogoUrl(event.target.value)}
-                className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-100 focus:border-indigo-500/60 focus:outline-none"
+                className="w-full rounded-lg border border-hair bg-surface px-4 py-2.5 text-sm text-ink focus:border-accent focus:outline-none"
               />
             </label>
 
             <label className="block sm:col-span-2">
-              <span className="mb-2 block text-sm font-medium text-zinc-300">Footer line</span>
+              <span className="mb-2 block text-sm font-medium text-ink">Footer line</span>
               <input
                 type="text"
                 value={footerText}
                 placeholder="Printed at the foot of every certificate"
                 onChange={(event) => setFooterText(event.target.value)}
-                className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-100 focus:border-indigo-500/60 focus:outline-none"
+                className="w-full rounded-lg border border-hair bg-surface px-4 py-2.5 text-sm text-ink focus:border-accent focus:outline-none"
               />
             </label>
           </div>
 
-          <p className="mt-4 text-xs text-zinc-500">
+          <p className="mt-4 text-xs text-faint">
             Leave a field empty to fall back to the default branding.
           </p>
 
           <div className="mt-6 flex items-center justify-end gap-4">
-            {saved ? <span className="text-sm text-emerald-400">Saved</span> : null}
+            {saved ? <span className="text-sm text-accent">Saved</span> : null}
             <button
               onClick={save}
               disabled={blocked}
-              className="rounded-lg bg-indigo-600 px-6 py-3 font-medium text-white transition-colors hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-500"
+              className="rounded-lg bg-accent px-6 py-3 font-medium text-ground transition-colors hover:bg-accent-hover disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save branding"}
             </button>
@@ -157,7 +157,7 @@ function ColorField({
 }) {
   return (
     <label className="block">
-      <span className="mb-2 block text-sm font-medium text-zinc-300">{label}</span>
+      <span className="mb-2 block text-sm font-medium text-ink">{label}</span>
       <div className="flex items-center gap-3">
         {/* A native swatch alongside the text field, so a colour can be picked
             or typed. It needs a valid value at all times, so it falls back to a
@@ -167,7 +167,7 @@ function ColorField({
           aria-label={`${label} swatch`}
           value={HEX.test(value) ? value : "#3f3f46"}
           onChange={(event) => onChange(event.target.value)}
-          className="h-10 w-12 shrink-0 cursor-pointer rounded-lg border border-zinc-800 bg-zinc-900 p-1"
+          className="h-10 w-12 shrink-0 cursor-pointer rounded-lg border border-hair bg-surface p-1"
         />
         <input
           type="text"
@@ -176,15 +176,15 @@ function ColorField({
           spellCheck={false}
           onChange={(event) => onChange(event.target.value.trim())}
           aria-invalid={invalid}
-          className={`w-full rounded-lg border bg-zinc-900 px-4 py-2.5 font-mono text-sm text-zinc-100 focus:outline-none ${
+          className={`w-full rounded-lg border bg-surface px-4 py-2.5 font-mono text-sm text-ink focus:outline-none ${
             invalid
-              ? "border-amber-500/60 focus:border-amber-500"
-              : "border-zinc-800 focus:border-indigo-500/60"
+              ? "border-warn focus:border-warn"
+              : "border-hair focus:border-accent"
           }`}
         />
       </div>
       {invalid ? (
-        <span className="mt-1.5 block text-xs text-amber-400">
+        <span className="mt-1.5 block text-xs text-warn-ink">
           Use a six-digit hex colour, like #4f46e5.
         </span>
       ) : null}

@@ -24,18 +24,18 @@ export default function GlobalError({
   return (
     <html lang="en">
       <body className="antialiased">
-        <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a] px-6 text-zinc-100">
-          <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
-            <h1 className="text-2xl font-medium text-white">Something broke</h1>
-            <p className="mt-3 text-sm text-zinc-400">
+        <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a] px-6 text-ink">
+          <div className="w-full max-w-md rounded-2xl border border-hair bg-surface p-8 text-center">
+            <h1 className="text-2xl font-medium text-ink">Something broke</h1>
+            <p className="mt-3 text-sm text-muted">
               CertForge hit an unexpected error and could not render this page.
             </p>
             {error.digest ? (
-              <p className="mt-4 font-mono text-xs text-zinc-600">Reference: {error.digest}</p>
+              <p className="mt-4 font-mono text-xs text-faint">Reference: {error.digest}</p>
             ) : null}
             <button
               onClick={reset}
-              className="mt-6 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+              className="mt-6 rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-ground transition-colors hover:bg-accent-hover"
             >
               Try again
             </button>

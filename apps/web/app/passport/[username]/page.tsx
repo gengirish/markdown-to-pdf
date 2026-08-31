@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { SiteHeader } from "@/components/site-header";
+import { Eyebrow, Mono, StatusTag } from "@/components/dashboard/ui";
 import { publicApi, toApiError, type PassportView } from "@/lib/api";
 
 export async function generateMetadata({
@@ -37,22 +39,22 @@ export default async function PassportPage({
     const error = toApiError(err);
     return (
       <PassportShell>
-        <div className="mx-6 mt-32 max-w-md rounded-2xl border border-zinc-800 bg-zinc-900/50 p-8 text-center sm:mx-auto">
-          <h1 className="text-2xl font-medium text-zinc-100">
+        <div className="mx-auto mt-24 max-w-md rounded-xl border border-hair bg-surface p-8 text-center shadow-[var(--cf-shadow-card)]">
+          <h1 className="font-display text-2xl font-semibold tracking-[-0.02em] text-ink">
             {error.isNotFound
               ? "No passport here"
               : error.isForbidden
                 ? "This passport is private"
                 : "Passport unavailable"}
           </h1>
-          <p className="mt-3 text-zinc-400">
+          <p className="mt-3 text-sm leading-relaxed text-muted">
             {error.isNotFound
               ? `Nobody has claimed the passport “${username}” yet.`
               : error.message}
           </p>
           <Link
             href="/"
-            className="mt-6 inline-block rounded-lg border border-zinc-700 px-5 py-2.5 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-800"
+            className="mt-6 inline-block rounded-lg border border-hair-strong px-5 py-2.5 text-sm font-medium text-ink no-underline transition-colors hover:border-accent hover:text-accent"
           >
             Back to CertForge
           </Link>
@@ -64,102 +66,170 @@ export default async function PassportPage({
   const { profile, credentials } = passport;
   const displayName = profile.display_name?.trim() || profile.username;
 
+  /* The design shows three counters. Each is computed from what the API
+   * actually returned — a passport with one credential must not read "3
+   * issuers" because the mock did. */
+  const issuers = new Set(
+    credentials
+      .map((c) => (typeof c.metadata?.issuer === "string" ? c.metadata.issuer : null))
+      .filter((name): name is string => Boolean(name)),
+  );
+  const years = credentials
+    .map((c) => new Date(c.issued_at).getFullYear())
+    .filter((year) => !Number.isNaN(year));
+  const firstYear = years.length > 0 ? Math.min(...years) : null;
+
   return (
     <PassportShell>
-      <header className="mx-auto flex max-w-5xl flex-col items-center px-6 pb-16 pt-24 text-center">
-        <div className="mb-6 h-24 w-24 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 p-[2px] shadow-2xl shadow-indigo-500/20">
-          <div className="flex h-full w-full items-center justify-center rounded-full border-4 border-[#0a0a0a] bg-zinc-900 text-2xl font-bold text-white">
-            {displayName.charAt(0).toUpperCase()}
+      {/* ── Identity ─────────────────────────────────────────────────────── */}
+      <section className="overflow-hidden rounded-xl border border-hair bg-surface shadow-[var(--cf-shadow-card)]">
+        <div className="h-1 bg-accent" />
+        <div className="p-6 sm:p-8">
+          <div className="flex flex-wrap items-center gap-5">
+            <span
+              aria-hidden
+              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-accent-line bg-accent-wash font-display text-lg font-semibold text-accent"
+            >
+              {initials(displayName)}
+            </span>
+            <div className="min-w-0 flex-1">
+              <h1 className="font-display text-[28px] font-semibold leading-tight tracking-[-0.025em] text-ink">
+                {displayName}
+              </h1>
+              <Mono className="text-sm text-muted">@{profile.username}</Mono>
+            </div>
           </div>
-        </div>
-        <h1 className="mb-3 bg-gradient-to-b from-white to-white/70 bg-clip-text text-4xl font-semibold tracking-tight text-transparent md:text-5xl">
-          {displayName}
-        </h1>
-        <p className="font-mono text-sm text-zinc-500">@{profile.username}</p>
-        {profile.bio ? (
-          <p className="mx-auto mt-4 max-w-md leading-relaxed text-zinc-400">{profile.bio}</p>
-        ) : null}
-      </header>
 
-      <main className="mx-auto max-w-5xl px-6">
-        <div className="mb-8 flex items-center justify-between">
-          <h2 className="text-xl font-medium text-white/90">Verified credentials</h2>
-          <span className="rounded-full bg-indigo-400/10 px-3 py-1 text-sm font-medium text-indigo-400">
-            {credentials.length} earned
-          </span>
-        </div>
+          {profile.bio ? (
+            <p className="mt-5 max-w-2xl text-sm leading-relaxed text-muted">{profile.bio}</p>
+          ) : null}
 
-        {credentials.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-zinc-800 p-12 text-center">
-            <p className="text-zinc-300">No credentials claimed yet.</p>
-            <p className="mt-2 text-sm text-zinc-500">
-              Credentials appear here once they are claimed from an issuer&apos;s invitation link.
+          <dl className="mt-7 flex flex-wrap items-start gap-x-12 gap-y-5">
+            <Stat value={String(credentials.length)} label="credentials" />
+            <Stat value={String(issuers.size)} label={issuers.size === 1 ? "issuer" : "issuers"} />
+            {firstYear ? <Stat value={String(firstYear)} label="first credential" /> : null}
+            <p className="max-w-xs text-xs leading-relaxed text-faint">
+              {displayName.split(" ")[0]} controls what is public here. A hidden credential still
+              verifies by its ID.
             </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {credentials.map((credential) => {
-              const issuer = credential.metadata?.issuer;
-              return (
-                <div
-                  key={credential.id}
-                  className="group relative overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6 transition-all duration-300 hover:-translate-y-1 hover:border-indigo-500/50 hover:shadow-2xl hover:shadow-indigo-500/10"
-                >
-                  {credential.pinned ? (
-                    <div className="absolute right-4 top-4 text-amber-400" title="Pinned">
-                      <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
-                      </svg>
-                    </div>
-                  ) : null}
+          </dl>
+        </div>
+      </section>
 
-                  <div className="mb-4">
-                    {typeof issuer === "string" && issuer ? (
-                      <span className="font-mono text-xs uppercase tracking-wider text-zinc-500">
-                        {issuer}
-                      </span>
-                    ) : null}
-                    <h3 className="mt-1 text-lg font-semibold leading-tight text-zinc-100 transition-colors group-hover:text-indigo-300">
-                      {credential.title}
-                    </h3>
-                  </div>
+      {/* ── Credentials ──────────────────────────────────────────────────── */}
+      <div className="mb-4 mt-10 flex items-center justify-between gap-4">
+        <h2 className="font-display text-xl font-semibold tracking-[-0.02em] text-ink">
+          Credentials
+        </h2>
+        <Eyebrow>
+          {credentials.length} {credentials.length === 1 ? "record" : "records"}
+        </Eyebrow>
+      </div>
 
-                  <div className="mt-8 flex items-center justify-between text-sm text-zinc-400">
-                    <span>{formatIssueDate(credential.issued_at)}</span>
-                    <a
-                      href={publicApi.verificationPageUrl(credential.id)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-indigo-400 transition-colors hover:text-indigo-300"
-                    >
-                      Verify
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                        />
-                      </svg>
-                    </a>
-                  </div>
+      {credentials.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-hair-strong p-12 text-center">
+          <p className="text-sm text-ink">No credentials claimed yet.</p>
+          <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-faint">
+            Credentials appear here once they are claimed from an issuer&apos;s invitation link.
+            Until then they still verify by ID — claiming only adds them to this page.
+          </p>
+        </div>
+      ) : (
+        <ul className="grid list-none grid-cols-1 gap-3 p-0 md:grid-cols-2">
+          {credentials.map((credential) => {
+            const issuer =
+              typeof credential.metadata?.issuer === "string" ? credential.metadata.issuer : null;
+            return (
+              <li
+                key={credential.id}
+                className="rounded-xl border border-hair bg-surface p-5 transition-colors hover:border-hair-strong"
+              >
+                <div className="mb-3.5 flex items-center justify-between gap-3">
+                  <StatusTag tone={credential.pinned ? "ok" : "neutral"}>
+                    {credential.pinned ? "Pinned" : "Verified"}
+                  </StatusTag>
+                  <span className="text-xs text-faint">{formatIssueDate(credential.issued_at)}</span>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </main>
+
+                <h3 className="mb-1 text-[15px] font-medium leading-snug text-ink">
+                  {credential.title}
+                </h3>
+                {issuer ? <p className="mb-3.5 text-xs text-muted">{issuer}</p> : null}
+
+                <Mono className="mb-4 block text-xs text-faint">{credential.id}</Mono>
+
+                <div className="flex flex-wrap items-center gap-4 text-xs">
+                  <a
+                    href={publicApi.verificationPageUrl(credential.id)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-accent no-underline hover:underline"
+                  >
+                    Verification page
+                  </a>
+                  <a
+                    href={publicApi.badgeUrl(credential.id)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-muted no-underline hover:text-ink"
+                  >
+                    JSON
+                  </a>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {/* ── Claim prompt ─────────────────────────────────────────────────── */}
+      <section className="mt-10 flex flex-wrap items-center justify-between gap-5 rounded-xl border border-hair bg-well px-6 py-5">
+        <div>
+          <p className="text-[15px] font-medium text-ink">
+            Got a credential email you haven&apos;t claimed?
+          </p>
+          <p className="mt-1 text-sm text-muted">
+            Open the link in that email and it joins this passport in one step.
+          </p>
+        </div>
+      </section>
     </PassportShell>
+  );
+}
+
+function Stat({ value, label }: { value: string; label: string }) {
+  return (
+    <div>
+      <dt className="sr-only">{label}</dt>
+      <dd className="m-0">
+        <span className="block font-display text-[26px] font-semibold leading-none tracking-[-0.02em] text-ink">
+          {value}
+        </span>
+        <span className="mt-1.5 block font-mono text-[10px] uppercase tracking-[0.12em] text-faint">
+          {label}
+        </span>
+      </dd>
+    </div>
   );
 }
 
 function PassportShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-[#0a0a0a] pb-24 font-sans text-white selection:bg-indigo-500/30">
-      <div className="pointer-events-none fixed left-1/2 top-0 h-[400px] w-[800px] -translate-x-1/2 rounded-full bg-indigo-500/10 blur-[120px]" />
-      <div className="relative">{children}</div>
+    <div className="min-h-screen bg-ground">
+      <SiteHeader />
+      <main className="mx-auto max-w-[900px] px-6 pb-24 pt-10 sm:px-8">{children}</main>
     </div>
   );
+}
+
+/** Up to two initials, so "Ananya Rao" reads AR rather than A. */
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 function formatIssueDate(value: string): string {

@@ -29,17 +29,17 @@ export function ApiStatusBadge() {
         : "API up, database not configured";
 
   const dot = unreachable
-    ? "bg-red-500"
+    ? "bg-danger"
     : health === null
-      ? "bg-zinc-500"
+      ? "bg-hair-strong"
       : health.dependencies?.database === "connected"
-        ? "bg-emerald-500"
-        : "bg-amber-500";
+        ? "bg-accent"
+        : "bg-warn";
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2">
+    <div className="flex items-center gap-2 rounded-lg border border-hair bg-surface px-4 py-2">
       <span className={`h-2 w-2 rounded-full ${dot}`} />
-      <span className="text-sm font-medium text-zinc-300">{label}</span>
+      <span className="text-sm font-medium text-ink">{label}</span>
     </div>
   );
 }

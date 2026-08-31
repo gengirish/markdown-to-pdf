@@ -203,7 +203,7 @@ export function TemplateCanvas({
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
-        className="relative w-full touch-none select-none overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950"
+        className="relative w-full touch-none select-none overflow-hidden rounded-lg border border-hair bg-ground"
         style={{ aspectRatio: `${config.page_width_mm} / ${config.page_height_mm}` }}
       >
         {imageUrl ? (
@@ -218,7 +218,7 @@ export function TemplateCanvas({
             className="pointer-events-none absolute inset-0 h-full w-full object-fill"
           />
         ) : (
-          <div className="absolute inset-0 animate-pulse bg-zinc-900" />
+          <div className="absolute inset-0 animate-pulse bg-surface" />
         )}
 
         {config.fields.map((field, index) => (
@@ -227,8 +227,8 @@ export function TemplateCanvas({
             onPointerDown={onPointerDown(index, "move")}
             className={`absolute cursor-move rounded-sm border text-center ${
               selected === index
-                ? "border-indigo-400 bg-indigo-500/25"
-                : "border-indigo-500/50 bg-indigo-500/10 hover:bg-indigo-500/20"
+                ? "border-accent bg-accent-wash"
+                : "border-accent bg-accent-wash hover:bg-accent-wash"
             }`}
             style={{
               left: `${(field.x_mm / config.page_width_mm) * 100}%`,
@@ -237,18 +237,18 @@ export function TemplateCanvas({
               height: `${(field.h_mm / config.page_height_mm) * 100}%`,
             }}
           >
-            <span className="pointer-events-none absolute -top-5 left-0 whitespace-nowrap rounded bg-zinc-900/90 px-1.5 py-0.5 text-[10px] text-indigo-200">
+            <span className="pointer-events-none absolute -top-5 left-0 whitespace-nowrap rounded bg-surface px-1.5 py-0.5 text-[10px] text-accent">
               {field.label}
             </span>
             <span
               onPointerDown={onPointerDown(index, "resize")}
-              className="absolute -bottom-1 -right-1 h-3 w-3 cursor-se-resize rounded-sm border border-indigo-300 bg-indigo-500"
+              className="absolute -bottom-1 -right-1 h-3 w-3 cursor-se-resize rounded-sm border border-accent-line bg-accent"
             />
           </div>
         ))}
       </div>
 
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-faint">
         Drag a box onto the part of your design it belongs on; drag its corner to
         resize. Positions are stored in millimetres, so the certificate prints exactly
         where you put them.
@@ -267,12 +267,12 @@ export function TemplateCanvas({
           }}
         />
       ) : (
-        <p className="text-xs text-zinc-500">Select a box to change its size or colour.</p>
+        <p className="text-xs text-faint">Select a box to change its size or colour.</p>
       )}
 
       {available.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-4">
-          <span className="text-xs text-zinc-500">Add a field:</span>
+        <div className="flex flex-wrap items-center gap-2 border-t border-hair pt-4">
+          <span className="text-xs text-faint">Add a field:</span>
           {available.map((b) => (
             <button
               key={b.variable}
@@ -282,7 +282,7 @@ export function TemplateCanvas({
                 onChange({ ...config, fields: [...config.fields, newField(b.variable, config)] });
                 setSelected(config.fields.length);
               }}
-              className="rounded-lg border border-zinc-800 px-2.5 py-1 text-xs text-zinc-300 transition-colors hover:border-indigo-500/60 hover:text-white disabled:opacity-50"
+              className="rounded-lg border border-hair px-2.5 py-1 text-xs text-ink transition-colors hover:border-accent hover:text-ink disabled:opacity-50"
             >
               + {b.label}
             </button>
@@ -305,14 +305,14 @@ function FieldControls({
   const isImage = IMAGE_FIELDS.has(field.variable);
 
   return (
-    <div className="flex flex-wrap items-end gap-4 rounded-lg border border-zinc-800 px-4 py-3">
-      <span className="text-sm font-medium text-zinc-200">{field.label}</span>
+    <div className="flex flex-wrap items-end gap-4 rounded-lg border border-hair px-4 py-3">
+      <span className="text-sm font-medium text-ink">{field.label}</span>
 
       {/* A QR code and a logo are drawn as images, so type controls would claim
           to do something they cannot. */}
       {!isImage ? (
         <>
-          <label className="text-xs text-zinc-400">
+          <label className="text-xs text-muted">
             <span className="mb-1 block">Size (pt)</span>
             <input
               type="number"
@@ -329,26 +329,26 @@ function FieldControls({
                   h_mm: Math.max(field.h_mm, font_pt * MIN_HEIGHT_MM_PER_PT),
                 });
               }}
-              className="w-20 rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-sm text-zinc-100"
+              className="w-20 rounded border border-hair bg-surface px-2 py-1 text-sm text-ink"
             />
           </label>
 
-          <label className="text-xs text-zinc-400">
+          <label className="text-xs text-muted">
             <span className="mb-1 block">Colour</span>
             <input
               type="color"
               value={field.color}
               onChange={(e) => onChange({ color: e.target.value })}
-              className="h-8 w-12 cursor-pointer rounded border border-zinc-800 bg-zinc-900"
+              className="h-8 w-12 cursor-pointer rounded border border-hair bg-surface"
             />
           </label>
 
-          <label className="text-xs text-zinc-400">
+          <label className="text-xs text-muted">
             <span className="mb-1 block">Align</span>
             <select
               value={field.align}
               onChange={(e) => onChange({ align: e.target.value as TracedField["align"] })}
-              className="rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-sm text-zinc-100"
+              className="rounded border border-hair bg-surface px-2 py-1 text-sm text-ink"
             >
               <option value="left">Left</option>
               <option value="center">Centre</option>
@@ -356,12 +356,12 @@ function FieldControls({
             </select>
           </label>
 
-          <label className="flex items-center gap-2 text-xs text-zinc-400">
+          <label className="flex items-center gap-2 text-xs text-muted">
             <input
               type="checkbox"
               checked={field.bold}
               onChange={(e) => onChange({ bold: e.target.checked })}
-              className="h-4 w-4 rounded border-zinc-700 bg-zinc-900"
+              className="h-4 w-4 rounded border-hair-strong bg-surface"
             />
             Bold
           </label>
@@ -371,7 +371,7 @@ function FieldControls({
       <button
         type="button"
         onClick={onRemove}
-        className="ml-auto text-xs text-zinc-500 hover:text-red-400"
+        className="ml-auto text-xs text-faint hover:text-danger"
       >
         Remove
       </button>

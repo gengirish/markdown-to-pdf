@@ -42,12 +42,12 @@ export function RecentCredentialsCard({
   }, [api, slug, refreshToken]);
 
   return (
-    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
+    <section className="rounded-2xl border border-hair bg-surface p-6">
       <div className="mb-4 flex items-baseline justify-between">
-        <h3 className="text-sm font-medium uppercase tracking-wider text-zinc-400">
+        <h3 className="text-sm font-medium uppercase tracking-wider text-muted">
           Recent credentials
         </h3>
-        {page ? <span className="text-sm text-zinc-500">{page.total} total</span> : null}
+        {page ? <span className="text-sm text-faint">{page.total} total</span> : null}
       </div>
 
       {error ? (
@@ -63,19 +63,19 @@ export function RecentCredentialsCard({
               <span
                 className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
                   credential.status === "issued"
-                    ? "bg-emerald-500"
+                    ? "bg-accent"
                     : credential.status === "failed"
-                      ? "bg-red-500"
-                      : "bg-zinc-600"
+                      ? "bg-danger"
+                      : "bg-well"
                 }`}
                 title={credential.status}
               />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-zinc-200">
+                <p className="truncate text-sm font-medium text-ink">
                   {credential.recipient_name}
                 </p>
-                <p className="truncate text-xs text-zinc-500">{credential.title}</p>
-                <p className="mt-1 text-xs text-zinc-600">
+                <p className="truncate text-xs text-faint">{credential.title}</p>
+                <p className="mt-1 text-xs text-faint">
                   {formatDate(credential.issued_at)} · {credential.status}
                   <DeliveryTag status={credential.delivery_status} />
                 </p>
@@ -85,7 +85,7 @@ export function RecentCredentialsCard({
                   href={publicApi.verificationPageUrl(credential.id)}
                   target="_blank"
                   rel="noreferrer"
-                  className="shrink-0 text-xs text-indigo-400 transition-colors hover:text-indigo-300"
+                  className="shrink-0 text-xs text-accent transition-colors hover:text-accent"
                 >
                   Verify
                 </a>
@@ -107,7 +107,7 @@ function DeliveryTag({ status }: { status: DeliveryStatus | undefined }) {
   return (
     <>
       {" · "}
-      <span className="text-amber-500/90" title="The credential issued, but its email did not send">
+      <span className="text-warn-ink" title="The credential issued, but its email did not send">
         email failed
       </span>
     </>

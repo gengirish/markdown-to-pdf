@@ -1,23 +1,177 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ── CertForge palette ───────────────────────────────────────────────────────
+ *
+ * Light values are the redesign's own, taken from `CertForge Redesign.dc.html`.
+ * A warm off-white ground rather than pure white, near-black ink rather than
+ * black, and a single deep green that carries every affirmative state.
+ *
+ * DARK VALUES ARE NOT FROM THE DESIGN. It specifies light only, so these are
+ * derived: the same warm neutrals rotated dark, and the accent lifted until it
+ * clears 4.5:1 on the dark ground — #0E6B58 is unreadable there. If the
+ * designer supplies a dark ramp, replace this block wholesale rather than
+ * reconciling it with mine.
+ *
+ * Everything is a token. A hex literal in a component is a value that cannot
+ * follow the theme, which is how half a UI ends up light-only.
+ */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+:root {
+  /* Surfaces, back to front. */
+  --cf-ground: #fbfaf9;
+  --cf-surface: #ffffff;
+  --cf-surface-sunken: #fdfcfa;
+  --cf-well: #efece5;
+
+  /* Text, most to least prominent. */
+  --cf-ink: #17171a;
+  --cf-muted: #6b6862;
+  /* The design's own faint is #8A857A, which measures 3.67:1 on white — below
+   * the 4.5:1 that small label text needs. Walked down its own hue until it
+   * clears on both the surface and the ground it sits on (4.73 / 4.54). The
+   * only deliberate deviation from the design's light palette. */
+  --cf-faint: #777369;
+  --cf-placeholder: #a8a49c;
+
+  /* Rules. hair is the default border; soft divides inside a card; strong is
+   * for a control that must read as interactive when it is not filled. */
+  --cf-hair: #e6e3dd;
+  --cf-hair-soft: #edeae3;
+  --cf-hair-strong: #d6d2c9;
+
+  /* The accent. Verified, issued, valid — one green, used sparingly. */
+  --cf-accent: #0e6b58;
+  --cf-accent-hover: #0a4d3f;
+  --cf-accent-wash: #e7f1ee;
+  --cf-accent-line: #c6e0d8;
+
+  /* Revoked and expired. Amber rather than red: the signature is genuine, the
+   * credential was withdrawn — a different thing from a forgery. */
+  --cf-warn: #c08a2e;
+  --cf-warn-ink: #8a5a1e;
+  --cf-warn-wash: #fbf1df;
+  --cf-warn-line: #f0debc;
+
+  /* Not found, and destructive verbs. */
+  --cf-danger: #b5544a;
+  --cf-danger-wash: #fbeceb;
+  --cf-danger-line: #f0cfcc;
+
+  /* Reads as a link or a GET, never as a state. */
+  --cf-info: #4a6bb5;
+
+  --cf-shadow-card: 0 1px 2px rgb(23 23 26 / 0.04), 0 20px 44px -28px rgb(23 23 26 / 0.3);
+  --cf-shadow-lift: 0 1px 2px rgb(23 23 26 / 0.04), 0 20px 48px -32px rgb(23 23 26 / 0.28);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --cf-ground: #131316;
+    --cf-surface: #1b1b1f;
+    --cf-surface-sunken: #1f1f24;
+    --cf-well: #26262c;
+
+    --cf-ink: #f4f2ef;
+    --cf-muted: #a8a49c;
+    --cf-faint: #8a857a;
+    --cf-placeholder: #6b6862;
+
+    --cf-hair: #2c2c33;
+    --cf-hair-soft: #26262c;
+    --cf-hair-strong: #3a3a42;
+
+    /* Lifted from #0E6B58, which fails contrast on this ground. */
+    --cf-accent: #4fb89d;
+    --cf-accent-hover: #6fcbb2;
+    --cf-accent-wash: #14322b;
+    --cf-accent-line: #1f4c41;
+
+    --cf-warn: #d9a441;
+    --cf-warn-ink: #e8bf7a;
+    --cf-warn-wash: #33280f;
+    --cf-warn-line: #4a3a18;
+
+    --cf-danger: #e08b82;
+    --cf-danger-wash: #35201e;
+    --cf-danger-line: #4c2f2c;
+
+    --cf-info: #8aa4e0;
+
+    --cf-shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 20px 44px -28px rgb(0 0 0 / 0.7);
+    --cf-shadow-lift: 0 1px 2px rgb(0 0 0 / 0.4), 0 20px 48px -32px rgb(0 0 0 / 0.65);
   }
 }
 
+@theme inline {
+  --color-ground: var(--cf-ground);
+  --color-surface: var(--cf-surface);
+  --color-sunken: var(--cf-surface-sunken);
+  --color-well: var(--cf-well);
+
+  --color-ink: var(--cf-ink);
+  --color-muted: var(--cf-muted);
+  --color-faint: var(--cf-faint);
+  --color-placeholder: var(--cf-placeholder);
+
+  --color-hair: var(--cf-hair);
+  --color-hair-soft: var(--cf-hair-soft);
+  --color-hair-strong: var(--cf-hair-strong);
+
+  --color-accent: var(--cf-accent);
+  --color-accent-hover: var(--cf-accent-hover);
+  --color-accent-wash: var(--cf-accent-wash);
+  --color-accent-line: var(--cf-accent-line);
+
+  --color-warn: var(--cf-warn);
+  --color-warn-ink: var(--cf-warn-ink);
+  --color-warn-wash: var(--cf-warn-wash);
+  --color-warn-line: var(--cf-warn-line);
+
+  --color-danger: var(--cf-danger);
+  --color-danger-wash: var(--cf-danger-wash);
+  --color-danger-line: var(--cf-danger-line);
+
+  --color-info: var(--cf-info);
+
+  /* Bound to the next/font variables set in app/layout.tsx. Self-hosted rather
+   * than the design's <link> to fonts.googleapis.com: that is a render-blocking
+   * third-party request on every page, and it leaks the visitor's IP to Google
+   * on a page whose whole promise is that verifying needs no account. */
+  --font-display: var(--font-space-grotesk), "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, monospace;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--cf-ground);
+  color: var(--cf-ink);
+  font-family: var(--font-sans);
+}
+
+/* The design's focus ring, applied once here rather than per control. Visible
+ * on both themes because it is drawn in the accent, which moves with them. */
+:focus-visible {
+  outline: 2px solid var(--cf-accent);
+  outline-offset: 2px;
+}
+
+::placeholder {
+  color: var(--cf-placeholder);
+}
+
+/* Progress fills animate from zero on mount — the design's `cfbar`. */
+@keyframes cf-bar {
+  from {
+    width: 0%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

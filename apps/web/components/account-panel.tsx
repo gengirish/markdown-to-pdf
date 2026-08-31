@@ -6,29 +6,29 @@ import { OrganizationSwitcher, SignInButton, SignUpButton, UserButton, useAuth, 
 /**
  * The landing page's auth-dependent call to action.
  *
- * Clerk v7 dropped the `<SignedIn>` / `<SignedOut>` control components, and the
- * replacement `<Show>` resolves server-side (so it needs `clerkMiddleware`,
- * which this app does not install yet). Branching on the client hooks keeps the
- * page working with nothing but `<ClerkProvider>`.
+ * Clerk v7 dropped the `<SignedIn>` / `<SignedOut>` control components. The
+ * replacement `<Show>` resolves server-side; branching on the client hooks
+ * keeps this working as a client island inside a static page, and avoids
+ * making the whole landing page dynamic just to decide one button's label.
  */
 export function AccountPanel() {
   const { isLoaded, isSignedIn } = useAuth();
   const { organization } = useOrganization();
 
   if (!isLoaded) {
-    return <div className="h-12 w-56 animate-pulse rounded-lg bg-zinc-900" aria-hidden />;
+    return <div className="h-[46px] w-56 animate-pulse rounded-lg bg-well" aria-hidden />;
   }
 
   if (!isSignedIn) {
     return (
       <div className="flex flex-col gap-3 sm:flex-row">
         <SignInButton mode="modal">
-          <button className="rounded-lg bg-indigo-600 px-6 py-3 font-medium text-white transition-colors hover:bg-indigo-500">
+          <button className="rounded-lg bg-accent px-6 py-3 text-sm font-medium text-ground transition-colors hover:bg-accent-hover">
             Sign in
           </button>
         </SignInButton>
         <SignUpButton mode="modal">
-          <button className="rounded-lg border border-zinc-700 px-6 py-3 font-medium text-zinc-200 transition-colors hover:bg-zinc-800">
+          <button className="rounded-lg border border-hair-strong px-6 py-3 text-sm font-medium text-ink transition-colors hover:border-accent hover:text-accent">
             Create an account
           </button>
         </SignUpButton>
@@ -39,10 +39,10 @@ export function AccountPanel() {
   if (!organization) {
     return (
       <div className="flex flex-col items-start gap-3">
-        <p className="text-sm text-zinc-400">
+        <p className="text-sm text-muted">
           Pick an organization to open its Credential Studio.
         </p>
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-2">
+        <div className="rounded-lg border border-hair bg-surface p-2">
           <OrganizationSwitcher
             afterSelectOrganizationUrl="/org/:slug/dashboard"
             afterCreateOrganizationUrl="/org/:slug/dashboard"
@@ -56,7 +56,7 @@ export function AccountPanel() {
     <div className="flex flex-wrap items-center gap-4">
       <Link
         href={`/org/${organization.slug}/dashboard`}
-        className="rounded-lg bg-indigo-600 px-6 py-3 font-medium text-white transition-colors hover:bg-indigo-500"
+        className="rounded-lg bg-accent px-6 py-3 text-sm font-medium text-ground no-underline transition-colors hover:bg-accent-hover"
       >
         Open {organization.name} Studio
       </Link>
