@@ -1,6 +1,6 @@
 # CertForge — API-First Plan
 
-Status: Wave 1 shipped (Phases 0–1 done, 3 part-done) · Updated: 2026-08-23 · Scope: whole product
+Status: Wave 1 shipped; Wave 2 (B1) all but its usage surface · Updated: 2026-09-01, `main` @ `99a144e`, 379 tests passing · Scope: whole product
 
 **Decisions taken (2026-08-23):**
 
@@ -60,10 +60,17 @@ Each fix shipped with a regression test naming the original bug. That is the rig
   generator, so the bypass grants little a browser user cannot already do, rate limiting
   still binds per real client IP, and the endpoint is on the **frozen** surface — tightening
   it risks the live SPA. It needs a decision, not a patch.
-- **H3** (blocking PDF/email on the event loop), **H9** (templates gated behind mocked
-  billing), **M6**, **M7** — not re-verified in this pass; treat their status as unknown
-  rather than open.
-- All of Phase 2.
+- **H9** — no longer "unknown". The template tier gate was **deleted**, because the only
+  route to a paid tier is a checkout that returns a fabricated URL, so no org could ever
+  satisfy it. Getting the gate back needs three things in order; they are written up in
+  [billing-and-template-quota-plan.md](./billing-and-template-quota-plan.md). Until then
+  `VISION_IMPORTS_PER_MONTH` is the only thing bounding spend on the vision endpoint.
+- **H3** (blocking PDF/email on the event loop), **M6**, **M7** — not re-verified since;
+  treat their status as unknown rather than open. Note that the PDF route shipped as a
+  plain sync handler by choice, not oversight — see B1 §D4.
+- Phase 2 is now largely shipped through B1; see
+  [b1-single-credential-issuance.md](./b1-single-credential-issuance.md) for what
+  actually landed. The open remainder is B1.4's usage surface and B1.5.
 
 Two notes on what landed:
 
@@ -80,19 +87,18 @@ Verified against the running deployment, not the docs.
 |---|---|
 | `certs.intelliforge.tech` | Vercel project `markdown-to-pdf` (git-linked to `gengirish/markdown-to-pdf`), serving `apps/legacy-web` (Vite SPA) |
 | API | Fly.io `certforge-api.fly.dev`. FastAPI, scale-to-zero, one `shared-cpu-1x` / 512 MB machine |
-| Routing | `vercel.json` rewrites `/api/*`, `/certificate/*`, `/invoice/*`, `/docs`, `/openapi.json`, `/llms.txt`, `/robots.txt`, `/sitemap.xml`, `/.well-known/*` to Fly. Everything else falls through to the SPA |
+| Routing | `vercel.json` rewrites `/api/*`, `/certificate/*`, `/invoice/*`, `/verify/*`, `/credentials/*`, `/docs`, `/redoc`, `/openapi.json`, `/llms.txt`, `/robots.txt`, `/sitemap.xml`, `/.well-known/*` to Fly. Everything else falls through to the SPA. `/verify/*` and `/credentials/*` were the missing pair that served the SPA shell in production — see `docs/TODOs/certforge-public-urls-404.md` |
 | DB | One Neon Postgres, reached through **two independent layers**: raw psycopg2 (`api/db.py`, legacy certs/courses) and SQLAlchemy + Alembic (`api/models/*`, CertForge) |
 | Queue | Procrastinate worker embedded in the FastAPI lifespan, on the same single machine |
-| `apps/web` | Next.js 16 + Clerk. Home page is the `create-next-app` template; `/passport`, `/claim`, `/org/[slug]/dashboard` render **mock data driven by `setTimeout`** |
-| Vercel project `web` | `prj_RpzFnW2ttKLZTBxlYMBWegjNCSCc`. **Publicly deployed** at `web-puce-xi-31.vercel.app` — the mock dashboard is on the open internet. Not git-linked (`link: null`); pushed by CLI |
+| `apps/web` | Next.js 16 + Clerk, live at `certforge.intelliforge.tech`. **No mock data remains** — every page is a real client of `/api/v1` through `lib/api.ts`. The dashboard is a Credential Studio with a four-step issue wizard; the landing page, passport and claim flow are real |
+| Vercel project `web` | `prj_RpzFnW2ttKLZTBxlYMBWegjNCSCc`, git-linked, root directory `apps/web`. Preview deployments currently 500 on every page: the Clerk env vars are set on Production only, so `clerkMiddleware` throws. Fixing it needs Clerk *development-instance* keys — see `apps/web/CLAUDE.md` |
 
 **Live and load-bearing:** `POST /api/certificate`, `POST /api/invoice`, `GET /certificate/{token}` (+ `/download`, `/verify`), `GET /invoice/{token}/download`, `POST /api/certificates/verify`, `/api/courses`, `/api/info`, `/api/health`, `/api/admin/*`, and the `sdk/pdfcert` client.
 
-**Shipped but reaching nobody:** the entire `/api/v1` CertForge surface. Zero consumers — the only frontend that could call it uses mock data, and the SDK only speaks legacy. That asymmetry is what makes this whole plan safe.
+**No longer true as of Wave 1 (A4) — kept because the rest of this plan was written under it:** *"Shipped but reaching nobody: the entire `/api/v1` CertForge surface. Zero consumers — the only frontend that could call it uses mock data, and the SDK only speaks legacy. That asymmetry is what makes this whole plan safe."* The dashboard is now a real consumer, so `/api/v1` changes are no longer free. The SDK still speaks legacy only.
 
-### Do this today, before anything else
-
-The mock dashboard is publicly reachable at `web-puce-xi-31.vercel.app`. Turn on Vercel Deployment Protection (Standard Protection) for project `web` now. A dashboard that fabricates successful batch uploads is not something to leave discoverable while carrying the CertForge name.
+The "turn on Deployment Protection for the mock dashboard" item that stood here is
+resolved: there is no mock dashboard left to hide.
 
 ---
 

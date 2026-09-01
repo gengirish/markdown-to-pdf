@@ -259,11 +259,22 @@ builds and serves the legacy SPA and rewrites a fixed list of paths through to F
 
 Things that follow from that, all of them load-bearing:
 
-- **New backend routes must be added to `vercel.json`'s rewrite list, or they 404 in
+- **New backend routes must be added to a `vercel.json` rewrite list, or they 404 in
   production while working perfectly in local dev.** This is not hypothetical:
   `/verify/*` and `/credentials/*` were missing and served the SPA shell in production
   until commit `3b52e72`. The catch-all `/((?!assets/|branding/).*)` swallows anything
   not listed.
+
+  **There are two `vercel.json` files and they belong to different hosts.** Ask which
+  host has to serve the new URL, then edit that one — or both, if the answer is both:
+
+  | File | Vercel project | Host | Rewrites |
+  |---|---|---|---|
+  | `vercel.json` (root) | the legacy SPA | `certs.intelliforge.tech` | `/api/*`, `/certificate/*`, `/invoice/*`, `/verify/*`, `/credentials/*`, the docs and agent-discovery paths, then a catch-all to `index.html` |
+  | `apps/web/vercel.json` | the dashboard | `certforge.intelliforge.tech` | `/verify/*`, `/credentials/*`, `/orgs/*` — the URLs a CertForge credential names, plus the Open Badges issuer profile |
+
+  `test_contract_certforge.py` reads `apps/web/vercel.json`, because that is the host
+  a new credential's URLs point at. Nothing reads the root file for you.
 - `request.base_url` is the Fly hostname, not the public domain. `_resolve_site_url`
   and `_is_browser_same_origin` accept either, which is why `SITE_URL` is set in
   `fly.toml` rather than inferred.
@@ -314,11 +325,30 @@ URLs that go inside QR codes: `GET /verify/{credential_id}` (HTML),
 stored, unlike `badge.json` which was always computed fresh). Both are readable by ID
 with no auth, same posture as the legacy download route: the ID is the capability.
 `api/services/rendering.py`'s `build_render_variables()` is the one place PDF template
-variables are built, shared by this route and the bulk worker
-(`api/core/worker.py`) so single and bulk issuance can't render differently. An org's
-`primary_color`, `accent_color`, `footer_text`, and `logo_url` flow into it — the
-seeded default templates use the first three; `logo_url` is passed through but none of
-them has a layout slot for it yet.
+variables are built. It has **three** callers and every one of them matters: this
+route, the bulk worker (`api/core/worker.py`), and the template preview
+(`sample_variables()` in `api/services/templates.py`). An org's `primary_color`,
+`accent_color`, `footer_text`, and `logo_url` flow into it — the seeded default
+templates use the first three; `logo_url` is passed through but none of them has a
+layout slot for it yet.
+
+The preview is a caller rather than a second implementation because it used to be
+one. `sample_variables()` was a hand-written dict, and it had already drifted by
+`font_face` and `display_font` — both emitted into every template the guided
+generator produces. Unresolved placeholders render blank, so every guided preview
+came out in the default face while the credential issued in EB Garamond, with no
+error at any stage. The route separately copied four branding fields off the org by
+hand, so `footer_text` previewed as the sample string and issued as the org's.
+
+- **A preview divergence is a silent one.** Nothing compares the two documents at
+  render time, and both succeed. `test_template_assets.py` asserts parity over the
+  whole produced vocabulary rather than a named list, so a variable added to
+  `build_render_variables` is covered the day it appears.
+- **Two divergences are deliberate**: the fictional recipient, and the "not a real
+  credential" footer. Everything else must come from the shared builder.
+- **A PDF containing an image is not evidence that it contains *your* image** — the
+  QR code is an image too. The traced-preview guard compares a render with artwork
+  against the same render without it.
 
 ### What a credential's signature covers
 
@@ -481,14 +511,21 @@ lifespan so it scales with the web process.
 JSON-LD injected into viewer pages are generated in `apps/api/api/index.py`
 (`_build_llms_txt`, `_build_sitemap_xml`, `_participation_json_ld`,
 `_internship_json_ld`). Adding a public endpoint means updating `_build_llms_txt` and
-`_build_sitemap_xml` too — and `vercel.json`.
+`_build_sitemap_xml` too — and the root `vercel.json` (see the two-file table above).
 
 ## Where the work is going
 
 - `docs/api-first-optimization-plan.md` — the current direction: what is being
-  changed and why.
-- `docs/subagent-handover.md` — how that plan is partitioned into work packages by
-  file ownership, and in what order they land.
+  changed and why. Its §0 carries the status of the whole product.
+- `docs/b1-single-credential-issuance.md` — **the one to read for where things stand.**
+  It is the only plan doc kept in sync with what actually shipped; where it and the
+  other two disagree, this one and the code win.
+- `docs/subagent-handover.md` — how the plan was partitioned into work packages by
+  file ownership, and in what order they landed. A historical work-order, deliberately
+  not kept current.
+- `docs/billing-and-template-quota-plan.md` — the way out of mocked billing, and why
+  the template tier gate cannot come back until checkout actually moves an org between
+  tiers. Proposed, not started.
 - `docs/certificate-internship-vtu.md` — internship field ↔ token-key mapping and the
   college workflow.
 - `docs/TODOs/` — live defects, one file each, in a consistent shape: the finding

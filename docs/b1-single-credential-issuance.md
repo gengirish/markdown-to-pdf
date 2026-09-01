@@ -9,20 +9,36 @@ have to be settled before the first line of code.
 pytest` → 91 passed.** Every claim below was checked in the code today, not carried
 over from the earlier plan.
 
-## Status — 2026-08-28, `main` @ `fad716b`, 201 tests passing
+## Status — 2026-09-01, `main` @ `99a144e`, 379 tests passing
 
 | | Commit | State |
 |---|---|---|
-| B1.0 | Golden contract test | **not started** — `tests/test_contract_legacy.py` still does not exist |
+| B1.0 | Golden contract test | **landed** — `c05a848` wrote `tests/test_contract_legacy.py`; `5d8df79` added `test_contract_certforge.py` alongside it. B1.5 is no longer blocked |
 | B1.1 | `resolve_principal` | **landed** — `d56557b` |
 | B1.2 | Service layer + single issuance | **landed** — `a403b68` |
-| B1.3 | The rest of the resource | **PDF route landed** — `fad716b` (see D4/D5 below); list, get and revoke in `a403b68`; the status state machine in `629b454` |
-| B1.4 | Batch + usage surface | **not started** |
+| B1.3 | The rest of the resource | **landed** — PDF route in `fad716b` (see D4/D5 below); list, get and revoke in `a403b68`; the status state machine in `629b454` |
+| B1.4 | Batch + usage surface | **part landed** — the meter exists and both paths write it (`consume_quota()`, `4ec4043`, closing H5 for bulk too). `GET /orgs/{slug}/usage` is still not started, so the number is written and never read back out |
 | B1.5 | Legacy adapter | not started, and optional by design |
 
 The goal in §1 is now met end to end: an API key issues a credential in one call, the
 verify URL resolves, and `pdf_url` in the response is a real document — see D4 and D5,
 settled in `fad716b`. D6 (idempotency) landed since; D3 (canonical signing) landed 2026-08-30.
+
+**Landed after B1, against this same surface** — each has its own note in `CLAUDE.md`
+and, where it started as a defect, a file in `docs/TODOs/`:
+
+- Canonical credential signing, and every public read path verifying before it renders
+  (`bb8c658`).
+- Delivery state as a recorded outcome, `not_requested` included (`docs/TODOs/email-delivery-observability.md`).
+- Traced templates: an org's own artwork, stored in R2, composed in at render time
+  (`016b881`), plus `MIN_HEIGHT_MM_PER_PT` for the box that silently swallowed its text
+  (`ec62606`).
+- Reading a design with a model — `POST /orgs/{slug}/templates/from-image`, metered by
+  `UsageLedger.vision_imports`.
+- The template preview now calls `build_render_variables()` instead of maintaining a
+  second vocabulary (`99a144e`, `docs/TODOs/template-preview-lied-about-the-render.md`).
+- Dashboard: the bulk-CSV card became a four-step issue wizard, and the whole app was
+  re-skinned onto one token set with a light/dark toggle (`d6f1c18`, `7d33a43`, `c6f96a4`).
 
 ### 2026-08-28 — D4/D5 settled, plus org branding (`fad716b`)
 
@@ -355,12 +371,15 @@ so a retried POST issues a second credential.
 
 Five commits. Each leaves `pytest` green and the tree deployable.
 
-### B1.0 — Golden contract test for the frozen surface · **NOT STARTED** *(no production code)*
+### B1.0 — Golden contract test for the frozen surface · **LANDED** (`c05a848`) *(no production code)*
 
-> Still true as of `a403b68`: `tests/` has no `test_contract_legacy.py`. Nothing has
-> touched `/api/certificate` yet, so no harm has been done — but B1.5 cannot start
-> until this exists, and the longer it is deferred the more the golden file records a
-> surface nobody has re-verified.
+> `tests/test_contract_legacy.py` exists. Its load-bearing part is three tokens —
+> participation, VTU internship, appreciation — produced by the real encoder against a
+> fixed secret and committed as literals; they stand in for every certificate already
+> printed. `5d8df79` added `test_contract_certforge.py` beside it, which reads the URLs
+> off a real issuance rather than a hand-written list. **B1.5 is unblocked.** See
+> `CLAUDE.md` § Tests for the house rule those files are held to: a contract test that
+> has never been seen to fail is a comment.
 
 Phase 0 item 4 of the optimization plan — "a contract test pinning the exact JSON shape
 of every frozen endpoint" — **was never written**. `tests/` has no
@@ -588,12 +607,18 @@ D2), tests
 batch is inserting; the viewer's download button appears for a credential issued through
 B1.2, and its PDF opens.
 
-### B1.4 — Batch, and an honest quota surface · **NOT STARTED**
+### B1.4 — Batch, and an honest quota surface · **PART LANDED**
 
-> `studio.py`'s bulk upload was moved onto `Principal` but still carries its own
-> read-then-write quota check and its own `-1` bug at `studio.py:74` — the service's
-> `_consume_quota` is right there and unused by it. That redirect is the cheapest part
-> of this commit and closes a live bug; do it first.
+> The quota half is done. `4ec4043` pointed `studio.py`'s bulk upload at the service's
+> meter — now the public `consume_quota()` in `api/services/issuance.py` — so both
+> paths reserve against one counter and the `-1` unlimited bug is gone. Bulk had been
+> reading the ledger without writing it back, which is to say bulk issuance was
+> unmetered while single issuance metered correctly.
+>
+> **What remains is the surface, not the meter:** `GET /orgs/{slug}/usage`, `tier` and
+> `monthly_quota` on `GET /orgs/{slug}`, and the JSON batch endpoint. The number is
+> being written and nothing reads it back out, so the dashboard still cannot show a
+> quota — see `docs/billing-and-template-quota-plan.md`, which depends on this counter.
 >
 > Its duplicate `GET /orgs/{slug}/credentials` was removed in favour of the one in
 > `routes/credentials.py`, which is what the comment at the foot of `studio.py` records.
@@ -607,13 +632,13 @@ B1.2, and its PDF opens.
 - `GET /api/v1/orgs/{slug}/usage` — period, used, limit, remaining. A4 shipped a
   dashboard that cannot show a quota because nothing exposes one.
 - Add `monthly_quota` and `tier` to `GET /orgs/{slug}`.
-- Point `studio.py`'s bulk upload at the same quota helper, which also fixes the `-1`
-  unlimited bug at `studio.py:74`.
+- ~~Point `studio.py`'s bulk upload at the same quota helper, which also fixes the `-1`
+  unlimited bug at `studio.py:74`.~~ **Done in `4ec4043`.**
 
 **Accept:** a 60-row batch against a 50-quota org is rejected whole with 402 and writes
 nothing; `usage` reflects reality after B1.2 issues.
 
-### B1.5 *(optional, separate review)* — the legacy adapter · **NOT STARTED, and blocked on B1.0**
+### B1.5 *(optional, separate review)* — the legacy adapter · **NOT STARTED** *(no longer blocked — B1.0 landed)*
 
 Only under B1.0's golden test, one shared step at a time, per D1. Stop at the first step
 that needs a mode flag.

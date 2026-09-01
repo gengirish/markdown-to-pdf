@@ -104,9 +104,19 @@ ruff check apps/api/api/ sdk/pdfcert/
 | `GET` | `/api/v1/orgs/{slug}/members` | List members |
 | `GET` | `/api/v1/templates` | List built-in templates |
 | `GET` `POST` | `/api/v1/orgs/{slug}/templates` | List / create org templates |
+| `GET` `PATCH` `DELETE` | `/api/v1/orgs/{slug}/templates/{template_id}` | Read / update / delete a template |
+| `POST` | `/api/v1/orgs/{slug}/templates/{template_id}/default` | Make a template the org default |
+| `POST` | `/api/v1/orgs/{slug}/templates/import/{global_id}` | Copy a built-in template into the org |
+| `POST` | `/api/v1/orgs/{slug}/templates/preview` | Render a sample PDF of a template |
+| `POST` | `/api/v1/orgs/{slug}/templates/from-image` | Read an uploaded design with a model and propose a layout |
+| `GET` `POST` | `/api/v1/orgs/{slug}/template-assets` | List / upload certificate artwork |
+| `GET` | `/api/v1/orgs/{slug}/template-assets/{asset_id}/image` | Fetch stored artwork |
+| `DELETE` | `/api/v1/orgs/{slug}/template-assets/{asset_id}` | Delete artwork (refused while a template uses it) |
+| `GET` `POST` | `/api/v1/orgs/{slug}/credentials` | List issued credentials / issue one |
+| `GET` | `/api/v1/orgs/{slug}/credentials/{public_id}` | Read a single credential |
+| `POST` | `/api/v1/orgs/{slug}/credentials/{public_id}/revoke` | Revoke a credential |
 | `POST` | `/api/v1/orgs/{slug}/credentials/bulk` | Queue a bulk issuance batch |
 | `GET` | `/api/v1/orgs/{slug}/batches/{batch_id}` | Batch progress |
-| `GET` | `/api/v1/orgs/{slug}/credentials` | List issued credentials |
 | `POST` `GET` `DELETE` | `/api/v1/orgs/{slug}/api-keys` | Manage API keys |
 | `POST` `GET` `DELETE` | `/api/v1/orgs/{slug}/webhooks` | Manage webhook endpoints |
 | `GET` | `/api/v1/passports/{username}` | Public credential passport |
@@ -122,10 +132,24 @@ Every `/api/v1` response uses one envelope:
 
 ### Public credential URLs
 
+Served at the site root, with no auth — the ID is the capability, the same posture
+as the legacy download route. These are the URLs that go inside a printed QR code,
+so they are also the ones `vercel.json` must rewrite through to the API.
+
 | Endpoint | Description |
 |----------|-------------|
 | `GET /verify/{credential_id}` | Human-readable verification page |
 | `GET /credentials/{public_id}/badge.json` | Open Badges 3.0 badge |
+| `GET /credentials/{public_id}/pdf` | The certificate, rendered on demand — nothing is stored |
+| `GET /credentials/{public_id}/qr.png` | QR code pointing at the verification page |
+| `GET /orgs/{slug}` | Public issuer profile (an Open Badges `issuer.id` dereferences here) |
+
+Every route that renders a credential's *contents* — the verification page,
+`badge.json` and the PDF — verifies its HMAC signature first and answers **409**
+with `error.type = "signature_mismatch"` if it does not match. `qr.png` encodes only
+the verification URL, so it checks status alone; `/orgs/{slug}` is not
+credential-scoped and content-negotiates between an Open Badges Profile
+(`Accept: application/json`) and an HTML page.
 
 ### Legacy admin endpoints (requires `X-Admin-Key` and a database)
 

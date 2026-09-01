@@ -9,7 +9,8 @@ Runnable scripts for certificate issuance, webhooks, admin bulk, and batch verif
 | `PDFCERT_ADMIN_KEY` | `bulk_onboarding.py` | `X-Admin-Key` (must match server `ADMIN_KEY`) |
 
 ```bash
-pip install httpx
+pip install httpx      # every script below except issue_internship_certificate.py
+pip install requests   # that one only
 ```
 
 ## Scripts
@@ -19,6 +20,9 @@ pip install httpx
 - **`bulk_onboarding.py`** — CSV → admin bulk generate
 - **`zapier_integration.py`** — Zapier webhook bridge
 - **`batch_verify.py`** — Batch verify tokens from a file
+- **`issue_internship_certificate.py`** — Mint one VTU-style internship certificate and
+  save the PDF. Takes `--url` and `--out`; the course name must be registered on the
+  server (the fallback list has it). Uses `requests`, not `httpx`
 
 Sample input:
 
