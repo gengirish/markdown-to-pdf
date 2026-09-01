@@ -575,6 +575,115 @@ def test_every_builtin_variable_is_actually_produced(db_session):
     assert not missing, f"declared builtin but never produced: {sorted(missing)}"
 
 
+def test_the_preview_builds_its_variables_the_same_way_issuance_does(db_session):
+    """JOIN 1b — the preview and the render.
+
+    A preview exists to predict the issued certificate, and it is the one
+    surface where being subtly wrong is invisible: the author reads the PDF as
+    the answer. This is JOIN 1 from the other side — sample_variables() is the
+    second producer of the same vocabulary, so a name the builder supplies and
+    the preview does not is a field that previews blank and issues filled, or
+    the reverse.
+
+    It was already broken. sample_variables() was a hand-written dict that
+    omitted `font_face` and `display_font`, which the guided generator emits
+    into every template it makes — so every guided preview dropped the display
+    serif, `_UNRESOLVED` blanked the placeholders, and the PDF the author
+    approved used a typeface no issued credential would ever use.
+
+    Asserted over the whole produced vocabulary, not the two keys that were
+    missing, so the next one added is covered the day it appears.
+    """
+    from datetime import datetime, timezone
+
+    from api.services.rendering import build_render_variables
+    from api.services.templates import sample_variables
+
+    org = an_org(db_session, "join-preview-org")
+    cred = Credential(
+        public_id="CF-2026-JOINPRV1",
+        org_id=org.id,
+        recipient_name="Ada",
+        recipient_email="",
+        title="Engines",
+        metadata_={},
+        hmac_signature="x",
+        status="issued",
+        issued_at=datetime.now(timezone.utc),
+    )
+
+    issued = set(build_render_variables(cred, org, None))
+    previewed = set(sample_variables(org))
+
+    missing = issued - previewed
+    assert not missing, f"issued with, but never previewed: {sorted(missing)}"
+
+    # The bundled face specifically: it is the one whose absence renders as a
+    # different-looking certificate rather than a missing field, which is why
+    # it went unnoticed.
+    assert sample_variables(org)["display_font"] == build_render_variables(
+        cred, org, None
+    )["display_font"]
+
+
+def test_the_preview_previews_the_orgs_own_branding(db_session):
+    """The route used to copy four branding keys onto the sample dict by hand.
+
+    A copy list is a second place the org's fields are enumerated, so a field
+    added to build_render_variables previews as the sample default while it
+    issues as the org's — the author checks the colour and ships the wrong one.
+    """
+    from api.services.templates import sample_variables
+
+    org = an_org(db_session, "join-brand-org")
+    org.primary_color = "#112233"
+    org.accent_color = "#445566"
+    db_session.commit()
+
+    variables = sample_variables(org)
+    assert variables["primary_color"] == "#112233"
+    assert variables["accent_color"] == "#445566"
+    assert variables["issuer_name"] == org.name
+
+
+def test_a_traced_preview_is_drawn_on_the_real_artwork(
+    client: TestClient, db_session, store
+):
+    """JOIN — the preview route and the object store.
+
+    A traced template raises exactly one question: do the fields land where the
+    design has room for them. A preview rendered on a blank page answers a
+    different question convincingly, and answers it with a 200.
+
+    The comparison is against the same preview with no artwork, because a PDF
+    that contains an image is not evidence on its own — the QR code is an image
+    too.
+    """
+    an_org(db_session, "prev-traced")
+    asset_id = upload(client, "prev-traced", png_bytes((1200, 850))).json()["data"]["id"]
+
+    def preview(body):
+        r = client.post(
+            "/api/v1/orgs/prev-traced/templates/preview",
+            headers=auth("prev-traced"),
+            json=body,
+        )
+        assert r.status_code == 200, r.text
+        assert r.content[:4] == b"%PDF"
+        return r.content
+
+    with_art = preview(
+        {"config": DEFAULT_TRACED_CONFIG, "background_asset_id": asset_id}
+    )
+    without_art = preview({"config": DEFAULT_TRACED_CONFIG})
+
+    assert store.objects, "the artwork was never read out of the store"
+    assert len(with_art) > len(without_art), (
+        "the preview with artwork is no larger than the one without — the "
+        "background never reached the render"
+    )
+
+
 def _issue_one_traced_batch(client, db_session, store, slug, rows=1):
     """Upload artwork, bind a traced template, and run one batch through the
     worker. Returns (batch, recorded render variables, object-store reads)."""

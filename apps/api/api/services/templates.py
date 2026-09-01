@@ -783,29 +783,51 @@ td {{ padding: 0; }}
 
 # -- preview ------------------------------------------------------------------
 
-def sample_variables() -> dict[str, str]:
+def sample_variables(org=None, background: str = "") -> dict[str, str]:
     """Stand-in values for previewing a template before anything is issued.
 
-    Obviously fake on purpose. A preview that says "Ada Lovelace" cannot be
-    mistaken for a real credential if it is downloaded and forwarded.
-    """
-    from api.core.qr import generate_qr_data_uri
+    Built by `build_render_variables` against a stand-in credential, not by a
+    dict written out here. That is the whole point: a preview exists to predict
+    the render, so a preview assembled by its own code path is a preview that
+    can be wrong in exactly the way nobody checks. It already was — this
+    function used to omit `font_face` and `display_font`, which the guided
+    generator emits into every template it produces, so every guided preview
+    silently dropped the display serif and showed a typeface the issued
+    certificate would never use. `render_credential_pdf` blanks unresolved
+    placeholders, so there was no error anywhere.
 
-    return {
-        "name": "Ada Lovelace",
-        "title": "Analytical Engines",
-        "date": "1 January 2026",
-        "credential_id": "CF-2026-SAMPLE1",
-        "qr": generate_qr_data_uri("https://example.invalid/verify/CF-2026-SAMPLE1"),
-        "issuer_name": "Sample Organization",
-        "logo_url": "",
-        "primary_color": "#1e293b",
-        "accent_color": "#d4af37",
-        "footer_text": "Preview — not a real credential",
-        "usn": "1XX00XX000",
-        "duration": "4 weeks",
-        # Overwritten by the preview route when the template has artwork. ""
-        # here so a traced template previewed without one renders its fields on
-        # blank paper rather than leaving a literal {{background}} in the CSS.
-        "background": "",
-    }
+    `org` is the real organization when one is in scope, so branding previews as
+    it will issue. `background` is the artwork data URI, or "" for none.
+
+    Two deliberate divergences from a real render, both about not producing
+    something mistakable for a credential:
+
+      - the recipient is obviously fictional, and
+      - the footer says so. It is the one branding field the author does not
+        get to see previewed, and that is the trade.
+    """
+    from datetime import datetime, timezone
+
+    from api.models.credential import Credential
+    from api.models.organization import Organization
+    from api.services.rendering import build_render_variables
+
+    sample_org = org if org is not None else Organization(name="Sample Organization")
+    cred = Credential(
+        public_id="CF-2026-SAMPLE1",
+        recipient_name="Ada Lovelace",
+        title="Analytical Engines",
+        issued_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+
+    # background is passed explicitly (never None) so build_render_variables
+    # does not try to resolve one off a template row the preview does not have.
+    variables = build_render_variables(cred, sample_org, None, background)
+    variables["footer_text"] = "Preview — not a real credential"
+
+    # Not builtins: stand-ins for the custom placeholders the shipped guided
+    # layouts offer, so an author previewing one sees a filled field rather
+    # than the blank an unresolved placeholder renders as.
+    variables["usn"] = "1XX00XX000"
+    variables["duration"] = "4 weeks"
+    return variables

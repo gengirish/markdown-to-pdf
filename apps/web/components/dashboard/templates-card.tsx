@@ -183,9 +183,29 @@ export function TemplatesCard({ slug }: { slug: string }) {
   }, [api, slug, editor, reload]);
 
   /** The preview arrives as a PDF. Opened in a new tab rather than embedded,
-   *  so the dashboard never has to host customer-authored content. */
+   *  so the dashboard never has to host customer-authored content.
+   *
+   *  The tab is opened synchronously, inside the click, and navigated once the
+   *  render comes back. Opening it after the await is the obvious way to write
+   *  this and it is broken: the user gesture is spent by then, so Safari and
+   *  Firefox block the popup by default. Nothing throws — a blocked popup is
+   *  not a rejected promise — so the button spun, cleared, and did nothing,
+   *  with no error to show for it. The one failure this feature must not have
+   *  is a silent one.
+   *
+   *  `noopener` cannot be passed to window.open here: per spec it makes the
+   *  call return null, and the handle is the whole point. Clearing `opener` on
+   *  the new tab is the same protection applied a line later.
+   *
+   *  If the popup is blocked outright, the PDF is downloaded instead — the
+   *  author still gets the artefact rather than an instruction to go change a
+   *  browser setting. */
   const preview = useCallback(async () => {
     if (editor.mode === "closed") return;
+
+    const tab = window.open("", "_blank");
+    if (tab) tab.opener = null;
+
     setBusy(true);
     setError(null);
     try {
@@ -198,11 +218,22 @@ export function TemplatesCard({ slug }: { slug: string }) {
             : { htmlSource: editor.html },
       );
       const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener");
+      if (tab) {
+        tab.location.href = url;
+      } else {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "template-preview.pdf";
+        link.click();
+      }
       // Revoked on a delay: revoking immediately can beat the new tab to the
       // blob and leave it blank.
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (err) {
+      // The tab was opened before we knew the render would succeed, so a
+      // failure has to close it. Leaving it is a blank about:blank the author
+      // has to work out is unrelated to the error under the editor.
+      tab?.close();
       setError(toApiError(err).message);
     } finally {
       setBusy(false);

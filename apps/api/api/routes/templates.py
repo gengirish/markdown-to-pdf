@@ -517,18 +517,19 @@ def preview_template(
             payload.html_source, payload.config, asset is not None
         )
 
-        variables = sample_variables()
-        variables["issuer_name"] = org.name
-        variables["logo_url"] = org.logo_url or ""
-        variables["primary_color"] = org.primary_color or variables["primary_color"]
-        variables["accent_color"] = org.accent_color or variables["accent_color"]
-        if asset is not None:
-            # The real artwork, not a placeholder. A preview drawn on a blank
-            # page cannot answer the only question a traced template raises —
-            # whether the fields land where the design has room for them.
-            variables["background"] = background_data_uri(
-                _StubTemplate(asset.id, asset)
-            )
+        # The org goes in whole rather than as four hand-copied keys: branding
+        # the preview does not carry is branding the author cannot check, and a
+        # field added to build_render_variables would not have reached a copy
+        # list here. The artwork is the real artwork for the same reason — a
+        # preview drawn on a blank page cannot answer the only question a
+        # traced template raises, whether the fields land where the design has
+        # room for them.
+        background = (
+            background_data_uri(_StubTemplate(asset.id, asset))
+            if asset is not None
+            else ""
+        )
+        variables = sample_variables(org, background)
 
     try:
         pdf_bytes = render_credential_pdf(html_source, variables)
