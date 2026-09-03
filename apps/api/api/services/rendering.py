@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from api.core.qr import generate_qr_data_uri
-from api.services.backgrounds import background_data_uri
+from api.services.backgrounds import background_data_uri, logo_data_uri
 from api.models.credential import Credential
 from api.models.organization import Organization
 
@@ -65,7 +65,14 @@ def build_render_variables(
         ),
         # Branding keys always resolve to something so a placeholder is never
         # left unreplaced in a rendered PDF.
-        "logo_url": org.logo_url or "",
+        #
+        # The logo is the org's UPLOADED image as a data URI, never org.logo_url.
+        # That column is an external URL and _pdf_link_callback refuses to fetch
+        # one, so putting it here produced an <img> that rendered as nothing —
+        # for every org that ticked the logo box in the guided form, with no
+        # error at any stage. "" when there is no uploaded logo, which renders
+        # the same as it always did rather than pretending.
+        "logo_url": logo_data_uri(org),
         "primary_color": org.primary_color or "#1e293b",
         "accent_color": org.accent_color or "#d4af37",
         "footer_text": org.footer_text or "Powered by CertForge · certforge.intelliforge.tech",

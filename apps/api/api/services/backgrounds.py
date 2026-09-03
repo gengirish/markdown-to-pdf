@@ -1,4 +1,9 @@
-"""Turning a template's stored artwork into the {{background}} a render needs.
+"""Turning stored images into the data URIs a render needs.
+
+Two of them now: a template's artwork ({{background}}) and an organization's
+logo ({{logo_url}}). One module, because they are one concern — an asset row
+becomes base64 in the variables dict — and because sharing the memo means the
+same bytes are not fetched and encoded twice.
 
 The renderer cannot fetch anything: `_pdf_link_callback` refuses every scheme
 and every path outside the bundled fonts directory, because a template author
@@ -31,6 +36,71 @@ def _fetch_data_uri(storage_key: str, checksum: str, mime: str) -> str:
     """Fetch and encode. `checksum` participates in the cache key only."""
     raw = get_object(storage_key)
     return f"data:{mime};base64," + base64.b64encode(raw).decode("ascii")
+
+
+def _asset_data_uri(details, *, owner: str, what: str) -> str:
+    """Fetch and encode one asset, or "" with a logged reason.
+
+    `details` is a plain tuple read out of the ORM, never a live instance — see
+    the note in background_data_uri about detached rows.
+
+    Never raises. A missing image renders the certificate without it, which is
+    wrong but legible; raising would fail a whole batch over decoration, and the
+    credential is the thing that has to exist. Every failure logs at ERROR
+    because none of them is normal.
+    """
+    if details is None:
+        logger.error("%s names a %s asset that does not exist.", owner, what)
+        return ""
+
+    asset_id, storage_key, checksum, mime = details
+
+    if not storage_available():
+        logger.error("%s has a %s but object storage is not configured.", owner, what)
+        return ""
+
+    try:
+        return _fetch_data_uri(storage_key, checksum, mime)
+    except StorageError:
+        logger.exception(
+            "Could not load %s %s for %s; rendering without it.", what, asset_id, owner
+        )
+        return ""
+
+
+def _asset_details(asset_id, loaded=None):
+    """(id, storage_key, checksum, mime) for an asset, or None.
+
+    Prefers an already-loaded relationship so the common path does no query.
+    """
+    if loaded is not None:
+        return (loaded.id, loaded.storage_key, loaded.checksum, loaded.mime)
+
+    from api.models import get_db
+    from api.models.template_asset import TemplateAsset
+
+    with get_db() as session:
+        row = session.query(TemplateAsset).filter_by(id=asset_id).first()
+        return (row.id, row.storage_key, row.checksum, row.mime) if row else None
+
+
+def logo_data_uri(org) -> str:
+    """The data URI for an organization's uploaded logo, or "" when it has none.
+
+    `org.logo_url` is deliberately NOT a fallback here. It is an external URL,
+    and the renderer refuses to fetch one — returning it would put the exact
+    `<img src="https://…">` back into the PDF that never rendered and never
+    reported why. Empty is the honest answer: this org has no logo the renderer
+    can draw.
+    """
+    if org is None or getattr(org, "logo_asset_id", None) is None:
+        return ""
+
+    return _asset_data_uri(
+        _asset_details(org.logo_asset_id, getattr(org, "logo_asset", None)),
+        owner=f"Organization {getattr(org, 'slug', '?')}",
+        what="logo",
+    )
 
 
 def background_data_uri(template) -> str:
@@ -66,32 +136,9 @@ def background_data_uri(template) -> str:
                 (row.id, row.storage_key, row.checksum, row.mime) if row else None
             )
 
-    if details is None:
-        logger.error(
-            "Template %s names background asset %s, which does not exist.",
-            getattr(template, "id", "?"),
-            template.background_asset_id,
-        )
-        return ""
-
-    asset_id, storage_key, checksum, mime = details
-
-    if not storage_available():
-        logger.error(
-            "Template %s has a background but object storage is not configured.",
-            getattr(template, "id", "?"),
-        )
-        return ""
-
-    try:
-        return _fetch_data_uri(storage_key, checksum, mime)
-    except StorageError:
-        logger.exception(
-            "Could not load background %s for template %s; rendering without it.",
-            asset_id,
-            getattr(template, "id", "?"),
-        )
-        return ""
+    return _asset_data_uri(
+        details, owner=f"Template {getattr(template, 'id', '?')}", what="background"
+    )
 
 
 def clear_cache() -> None:

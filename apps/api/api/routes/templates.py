@@ -11,6 +11,7 @@ path runs it through `services/templates.py`'s validator first. See
 
 import hashlib
 import io
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -52,6 +53,8 @@ READ_ROLES = ("owner", "admin", "issuer")
 #: The most we will read off the wire. Enforced by reading one byte past it,
 #: never by trusting Content-Length or UploadFile.size, both of which are
 #: claims made by the client.
+logger = logging.getLogger(__name__)
+
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 
 #: The most we will store after re-encoding. A background is embedded in every
@@ -66,6 +69,15 @@ MAX_STORED_EDGE_PX = 2480
 #: Refused before Pillow decodes. Pillow's own decompression-bomb guard is left
 #: on as well; this one exists to give a message that names the limit.
 MAX_SOURCE_PIXELS = 40_000_000
+
+#: A logo is drawn about 30pt tall. 600px is already several times the pixels
+#: that needs at print resolution, and every pixel beyond it is base64 in the
+#: variables dict of every render.
+MAX_LOGO_EDGE_PX = 600
+
+#: A logo shares the 2 MB stored ceiling with artwork but should never approach
+#: it; the cap is a backstop, not a target.
+MAX_LOGO_BYTES = 512 * 1024
 
 #: Per org, because an image is not a credential and consume_quota counts
 #: credentials. Charging artwork against a certificate allowance would make the
@@ -580,15 +592,18 @@ def _asset_json(asset: TemplateAsset) -> dict:
     }
 
 
-def _reencode(raw: bytes) -> tuple[bytes, int, int]:
-    """Decode, normalise and re-encode an upload. Raises HTTPException.
+def _decode_upload(raw: bytes):
+    """Decode an upload to a Pillow image, or raise HTTPException.
 
-    Only the OUTPUT of this function is ever stored, and that is the security
-    argument for the whole feature: the stored file is a JPEG this process
-    wrote, not a file a stranger uploaded. EXIF, ICC, XMP, PNG ancillary
-    chunks, trailing archives and polyglot payloads do not survive a decode and
-    re-encode, so none of them reach a PDF we hand to a third party — or an
-    <img> tag in the dashboard.
+    The shared front half of every upload path. Only the OUTPUT of a re-encode
+    is ever stored, and that is the security argument for the whole feature: the
+    stored file is one this process wrote, not a file a stranger uploaded. EXIF,
+    ICC, XMP, PNG ancillary chunks, trailing archives and polyglot payloads do
+    not survive a decode and re-encode, so none of them reach a PDF we hand to a
+    third party — or an <img> tag in the dashboard.
+
+    Extracted so the logo encoder below cannot quietly acquire a weaker version
+    of these checks. Two encoders, one decoder.
     """
     from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -624,6 +639,18 @@ def _reencode(raw: bytes) -> tuple[bytes, int, int]:
     # here means what the canvas shows and what the PDF prints are the same
     # picture; leaving it means they differ by 90 degrees.
     image = ImageOps.exif_transpose(image)
+    return image
+
+
+def _reencode(raw: bytes) -> tuple[bytes, int, int]:
+    """Artwork: flattened to RGB and stored as JPEG.
+
+    A certificate design is opaque by nature, so dropping alpha costs nothing
+    and JPEG is much smaller for a full-page photograph or scan.
+    """
+    from PIL import Image
+
+    image = _decode_upload(raw)
     image = image.convert("RGB")
     image.thumbnail((MAX_STORED_EDGE_PX, MAX_STORED_EDGE_PX), Image.LANCZOS)
 
@@ -639,6 +666,68 @@ def _reencode(raw: bytes) -> tuple[bytes, int, int]:
         detail=(
             f"That image is still over {MAX_STORED_BYTES // (1024 * 1024)} MB after "
             f"compression. Try a smaller or less detailed file."
+        ),
+    )
+
+
+def _reencode_logo(raw: bytes) -> tuple[bytes, str, int, int]:
+    """A logo: alpha preserved, stored as PNG. Returns (bytes, mime, w, h).
+
+    **This is why the logo cannot reuse `_reencode`.** That function calls
+    `convert("RGB")`, which drops the alpha channel — and a logo is very
+    commonly a PNG whose background is transparent. Dropping alpha leaves those
+    pixels at whatever RGB sat under them, which for a typical exported logo is
+    black. The result is a solid black rectangle printed on the certificate,
+    every time, with the upload succeeding and the preview showing it.
+
+    That is worse than the bug this feature fixes: no logo is a disappointment,
+    a black box is a ruined document. So an image with transparency keeps it and
+    is stored as PNG. One without is flattened and stored as JPEG, which is much
+    smaller for a photographic mark.
+
+    The security properties are unchanged: the bytes stored are still ones this
+    process encoded from a decoded image, and PNG carries no ancillary chunks
+    through a Pillow round-trip.
+    """
+    from PIL import Image
+
+    image = _decode_upload(raw)
+    image.thumbnail((MAX_LOGO_EDGE_PX, MAX_LOGO_EDGE_PX), Image.LANCZOS)
+
+    # `P` covers a palette PNG whose transparency lives in a tRNS chunk rather
+    # than in an alpha band, which "RGBA" alone would miss.
+    has_alpha = image.mode in ("RGBA", "LA", "PA") or (
+        image.mode == "P" and "transparency" in image.info
+    )
+
+    if has_alpha:
+        image = image.convert("RGBA")
+        buffer = io.BytesIO()
+        image.save(buffer, "PNG", optimize=True)
+        data = buffer.getvalue()
+        if len(data) > MAX_LOGO_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"That logo is over {MAX_LOGO_BYTES // 1024} KB once stored. "
+                    f"Try a smaller or simpler image."
+                ),
+            )
+        return data, "image/png", image.width, image.height
+
+    image = image.convert("RGB")
+    for quality in (88, 78, 68):
+        buffer = io.BytesIO()
+        image.save(buffer, "JPEG", quality=quality, optimize=True)
+        data = buffer.getvalue()
+        if len(data) <= MAX_LOGO_BYTES:
+            return data, "image/jpeg", image.width, image.height
+
+    raise HTTPException(
+        status_code=413,
+        detail=(
+            f"That logo is still over {MAX_LOGO_BYTES // 1024} KB after "
+            f"compression. Try a smaller or simpler image."
         ),
     )
 
@@ -846,6 +935,18 @@ def delete_template_asset(
                 ),
             )
 
+        # An org's logo points at this table too. Without this check the
+        # RESTRICT foreign key still refuses the delete — as a 500 raised from
+        # inside the commit, which tells the caller nothing about what to do.
+        if org.logo_asset_id == asset.id:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "This image is the organization's logo. Remove the logo "
+                    "first, or replace it with a different image."
+                ),
+            )
+
         storage_key = asset.storage_key
         session.delete(asset)
         session.flush()
@@ -982,3 +1083,137 @@ def create_template_from_image(
                 "imports_remaining": remaining,
             }
         )
+
+
+# -- the organization's logo ---------------------------------------------------
+#
+# Stored as a TemplateAsset like a traced background, for one reason: the PDF
+# renderer cannot fetch a URL. organizations.logo_url has always been an
+# external address, which the viewer and an Open Badges consumer can fetch for
+# themselves and the renderer flatly refuses — so the guided form's logo
+# checkbox produced an <img> that rendered as nothing, for everyone, silently.
+# See docs/TODOs/org-logo-never-renders-in-a-pdf.md.
+
+
+@router.post(
+    "/orgs/{slug}/logo",
+    response_model=ApiResponse[dict],
+    status_code=201,
+    dependencies=[Depends(rate_limit(limit=6, window=60))],
+)
+async def upload_org_logo(
+    slug: str,
+    file: UploadFile = File(...),
+    principal: Principal = Depends(resolve_principal),
+):
+    """Upload the logo that prints on this organization's certificates.
+
+    Deliberately its own route rather than a flag on the artwork upload: a logo
+    is encoded differently (alpha survives, see `_reencode_logo`), sized
+    differently, and is a property of the organization rather than of one
+    template. Sharing the endpoint would mean one function with two meanings.
+
+    It does share the storage path, the asset table and the per-org allowance,
+    because those are the same concern.
+    """
+    if not storage_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Logo upload is not available: object storage is not configured.",
+        )
+
+    raw = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Images must be under {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+        )
+    if not raw:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+
+    if _sniff(raw) is None:
+        raise HTTPException(
+            status_code=415,
+            detail="Only JPEG, PNG and WebP images are accepted. SVG is not.",
+        )
+
+    stored, mime, width, height = _reencode_logo(raw)
+    checksum = hashlib.sha256(stored).hexdigest()
+
+    with get_db() as session:
+        org = _org_or_404(session, slug)
+        require_org_access(principal, str(org.id), allowed_roles=WRITE_ROLES)
+
+        previous_id = org.logo_asset_id
+
+        existing = (
+            session.query(TemplateAsset)
+            .filter_by(org_id=org.id, checksum=checksum)
+            .first()
+        )
+        if existing:
+            org.logo_asset_id = existing.id
+            session.flush()
+            return ApiResponse.ok(_asset_json(existing))
+
+        asset_id = uuid.uuid4()
+        extension = "png" if mime == "image/png" else "jpg"
+        storage_key = f"orgs/{org.id}/logos/{asset_id}.{extension}"
+
+        # Inside the transaction, before the insert — same rule as the artwork
+        # upload. The rollback is what stops a committed row naming an object
+        # that was never written.
+        try:
+            put_object(storage_key, stored, mime)
+        except StorageError as exc:
+            raise HTTPException(status_code=502, detail=f"Could not store the logo: {exc}")
+
+        asset = TemplateAsset(
+            id=asset_id,
+            org_id=org.id,
+            storage_key=storage_key,
+            mime=mime,
+            width_px=width,
+            height_px=height,
+            byte_size=len(stored),
+            checksum=checksum,
+            created_by=(
+                principal.clerk_user_id
+                if not principal.is_api_key
+                else f"api_key:{principal.api_key_id}"
+            ),
+        )
+        session.add(asset)
+        org.logo_asset_id = asset_id
+        session.flush()
+        payload = _asset_json(asset)
+
+    # The previous logo's bytes are still in the cache under its own checksum,
+    # so nothing stale can be served — but the row and object are now orphaned
+    # unless something removes them. Left in place on purpose: an org that
+    # switches back to its old mark re-uploads it and hits the checksum branch
+    # above, and deleting bytes a template might also be drawn on is not a
+    # decision this route can make. `previous_id` is read only so the log says
+    # what happened.
+    if previous_id is not None and str(previous_id) != payload["id"]:
+        logger.info("Org %s replaced logo asset %s with %s", slug, previous_id, payload["id"])
+
+    return ApiResponse.ok(payload)
+
+
+@router.delete("/orgs/{slug}/logo", response_model=ApiResponse[dict])
+def remove_org_logo(slug: str, principal: Principal = Depends(resolve_principal)):
+    """Stop printing a logo. The asset row and its bytes are left alone.
+
+    Clearing the pointer is the reversible half; deleting the image is
+    `DELETE /template-assets/{id}`, which is a separate decision because the
+    same image may also be a template's background.
+    """
+    with get_db() as session:
+        org = _org_or_404(session, slug)
+        require_org_access(principal, str(org.id), allowed_roles=WRITE_ROLES)
+        had = org.logo_asset_id
+        org.logo_asset_id = None
+        session.flush()
+
+    return ApiResponse.ok({"removed": had is not None})

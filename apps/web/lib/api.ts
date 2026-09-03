@@ -71,7 +71,14 @@ export interface OrgProfile {
   id: string;
   slug: string;
   name: string;
+  /** An external URL the org can point at. Rendered by the viewer and by an
+   *  Open Badges consumer, both of which fetch it themselves — and never by the
+   *  certificate PDF, whose renderer refuses to fetch anything. Uploading is
+   *  what puts a logo on a document; see `logo_asset_id`. */
   logo_url: string | null;
+  /** An uploaded logo. Set means the certificate prints it and the public
+   *  pages show it; this wins over `logo_url` wherever both apply. */
+  logo_asset_id: string | null;
   primary_color: string | null;
   accent_color: string | null;
   footer_text: string | null;
@@ -757,6 +764,38 @@ export class CertForgeClient {
       `/api/v1/orgs/${encodeURIComponent(slug)}/template-assets`,
       { method: "POST", form, signal },
     );
+  }
+
+  /** Upload the logo printed on this organization's certificates.
+   *
+   *  A separate endpoint from `uploadTemplateAsset`, not a flag on it: a logo
+   *  is encoded differently — transparency survives, because flattening a
+   *  transparent PNG prints a black box on every certificate — and it belongs
+   *  to the organization rather than to one template. */
+  uploadOrgLogo(slug: string, file: File, signal?: AbortSignal): Promise<TemplateAsset> {
+    const form = new FormData();
+    form.append("file", file);
+
+    return this.request<TemplateAsset>(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/logo`,
+      { method: "POST", form, signal },
+    );
+  }
+
+  /** Stop printing a logo. The image itself is kept — deleting bytes a
+   *  template may also be drawn on is a separate, destructive decision. */
+  removeOrgLogo(slug: string, signal?: AbortSignal): Promise<{ removed: boolean }> {
+    return this.request<{ removed: boolean }>(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/logo`,
+      { method: "DELETE", signal },
+    );
+  }
+
+  /** The public URL of an uploaded logo — no auth, so it can go straight in an
+   *  `<img src>`. Unlike `templateAssetImage`, which must be fetched as a Blob
+   *  because that route is authenticated. */
+  orgLogoUrl(slug: string): string {
+    return `${this.baseUrl}/orgs/${encodeURIComponent(slug)}/logo`;
   }
 
   listTemplateAssets(slug: string, signal?: AbortSignal): Promise<TemplateAsset[]> {

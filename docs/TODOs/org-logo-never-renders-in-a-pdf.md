@@ -1,6 +1,7 @@
 # TODO · The organization logo can never render in a certificate PDF
 
-**Opened** 2026-09-03 · **Status** OPEN · **Trigger** beta-user feedback (Gouthami,
+**Opened** 2026-09-03 · **Status** CLOSED — fixed and covered by tests 2026-09-03
+· **Trigger** beta-user feedback (Gouthami,
 Xeroura Technologies) — "i have added our company logo as well, i was expecting the
 logo of the company and formatting to be aligned"
 
@@ -108,6 +109,48 @@ failure into a missing feature.
 adds no new attack surface and reuses code already carrying the security
 review. A exists in this list mainly because the URL field is what the
 dashboard ships today.
+
+## What shipped — B, 2026-09-03
+
+`organizations.logo_asset_id` (migration `a4f61c8b20e7`) points at the same
+`template_assets` table the traced backgrounds use, `RESTRICT` for the same
+reason. `build_render_variables` resolves `{{logo_url}}` through
+`backgrounds.logo_data_uri()`, so the renderer is handed base64 and still
+fetches nothing. `POST`/`DELETE /orgs/{slug}/logo` manage it; the dashboard's
+branding card is a file input with a preview.
+
+Four things worth knowing, each of which cost something to find:
+
+- **A logo cannot reuse `_reencode`.** That function calls `convert("RGB")`,
+  which drops alpha — and a logo is usually a transparent PNG, whose
+  transparent pixels are typically black underneath. Reusing it would have
+  printed a **solid black rectangle** on every certificate, with the upload
+  returning 201 and the preview showing it. That is worse than the bug being
+  fixed. `_reencode_logo` keeps alpha and stores PNG; an opaque logo still
+  takes the smaller JPEG path. Both share `_decode_upload`, so the security
+  checks cannot drift apart.
+- **The viewer needs a URL, the PDF needs bytes.** `GET /orgs/{slug}/logo` is
+  public — unlike the org-private artwork route beside it — because this is the
+  mark an organization prints on documents it hands to strangers. One uploaded
+  asset, two representations, and `public_logo_url()` is the single place that
+  decides the uploaded logo beats the legacy URL, so the page and the document
+  cannot show different marks.
+- **The two tables now reference each other.** `organizations.logo_asset_id` →
+  `template_assets.id` → `organizations.id` is a cycle, which SQLAlchemy cannot
+  order for CREATE or DROP; the FK is declared `use_alter=True` with the name
+  the migration gives it. Without that the test database cannot be torn down.
+- **`logo_url` is kept, not dropped or backfilled.** It is still right for an
+  org that would rather point at its own CDN, the viewer still honours it when
+  there is no upload, and the bytes behind those URLs are not ours to fetch and
+  store. The branding card tells an org that has only a URL that it will not
+  print, rather than leaving them to notice.
+
+Guards, each verified by reintroducing its bug: `logo_url` is a data URI and
+contains no `://`; the same template rendered with and without the logo
+produces different bytes; a transparent upload survives as RGBA; the asset
+cannot be deleted while it is the logo (409, not the foreign key's 500); the
+org JSON carries `logo_asset_id`, which is the field the dashboard branches on;
+and the public logo route is not shadowed by the issuer profile beside it.
 
 ## Why the existing tests missed it
 

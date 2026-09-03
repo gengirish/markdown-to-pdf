@@ -884,3 +884,283 @@ def test_a_missing_object_renders_without_artwork_rather_than_failing(
     variables = sample_variables()
     variables.update(font_face="", display_font="Helvetica", background=uri)
     assert pdf_page_count(render_credential_pdf(template.html_source, variables)) == 1
+
+
+# ── the organization logo ───────────────────────────────────────────────────
+#
+# The defect these cover: the guided form's logo checkbox emitted
+# <img src="{{logo_url}}">, build_render_variables filled it with the org's
+# external logo_url, and _pdf_link_callback refuses every http(s) URI. So the
+# logo could never render, for anyone, and nothing said so.
+# See docs/TODOs/org-logo-never-renders-in-a-pdf.md.
+
+
+def transparent_png_bytes(size=(300, 120)) -> bytes:
+    """A logo shaped like a real one: a mark on a fully transparent ground."""
+    buf = io.BytesIO()
+    image = Image.new("RGBA", size, (0, 0, 0, 0))
+    for x in range(40, 260):
+        for y in range(30, 90):
+            image.putpixel((x, y), (14, 107, 88, 255))
+    image.save(buf, "PNG")
+    return buf.getvalue()
+
+
+def upload_logo(client, slug, data, filename="logo.png", mime="image/png"):
+    return client.post(
+        f"/api/v1/orgs/{slug}/logo",
+        headers=auth(slug),
+        files={"file": (filename, data, mime)},
+    )
+
+
+def a_credential(db_session, org, public_id: str):
+    cred = Credential(
+        public_id=public_id,
+        org_id=org.id,
+        recipient_name="Ada Lovelace",
+        recipient_email="ada@example.com",
+        title="Analytical Engines",
+        metadata_={},
+        hmac_signature="x",
+        status="issued",
+    )
+    db_session.add(cred)
+    db_session.commit()
+    return cred
+
+
+def test_the_rendered_logo_url_is_a_data_uri_not_a_link(client, db_session, store):
+    """The bug itself, stated directly.
+
+    An http(s) URL here cannot render: the PDF renderer's link callback returns
+    _BLOCKED for anything containing "://", by design, so the <img> resolved to
+    nothing. Whatever build_render_variables puts in `logo_url` must be
+    something the renderer can actually draw.
+    """
+    from api.services.rendering import build_render_variables
+
+    org = an_org(db_session, "logo-datauri-org")
+    org.logo_url = "https://cdn.example.com/acme.png"
+    db_session.commit()
+
+    upload_logo(client, "logo-datauri-org", transparent_png_bytes())
+    db_session.refresh(org)
+
+    cred = a_credential(db_session, org, "CF-2026-LOGODATA")
+    variables = build_render_variables(cred, org)
+
+    assert variables["logo_url"].startswith("data:image/")
+    assert "://" not in variables["logo_url"]
+    # The external URL is still on the org for the viewer to use; it just is
+    # not what the renderer is handed.
+    assert org.logo_url == "https://cdn.example.com/acme.png"
+
+
+def test_an_org_without_an_uploaded_logo_renders_no_logo_rather_than_a_dead_link():
+    """`logo_url` must not fall back to the external column. Returning it would
+    put the exact <img src="https://..."> back that rendered as nothing."""
+    from api.services.backgrounds import logo_data_uri
+
+    class Org:
+        slug = "no-upload"
+        logo_asset_id = None
+        logo_url = "https://cdn.example.com/acme.png"
+
+    assert logo_data_uri(Org()) == ""
+
+
+def test_the_logo_actually_reaches_the_pdf_bytes(client, db_session, store):
+    """The guard the TODO asked for.
+
+    A PDF that contains an image is not evidence it contains *this* image — the
+    QR code is an image too, and a template renders one either way. So the same
+    template is rendered twice, with the logo variable and without it, and the
+    two documents must differ. Page count cannot detect this: both are one page.
+    """
+    from api.core.pdf_renderer import render_credential_pdf
+    from api.services.rendering import build_render_variables
+
+    org = an_org(db_session, "logo-inpdf-org")
+    upload_logo(client, "logo-inpdf-org", transparent_png_bytes())
+    db_session.refresh(org)
+
+    cred = a_credential(db_session, org, "CF-2026-LOGOPDF1")
+
+    html = build_html_from_config({"show_logo": True})
+    assert "{{logo_url}}" in html, "the guided layout stopped emitting a logo slot"
+
+    with_logo = dict(build_render_variables(cred, org))
+    with_logo.update(font_face="", display_font="Helvetica", background="")
+    without_logo = dict(with_logo, logo_url="")
+
+    drawn = render_credential_pdf(html, with_logo)
+    blank = render_credential_pdf(html, without_logo)
+
+    assert pdf_page_count(drawn) == 1
+    assert len(drawn) > len(blank), "the logo added nothing to the document"
+
+
+def test_a_transparent_logo_is_not_flattened_onto_black(client, db_session, store):
+    """The reason a logo cannot reuse the artwork encoder.
+
+    `_reencode` calls convert("RGB"), which drops the alpha channel; a logo
+    exported with a transparent ground then prints as a solid black rectangle
+    on every certificate. That is worse than the bug being fixed — no logo is a
+    disappointment, a black box is a ruined document.
+    """
+    an_org(db_session, "logo-alpha-org")
+
+    res = upload_logo(client, "logo-alpha-org", transparent_png_bytes())
+    assert res.status_code == 201
+    body = res.json()["data"]
+
+    assert body["mime"] == "image/png"
+
+    asset = db_session.query(TemplateAsset).filter_by(id=uuid.UUID(body["id"])).first()
+    image = Image.open(io.BytesIO(store.objects[asset.storage_key]))
+
+    assert image.mode == "RGBA", "alpha did not survive the re-encode"
+    # The corner was transparent in the upload and must still be.
+    assert image.getpixel((0, 0))[3] == 0
+
+
+def test_an_opaque_logo_is_stored_as_jpeg(client, db_session, store):
+    """No alpha to keep, so take the smaller encoding."""
+    an_org(db_session, "logo-opaque-org")
+
+    body = upload_logo(
+        client, "logo-opaque-org", jpeg_bytes(), "logo.jpg", "image/jpeg"
+    ).json()["data"]
+
+    assert body["mime"] == "image/jpeg"
+
+
+def test_an_uploaded_logo_is_served_publicly(client, db_session, store):
+    """The viewer, og:image and the Open Badges Profile all need a URL. The
+    certificate embeds the same bytes as a data URI — one upload, two
+    representations."""
+    an_org(db_session, "logo-public-org")
+    upload_logo(client, "logo-public-org", transparent_png_bytes())
+
+    res = client.get("/orgs/logo-public-org/logo")
+
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("image/png")
+    assert res.headers["x-content-type-options"] == "nosniff"
+    assert Image.open(io.BytesIO(res.content)).mode == "RGBA"
+
+
+def test_the_public_logo_route_404s_without_an_upload(client, db_session, store):
+    """A legacy external logo_url is somebody else's URL to serve, not ours."""
+    org = an_org(db_session, "logo-none-org")
+    org.logo_url = "https://cdn.example.com/acme.png"
+    db_session.commit()
+
+    assert client.get("/orgs/logo-none-org/logo").status_code == 404
+
+
+def test_the_viewer_and_the_certificate_show_the_same_logo(client, db_session, store):
+    """An org with both an upload and a legacy URL must not show one mark on
+    the page and print a different one on the document."""
+    from api.routes.verify import public_logo_url
+
+    org = an_org(db_session, "logo-agree-org")
+    org.logo_url = "https://cdn.example.com/old-mark.png"
+    db_session.commit()
+    upload_logo(client, "logo-agree-org", transparent_png_bytes())
+    db_session.refresh(org)
+
+    assert public_logo_url(org).endswith("/orgs/logo-agree-org/logo")
+    assert "old-mark" not in public_logo_url(org)
+
+
+def test_the_logo_asset_cannot_be_deleted_while_it_is_the_logo(
+    client, db_session, store
+):
+    """The RESTRICT foreign key would refuse this anyway — as a 500 raised from
+    inside the commit, which tells the caller nothing about what to do."""
+    an_org(db_session, "logo-delete-org")
+    asset_id = upload_logo(client, "logo-delete-org", transparent_png_bytes()).json()[
+        "data"
+    ]["id"]
+
+    res = client.delete(
+        f"/api/v1/orgs/logo-delete-org/template-assets/{asset_id}",
+        headers=auth("logo-delete-org"),
+    )
+
+    assert res.status_code == 409
+    assert "logo" in res.json()["error"]["message"].lower()
+
+
+def test_removing_the_logo_keeps_the_image(client, db_session, store):
+    """Clearing the pointer is reversible; deleting bytes a template may also be
+    drawn on is a separate decision."""
+    org = an_org(db_session, "logo-remove-org")
+    asset_id = upload_logo(client, "logo-remove-org", transparent_png_bytes()).json()[
+        "data"
+    ]["id"]
+
+    res = client.delete(
+        "/api/v1/orgs/logo-remove-org/logo", headers=auth("logo-remove-org")
+    )
+
+    assert res.status_code == 200
+    assert res.json()["data"]["removed"] is True
+    db_session.refresh(org)
+    assert org.logo_asset_id is None
+    assert (
+        db_session.query(TemplateAsset).filter_by(id=uuid.UUID(asset_id)).first()
+        is not None
+    )
+
+
+def test_the_org_json_tells_the_dashboard_it_has_a_printable_logo(
+    client, db_session, store
+):
+    """The join, asserted from the side that consumes it.
+
+    The branding card decides between "Upload a logo" and "Replace" on
+    `logo_asset_id`, and shows a warning about a link that cannot be printed
+    when there is only `logo_url`. If the API stops emitting the field, both
+    halves still work on their own: the upload succeeds, the certificate prints
+    the logo, and the dashboard shows "Upload a logo" forever with no way to see
+    that anything is there. That is the failure this repository keeps producing.
+    """
+    an_org(db_session, "logo-json-org")
+
+    before = client.get(
+        "/api/v1/orgs/logo-json-org", headers=auth("logo-json-org")
+    ).json()["data"]
+    assert "logo_asset_id" in before, "the dashboard reads a field the API omits"
+    assert before["logo_asset_id"] is None
+
+    upload_logo(client, "logo-json-org", transparent_png_bytes())
+
+    after = client.get(
+        "/api/v1/orgs/logo-json-org", headers=auth("logo-json-org")
+    ).json()["data"]
+    assert after["logo_asset_id"] is not None
+
+
+def test_the_public_logo_route_is_not_shadowed_by_the_issuer_profile(
+    client, db_session, store
+):
+    """`/orgs/{slug}` and `/orgs/{slug}/logo` are neighbours on the same public
+    router. If the profile route ever grew a catch-all path parameter it would
+    swallow this one, and the logo would start returning an HTML page that an
+    <img> renders as nothing."""
+    an_org(db_session, "logo-shadow-org")
+    upload_logo(client, "logo-shadow-org", transparent_png_bytes())
+
+    logo = client.get("/orgs/logo-shadow-org/logo")
+    profile = client.get(
+        "/orgs/logo-shadow-org", headers={"accept": "application/json"}
+    )
+
+    assert logo.headers["content-type"].startswith("image/")
+    assert profile.headers["content-type"].startswith("application/ld+json")
+    # The profile points at the logo route, so a badge consumer that
+    # dereferences `image` gets the same bytes the certificate prints.
+    assert profile.json()["image"].endswith("/orgs/logo-shadow-org/logo")

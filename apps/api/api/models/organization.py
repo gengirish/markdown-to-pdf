@@ -29,7 +29,30 @@ class Organization(Base):
     )
     slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    #: An external URL the org points at. Correct for the viewer page and for
+    #: an Open Badges consumer, both of which fetch it themselves — and useless
+    #: in a PDF, because the renderer refuses to fetch anything. Uploading is
+    #: what puts a logo on a certificate; see `logo_asset_id`.
     logo_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    #: An uploaded logo, in the same store as traced-template artwork, so it can
+    #: reach a render as a data URI. RESTRICT: a credential re-renders its PDF
+    #: on demand, so the image an issued certificate draws must not be
+    #: deletable out from under it. Wins over `logo_url` everywhere both apply.
+    #:
+    #: `use_alter` with an explicit name because this closes a cycle:
+    #: template_assets.org_id points back at this table. Without it the
+    #: metadata cannot be ordered for CREATE or DROP and the test database
+    #: cannot be torn down. The name matches the migration's constraint.
+    logo_asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "template_assets.id",
+            ondelete="RESTRICT",
+            use_alter=True,
+            name="fk_organizations_logo_asset",
+        ),
+        nullable=True,
+    )
     # Credential PDF branding. Nullable so an org that never set these falls
     # back to CertForge's own defaults — see services/rendering.py.
     primary_color: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -50,7 +73,16 @@ class Organization(Base):
         "Credential", back_populates="organization", cascade="all, delete-orphan"
     )
     template_assets: Mapped[list] = relationship(
-        "TemplateAsset", back_populates="organization", cascade="all, delete-orphan"
+        "TemplateAsset",
+        back_populates="organization",
+        cascade="all, delete-orphan",
+        # Two paths lead from Organization to TemplateAsset now — this one, and
+        # organizations.logo_asset_id pointing the other way. Without naming the
+        # join, SQLAlchemy cannot tell which foreign key this collection means.
+        foreign_keys="TemplateAsset.org_id",
+    )
+    logo_asset: Mapped["TemplateAsset"] = relationship(  # noqa: F821
+        "TemplateAsset", foreign_keys=[logo_asset_id]
     )
     templates: Mapped[list] = relationship(
         "Template", back_populates="organization", cascade="all, delete-orphan"

@@ -28,6 +28,7 @@ from api.models import get_db
 from api.models.credential import Credential, PUBLICLY_VERIFIABLE
 from api.models.organization import Organization
 from api.models.template import Template
+from api.models.template_asset import TemplateAsset
 from api.services.issuance import resolve_template_id
 from api.services.rendering import build_render_variables
 from api.viewer_templates import render_credential_viewer, safe_public_url
@@ -124,7 +125,7 @@ def _get_credential_data(credential_id: str) -> dict | None:
                 "issuer": {
                     "name": org.name if org else None,
                     "slug": org.slug if org else None,
-                    "logo_url": org.logo_url if org else None,
+                    "logo_url": public_logo_url(org),
                     "primary_color": org.primary_color if org else None,
                     "accent_color": org.accent_color if org else None,
                     "footer_text": org.footer_text if org else None,
@@ -309,6 +310,75 @@ def get_credential_qr_png(public_id: str):
     )
 
 
+def public_logo_url(org) -> str | None:
+    """The URL a browser, a crawler or a badge consumer should fetch for a
+    logo — the uploaded one when there is one, otherwise whatever external
+    address the org set on `logo_url`.
+
+    One function so the viewer, og:image and the Open Badges Profile cannot
+    disagree about which of an organization's two logo fields wins. The
+    uploaded asset wins, everywhere: it is the one the certificate itself
+    prints, and a page showing a different mark from the document it verifies
+    is its own kind of wrong.
+    """
+    if org is None:
+        return None
+    if getattr(org, "logo_asset_id", None) is not None:
+        return f"{CERTFORGE_API_URL}/orgs/{org.slug}/logo"
+    return org.logo_url
+
+
+@public_router.get("/orgs/{slug}/logo")
+def issuer_logo(slug: str):
+    """An organization's uploaded logo, served publicly.
+
+    The certificate PDF embeds this image as a data URI; the viewer page, the
+    Open Badges issuer Profile and og:image need a URL a browser or a crawler
+    can fetch. Same bytes, two representations, one uploaded asset — which is
+    the point of storing it rather than asking the customer for a URL.
+
+    Public and unauthenticated, unlike the template-asset image route next to
+    it, and deliberately so: this is the mark an organization prints on
+    documents it hands to the public. The asset route stays authenticated
+    because a work-in-progress certificate design is not public.
+
+    404 when the org has no uploaded logo, including when it has only the
+    legacy `logo_url` — that is somebody else's URL to serve, not ours.
+    """
+    with get_db() as session:
+        org = session.query(Organization).filter_by(slug=slug).first()
+        if org is None or org.logo_asset_id is None:
+            raise HTTPException(status_code=404, detail="No logo for this organization")
+
+        asset = (
+            session.query(TemplateAsset).filter_by(id=org.logo_asset_id).first()
+        )
+        if asset is None:
+            raise HTTPException(status_code=404, detail="No logo for this organization")
+        storage_key, mime, checksum = asset.storage_key, asset.mime, asset.checksum
+
+    from api.core.storage import StorageError, get_object
+
+    try:
+        data = get_object(storage_key)
+    except StorageError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not read the logo: {exc}")
+
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": "inline",
+            # Public, unlike the org-private artwork route: a shared cache and a
+            # crawler are both welcome to hold this. ETag is the checksum, so a
+            # replaced logo is a different entity rather than a stale hit.
+            "Cache-Control": "public, max-age=3600",
+            "ETag": f'"{checksum}"',
+        },
+    )
+
+
 @public_router.get("/orgs/{slug}")
 def issuer_profile(slug: str, request: Request):
     """Public issuer profile — the target of every badge's `issuer.id`.
@@ -335,7 +405,7 @@ def issuer_profile(slug: str, request: Request):
 
         profile_id = f"{CERTFORGE_WEB_URL}/orgs/{org.slug}"
         name = org.name
-        logo_url = org.logo_url
+        logo_url = public_logo_url(org)
 
     accept = request.headers.get("accept", "")
     wants_json = ("json" in accept) and ("text/html" not in accept)

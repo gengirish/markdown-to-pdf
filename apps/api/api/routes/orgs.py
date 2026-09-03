@@ -94,6 +94,11 @@ def get_org(slug: str):
             "slug": org.slug,
             "name": org.name,
             "logo_url": org.logo_url,
+            # The dashboard decides between "Upload a logo" and "Replace" on
+            # this, and the certificate prints the asset rather than the URL.
+            # Without it the card cannot tell an org that has a printable logo
+            # from one that has only a link.
+            "logo_asset_id": str(org.logo_asset_id) if org.logo_asset_id else None,
             "primary_color": org.primary_color,
             "accent_color": org.accent_color,
             "footer_text": org.footer_text,
@@ -130,6 +135,11 @@ def update_org(
             "slug": org.slug,
             "name": org.name,
             "logo_url": org.logo_url,
+            # The dashboard decides between "Upload a logo" and "Replace" on
+            # this, and the certificate prints the asset rather than the URL.
+            # Without it the card cannot tell an org that has a printable logo
+            # from one that has only a link.
+            "logo_asset_id": str(org.logo_asset_id) if org.logo_asset_id else None,
             "primary_color": org.primary_color,
             "accent_color": org.accent_color,
             "footer_text": org.footer_text

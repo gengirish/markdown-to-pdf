@@ -109,6 +109,7 @@ ruff check apps/api/api/ sdk/pdfcert/
 | `POST` | `/api/v1/orgs/{slug}/templates/import/{global_id}` | Copy a built-in template into the org |
 | `POST` | `/api/v1/orgs/{slug}/templates/preview` | Render a sample PDF of a template |
 | `POST` | `/api/v1/orgs/{slug}/templates/from-image` | Read an uploaded design with a model and propose a layout |
+| `POST` `DELETE` | `/api/v1/orgs/{slug}/logo` | Upload / remove the logo printed on this org's certificates |
 | `GET` `POST` | `/api/v1/orgs/{slug}/template-assets` | List / upload certificate artwork |
 | `GET` | `/api/v1/orgs/{slug}/template-assets/{asset_id}/image` | Fetch stored artwork |
 | `DELETE` | `/api/v1/orgs/{slug}/template-assets/{asset_id}` | Delete artwork (refused while a template uses it) |
@@ -143,6 +144,7 @@ so they are also the ones `vercel.json` must rewrite through to the API.
 | `GET /credentials/{public_id}/pdf` | The certificate, rendered on demand — nothing is stored |
 | `GET /credentials/{public_id}/qr.png` | QR code pointing at the verification page |
 | `GET /orgs/{slug}` | Public issuer profile (an Open Badges `issuer.id` dereferences here) |
+| `GET /orgs/{slug}/logo` | The organization's uploaded logo — the same image its certificates print |
 
 Every route that renders a credential's *contents* — the verification page,
 `badge.json` and the PDF — verifies its HMAC signature first and answers **409**

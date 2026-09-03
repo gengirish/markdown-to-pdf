@@ -64,7 +64,10 @@ class TemplateAsset(Base):
     )
 
     organization: Mapped["Organization"] = relationship(  # noqa: F821
-        back_populates="template_assets"
+        back_populates="template_assets",
+        # Disambiguates against organizations.logo_asset_id, which points back
+        # at this table from the other side.
+        foreign_keys=[org_id],
     )
 
     def __repr__(self) -> str:

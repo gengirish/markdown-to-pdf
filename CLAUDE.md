@@ -332,12 +332,27 @@ route, the bulk worker (`api/core/worker.py`), and the template preview
 templates use the first three; `logo_url` is passed through but none of them has a
 layout slot for it yet.
 
-**`logo_url` is passed through as a URL, and that makes it broken wherever it *is*
-used.** The guided generator does have a logo slot, and it emits
-`<img src="{{logo_url}}">` — which `_pdf_link_callback` refuses to fetch, by design,
-so the image never renders and nothing reports it. A logo has to arrive the way
-`{{background}}` does, as a data URI. See
-`docs/TODOs/org-logo-never-renders-in-a-pdf.md`; it is open.
+**`{{logo_url}}` is a data URI, not a URL, despite the name.** It resolves through
+`backgrounds.logo_data_uri()` from the org's *uploaded* logo — never from
+`organizations.logo_url`, which is an external address `_pdf_link_callback` refuses
+to fetch. It used to be that column, so the guided form's logo checkbox emitted an
+`<img>` that rendered as nothing for every org that ticked it, silently. The column
+still exists and is still right for the viewer and for an Open Badges consumer, both
+of which fetch it themselves. See `docs/TODOs/org-logo-never-renders-in-a-pdf.md`.
+
+- **A logo does not go through `_reencode`.** That flattens to RGB and writes JPEG,
+  which is correct for an opaque certificate design and catastrophic for a logo: a
+  transparent PNG loses its alpha and prints as a **solid black rectangle**, upload
+  returning 201 and preview showing it. `_reencode_logo` keeps alpha and writes PNG.
+  Both share `_decode_upload`, so the checks that make an upload inert cannot drift.
+- **`public_logo_url()` in `routes/verify.py` is the only place that decides which
+  logo wins** — uploaded over external, everywhere. The viewer, `og:image` and the
+  Open Badges Profile all call it, so a page cannot show a different mark from the
+  document it verifies.
+- **`organizations` and `template_assets` now reference each other.** That cycle is
+  why `logo_asset_id`'s foreign key is declared `use_alter=True` with an explicit
+  name; without it SQLAlchemy cannot order the metadata and the test database will
+  not drop.
 
 The preview is a caller rather than a second implementation because it used to be
 one. `sample_variables()` was a hand-written dict, and it had already drifted by
