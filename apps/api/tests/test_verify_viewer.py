@@ -395,3 +395,78 @@ def test_a_javascript_logo_url_is_not_rendered(client, db_session):
     assert "javascript:" not in body
     # Falls back to the QR endpoint rather than emitting an unusable og:image.
     assert _og(body, "image").endswith("/qr.png")
+
+
+def test_the_page_does_not_say_verified_credential_twice(client, db_session):
+    """The header carried an eyebrow line above the org name, and the caller
+    filled it with the literal "Verified Credential" for any org that had a
+    name — which is every real org. The badge two rows below says the same
+    words, so the page printed them twice, stacked.
+
+    Reported by a beta user against her own credential before any test caught
+    it. Counted, not merely searched for: a substring assertion passes on both
+    one occurrence and two, which is the whole failure.
+    """
+    _issue_credential(db_session, "CF-2026-DUPBADGE", slug="dup-badge-org")
+
+    body = client.get("/verify/CF-2026-DUPBADGE").text
+    card = body[body.index('class="card-header"') : body.index('class="card-body"')]
+
+    assert card.lower().count("verified credential") == 1
+
+
+def test_the_org_name_appears_once_in_the_header(client, db_session):
+    """The same shape as the tagline bug, guarded separately: the header must
+    not print the issuing organization's name more than once."""
+    _issue_credential(db_session, "CF-2026-DUPNAME1", slug="dup-name-org")
+
+    body = client.get("/verify/CF-2026-DUPNAME1").text
+    card = body[body.index('class="card-header"') : body.index('class="card-body"')]
+
+    assert card.count("Viewer Org") == 1
+
+
+def test_the_issued_date_is_readable_not_an_iso_timestamp(client, db_session):
+    """The viewer interpolated issued_at raw, so the page a QR code lands on
+    showed `2026-09-03T08:13:00.145119+00:00` under ISSUED — microseconds and
+    UTC offset included. The PDF has always formatted the same value.
+    """
+    cred = _issue_credential(db_session, "CF-2026-ISODATE1", slug="iso-date-org")
+
+    body = client.get("/verify/CF-2026-ISODATE1").text
+    # The value paired with the "Issued" label specifically. Scanning the whole
+    # meta block would be a weaker test: the credential ID sits in it too and
+    # legitimately contains the letter T.
+    shown = re.search(
+        r'<div class="meta-val">([^<]*)</div>\s*<div class="meta-lbl">Issued</div>',
+        body,
+    )
+    assert shown, "no Issued row in the viewer"
+
+    assert shown.group(1).strip() == cred.issued_at.strftime("%B %d, %Y")
+    assert "T" not in shown.group(1)
+    assert ":" not in shown.group(1)
+
+
+def test_the_machine_readable_date_stays_iso_8601(client, db_session):
+    """Formatting the visible date must not reach `dateCreated`. It is a
+    schema.org field consumers parse; a prettified date there is not a date.
+    """
+    cred = _issue_credential(db_session, "CF-2026-ISOMACH1", slug="iso-machine-org")
+
+    payload = _json_ld(client.get("/verify/CF-2026-ISOMACH1").text)
+
+    assert payload["dateCreated"].startswith(cred.issued_at.strftime("%Y-%m-%d"))
+    assert "T" in payload["dateCreated"]
+
+
+def test_an_unparseable_issue_date_does_not_break_the_page():
+    """A verification page that 500s over date formatting is worse than one
+    showing an ugly string, so the helper falls back rather than raising."""
+    from api.viewer_templates import format_issued_date
+
+    assert format_issued_date("not a date") == "not a date"
+    assert format_issued_date("") == ""
+    assert format_issued_date(None) == ""
+    assert format_issued_date("2026-09-03T08:13:00.145119+00:00") == "September 03, 2026"
+    assert format_issued_date("2026-09-03T08:13:00Z") == "September 03, 2026"

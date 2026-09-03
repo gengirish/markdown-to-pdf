@@ -35,6 +35,7 @@ from __future__ import annotations
 import html
 import json
 import re
+from datetime import datetime
 from urllib.parse import quote
 
 # Fallbacks for an org that has not set its branding. Same values as
@@ -50,6 +51,35 @@ DEFAULT_FOOTER_TEXT = "Powered by CertForge · certforge.intelliforge.tech"
 _COLOR_RE = re.compile(
     r"^(#[0-9a-fA-F]{3,8}|rgba?\([\d\s.,%]+\)|[a-zA-Z]{3,20})$"
 )
+
+
+def format_issued_date(value) -> str:
+    """An issue date a person can read: "September 03, 2026".
+
+    The viewer used to interpolate `issued_at` straight into the page, so a
+    credential's own verification page — the one a QR code lands on — showed
+    `2026-09-03T08:13:00.145119+00:00`, microseconds and offset included. The
+    PDF path has always formatted it (`build_render_variables` uses this same
+    `%B %d, %Y`), which is how the two came to disagree without anyone noticing:
+    nothing renders both surfaces side by side.
+
+    Accepts a datetime or a string. **Never raises**: an unparseable date falls
+    back to the original text, because a verification page that 500s over
+    formatting is far worse than one showing an ugly timestamp.
+    """
+    if isinstance(value, datetime):
+        return value.strftime("%B %d, %Y")
+
+    text = str(value or "").strip()
+    if not text:
+        return ""
+
+    # fromisoformat covers what the API emits. "Z" is valid ISO-8601 and is not
+    # accepted before Python 3.11, so it is normalised rather than trusted.
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).strftime("%B %d, %Y")
+    except ValueError:
+        return text
 
 
 def _safe_color(value: str | None, fallback: str) -> str:
@@ -214,7 +244,7 @@ CREDENTIAL_VIEWER_HTML = """<!DOCTYPE html>
     <div class="card">
         <div class="card-header">
             {logo_html}
-            <div class="hdr-org">{issuer_tagline}</div>
+            {tagline_html}
             <div class="hdr-brand">{issuer_name}</div>
             <div class="hdr-badge">Verified Credential</div>
         </div>
@@ -229,7 +259,7 @@ CREDENTIAL_VIEWER_HTML = """<!DOCTYPE html>
             <div class="course">{title}</div>
             <div class="meta">
                 <div class="meta-item">
-                    <div class="meta-val">{issued_at}</div>
+                    <div class="meta-val">{issued_display}</div>
                     <div class="meta-lbl">Issued</div>
                 </div>
                 <div class="meta-item">
@@ -274,7 +304,7 @@ def render_credential_viewer(
     qr_data_uri: str,
     issuer_name: str,
     issuer_url: str = "",
-    issuer_tagline: str = "Verified Credential",
+    issuer_tagline: str = "",
     pdf_url: str = "",
     og_image: str = "",
     logo_url: str | None = None,
@@ -289,7 +319,10 @@ def render_credential_viewer(
     """
     safe_name = html.escape(str(recipient_name))
     safe_title = html.escape(str(title))
-    safe_issued = html.escape(str(issued_at))
+    # What a person reads. The JSON-LD below still gets the raw ISO-8601
+    # string, because `dateCreated` is a machine field and a prettified date
+    # there is not a date at all.
+    safe_issued_display = html.escape(format_issued_date(issued_at))
     safe_id = html.escape(str(credential_id))
     safe_issuer = html.escape(str(issuer_name))
     safe_tagline = html.escape(str(issuer_tagline))
@@ -349,13 +382,18 @@ def render_credential_viewer(
         + quote(share_target, safe="")
     )
 
+    # An empty tagline drops the row rather than printing a blank one. The
+    # caller passes "" when the eyebrow would only repeat something already on
+    # the card — see the note on the parameter.
+    tagline_html = f'<div class="hdr-org">{safe_tagline}</div>' if safe_tagline else ""
+
     return CREDENTIAL_VIEWER_HTML.format(
         recipient_name=safe_name,
         title=safe_title,
-        issued_at=safe_issued,
+        issued_display=safe_issued_display,
+        tagline_html=tagline_html,
         credential_id=safe_id,
         issuer_name=safe_issuer,
-        issuer_tagline=safe_tagline,
         page_url=safe_page_url,
         badge_url=safe_badge_url,
         meta_description=meta_description,

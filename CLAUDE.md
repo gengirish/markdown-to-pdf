@@ -332,6 +332,13 @@ route, the bulk worker (`api/core/worker.py`), and the template preview
 templates use the first three; `logo_url` is passed through but none of them has a
 layout slot for it yet.
 
+**`logo_url` is passed through as a URL, and that makes it broken wherever it *is*
+used.** The guided generator does have a logo slot, and it emits
+`<img src="{{logo_url}}">` — which `_pdf_link_callback` refuses to fetch, by design,
+so the image never renders and nothing reports it. A logo has to arrive the way
+`{{background}}` does, as a data URI. See
+`docs/TODOs/org-logo-never-renders-in-a-pdf.md`; it is open.
+
 The preview is a caller rather than a second implementation because it used to be
 one. `sample_variables()` was a hand-written dict, and it had already drifted by
 `font_face` and `display_font` — both emitted into every template the guided

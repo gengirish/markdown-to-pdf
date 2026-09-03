@@ -472,7 +472,12 @@ async def verify_page(credential_id: str, request: Request):
             qr_data_uri=generate_qr_data_uri(page_url),
             issuer_name=issuer_name,
             issuer_url=f"{CERTFORGE_WEB_URL}/orgs/{issuer_slug}" if issuer_slug else "",
-            issuer_tagline=CERT_ORG_TAGLINE if not issuer.get("name") else "Verified Credential",
+            # Only the legacy single-brand case has an eyebrow line. When a
+            # real organization issued the credential this used to be the
+            # literal "Verified Credential" — the same words as the badge two
+            # rows below it, so every org's page said it twice. Empty drops
+            # the row.
+            issuer_tagline=CERT_ORG_TAGLINE if not issuer.get("name") else "",
             pdf_url=data.get("pdf_url") or "",
             og_image=og_image,
             logo_url=issuer.get("logo_url"),

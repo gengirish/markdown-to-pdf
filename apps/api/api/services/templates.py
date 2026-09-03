@@ -674,6 +674,14 @@ def build_html_from_config(
 
 #: The layout itself, kept out of the function so the markup reads as markup.
 #: Braces are doubled where they must survive .format() into CSS.
+#:
+#: The issuing organization's name appears in exactly ONE row. There used to be
+#: a small letterspaced eyebrow above the display line carrying the same value,
+#: so every guided certificate printed the company name twice, stacked. A beta
+#: user reported it on a certificate she issued to herself; no test caught it,
+#: because the assertions all ask whether a placeholder is present and it was —
+#: twice. Note that this string is .format()ed, so a comment written *inside*
+#: the markup cannot mention a field name without reintroducing the bug.
 TEMPLATE_SHELL = """<!DOCTYPE html>
 <html>
 <head>
@@ -698,9 +706,6 @@ td {{ padding: 0; }}
     <tr><td style="padding: 30pt 40pt 26pt;">
         <table width="100%" cellspacing="0" cellpadding="0">
             {logo}
-            <tr><td align="center" style="font-size: 8pt; letter-spacing: 4pt; color: {accent}; font-weight: bold; padding-bottom: 4pt; text-align: center;">
-                {issuer}
-            </td></tr>
             <tr><td align="center" style="font-size: 25pt; font-weight: bold; color: #ffffff; padding: 6pt 0 12pt; text-align: center; font-family: {display};">
                 {issuer}
             </td></tr>

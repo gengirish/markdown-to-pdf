@@ -434,3 +434,26 @@ def test_community_tier_can_now_create_templates(client, db_session):
     org = org_with_key(db_session, "tpl-free", raw)
     assert org.tier == "community"
     assert create(client, "tpl-free", raw).status_code == 201
+
+
+def test_the_guided_layout_prints_the_issuer_name_once():
+    """The header shell carried {{issuer_name}} in two adjacent rows — a small
+    letterspaced eyebrow and the display line under it — so every guided
+    certificate printed the organization's name twice, stacked.
+
+    A beta user reported it on a certificate she had issued to herself. No test
+    caught it because every existing assertion asks whether a placeholder is
+    *present*, and it was: twice over.
+    """
+    html = build_html_from_config({})
+
+    assert html.count("{{issuer_name}}") == 1
+
+
+def test_the_guided_layout_prints_each_credential_field_once():
+    """The same shape, generalised. A field rendered in two slots is invisible
+    in a placeholder-presence check and obvious on a printed certificate."""
+    html = build_html_from_config({})
+
+    for placeholder in ("{{name}}", "{{title}}", "{{date}}", "{{credential_id}}"):
+        assert html.count(placeholder) == 1, f"{placeholder} is rendered more than once"
