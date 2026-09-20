@@ -221,7 +221,7 @@ API_V1_RATE_WINDOW = int(_env("API_V1_RATE_LIMIT_WINDOW_SECONDS", "60") or "60")
 # ── Billing tiers ──────────────────────────────────────────────────────────
 
 BILLING_TIERS = {
-    "community": {"name": "Community", "price_paise": 0, "monthly_quota": 50},
+    "community": {"name": "Community", "price_paise": 0, "monthly_quota": 500},
     "starter": {"name": "Starter", "price_paise": 299900, "monthly_quota": 500},
     "growth": {"name": "Growth", "price_paise": 999900, "monthly_quota": 2000},
     "scale": {"name": "Scale", "price_paise": 2499900, "monthly_quota": -1},  # -1 = unlimited

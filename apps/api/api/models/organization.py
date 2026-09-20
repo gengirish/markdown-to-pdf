@@ -7,6 +7,7 @@ from sqlalchemy import String, Integer, Boolean, ForeignKey, UniqueConstraint, I
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from api.core.config import get_tier_quota
 from api.models import Base
 
 
@@ -60,7 +61,12 @@ class Organization(Base):
     footer_text: Mapped[str | None] = mapped_column(String(255), nullable=True)
     tier: Mapped[str] = mapped_column(String(50), nullable=False, default="community")
     razorpay_sub_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    monthly_quota: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
+    # Derived from the tier table rather than repeated as a literal: a new org
+    # is created with tier="community" and no explicit quota, so a default that
+    # disagreed with BILLING_TIERS["community"] would silently win.
+    monthly_quota: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=lambda: get_tier_quota("community")
+    )
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )

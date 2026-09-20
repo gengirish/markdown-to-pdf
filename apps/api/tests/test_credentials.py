@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from api.core.config import get_tier_quota
 from api.core.principal import LIVE_PREFIX, TEST_PREFIX, hash_api_key
 from api.models.api_key import ApiKey
 from api.models.credential import Credential
@@ -108,6 +109,23 @@ def test_issuing_increments_the_usage_ledger(client, db_session):
         .one()
     )
     assert ledger.credentials_issued == 3
+
+
+def test_a_new_org_gets_the_community_tier_quota(db_session):
+    """BILLING_TIERS is not what binds — organizations.monthly_quota is.
+
+    orgs.py creates an org with a tier and no explicit quota, so the model
+    default is what ends up in the row. If the two disagree, raising the tier
+    table changes the pricing page and nothing else; the column keeps refusing
+    at the old number. Assert they are the same value rather than that either
+    one is 500.
+    """
+    org = Organization(slug="fresh-community", name="Fresh", tier="community")
+    db_session.add(org)
+    db_session.commit()
+
+    assert org.monthly_quota == get_tier_quota("community")
+    assert org.monthly_quota == 500
 
 
 def test_the_quota_actually_refuses_once_reached(client, db_session):
