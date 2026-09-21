@@ -220,15 +220,135 @@ API_V1_RATE_WINDOW = int(_env("API_V1_RATE_LIMIT_WINDOW_SECONDS", "60") or "60")
 
 # ── Billing tiers ──────────────────────────────────────────────────────────
 
+#: The one place a tier is defined. Everything that needs to know what a plan
+#: costs, how much it allows, or what to call it reads this table — the quota
+#: on a new org (`Organization.monthly_quota`), the template gate in
+#: `routes/templates.py`, the usage endpoint, and the pricing page, which gets
+#: it over the wire from `GET /api/v1/tiers` rather than keeping a second copy
+#: in TypeScript. A price or a limit written down twice is a price or a limit
+#: that will disagree with itself.
+#:
+#: `-1` is the unlimited sentinel (`services.issuance.UNLIMITED`) and stays an
+#: internal detail: the wire renders it as `null`, never as -1.
+#:
+#: `order` is the display order, and is deliberately explicit rather than
+#: dict-insertion order — a JSON object has no order once it crosses the wire.
 BILLING_TIERS = {
-    "community": {"name": "Community", "price_paise": 0, "monthly_quota": 500},
-    "starter": {"name": "Starter", "price_paise": 299900, "monthly_quota": 500},
-    "growth": {"name": "Growth", "price_paise": 999900, "monthly_quota": 2000},
-    "scale": {"name": "Scale", "price_paise": 2499900, "monthly_quota": -1},  # -1 = unlimited
+    "community": {
+        "name": "Community",
+        "order": 0,
+        "price_paise": 0,
+        "monthly_quota": 500,
+        "template_limit": 1,
+        "tagline": "Issue real, verifiable credentials for free.",
+        # Community gets one custom template, not zero. A free tier that cannot
+        # reach the feature at all is how the old 403 gate came to be deleted.
+        "features": [
+            "500 credentials a month",
+            "1 custom template",
+            "Hosted verification pages and QR codes",
+            "Open Badges 3.0 badge.json",
+            "Email delivery",
+        ],
+    },
+    "starter": {
+        "name": "Starter",
+        "order": 1,
+        "price_paise": 299900,
+        "monthly_quota": 500,
+        "template_limit": 5,
+        "tagline": "For a team running a handful of programmes.",
+        "features": [
+            "500 credentials a month",
+            "5 custom templates",
+            "Upload your own certificate artwork",
+            "Bulk issuance from CSV",
+            "API keys and webhooks",
+        ],
+    },
+    "growth": {
+        "name": "Growth",
+        "order": 2,
+        "price_paise": 999900,
+        "monthly_quota": 2000,
+        "template_limit": 25,
+        "tagline": "For institutions issuing at semester scale.",
+        "features": [
+            "2,000 credentials a month",
+            "25 custom templates",
+            "Read a design with AI to place fields",
+            "Recipient passports",
+            "Priority support",
+        ],
+    },
+    "scale": {
+        "name": "Scale",
+        "order": 3,
+        "price_paise": 2499900,
+        "monthly_quota": -1,  # -1 = unlimited
+        "template_limit": -1,
+        "tagline": "Unlimited issuance for a credentialing operation.",
+        "features": [
+            "Unlimited credentials",
+            "Unlimited custom templates",
+            "Custom domain for verification pages",
+            "SLA and onboarding support",
+        ],
+    },
 }
+
+#: The tier an org has until something moves it. Named rather than repeated as
+#: a literal, because it is the fallback for every lookup below.
+DEFAULT_TIER = "community"
+
+
+def get_tier(tier: str) -> dict:
+    """The tier table's row for `tier`, falling back to Community.
+
+    The fallback is not cosmetic. `Organization.tier` is a free-text column and
+    has historically held values this table does not know — the Razorpay
+    webhook still writes `"pro"`, which is not a key here. Falling back means
+    such a row is treated as the free tier everywhere at once, rather than as
+    one thing by the quota lookup and another by the gate.
+    """
+    return BILLING_TIERS.get(tier, BILLING_TIERS[DEFAULT_TIER])
 
 
 def get_tier_quota(tier: str) -> int:
     """Return monthly credential quota for a billing tier. -1 means unlimited."""
-    info = BILLING_TIERS.get(tier, BILLING_TIERS["community"])
-    return info["monthly_quota"]
+    return get_tier(tier)["monthly_quota"]
+
+
+def get_tier_template_limit(tier: str) -> int:
+    """How many templates an org on this tier may hold. -1 means unlimited.
+
+    A *stock*, not a monthly flow: it is checked against the live row count, so
+    deleting a template frees the slot. See docs/billing-and-template-quota-plan.md.
+    """
+    return get_tier(tier)["template_limit"]
+
+
+def tier_catalog() -> list[dict]:
+    """The public plan catalog, in display order, shaped for the wire.
+
+    `monthly_quota` / `template_limit` of -1 are rendered as `null` here for
+    the same reason the usage endpoint does it: the sentinel is ours, not a
+    consumer's.
+    """
+    def _limit(value: int) -> int | None:
+        return None if value == -1 else value
+
+    rows = []
+    for key, info in BILLING_TIERS.items():
+        rows.append({
+            "key": key,
+            "name": info["name"],
+            "tagline": info["tagline"],
+            "currency": "INR",
+            "price_paise": info["price_paise"],
+            "monthly_quota": _limit(info["monthly_quota"]),
+            "template_limit": _limit(info["template_limit"]),
+            "features": list(info["features"]),
+        })
+    rows.sort(key=lambda row: BILLING_TIERS[row["key"]]["order"])
+    return rows

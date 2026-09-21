@@ -88,12 +88,13 @@ const STATUS = [
       "Claim-by-email flow",
       "Your own artwork as a template",
       "Email delivery reporting",
+      "Usage and quota reporting",
     ],
   },
   {
     label: "Not yet",
     tone: "neutral" as const,
-    items: ["Self-serve billing and plan upgrades", "Webhook delivery retries", "Usage reporting"],
+    items: ["Self-serve billing and plan upgrades", "Webhook delivery retries"],
   },
 ];
 
@@ -108,6 +109,9 @@ export default function Home() {
           <a href="#status" className="no-underline hover:text-ink">
             What is live
           </a>
+          <Link href="/pricing" className="no-underline hover:text-ink">
+            Pricing
+          </Link>
           <a
             href="https://api.certforge.intelliforge.tech/docs"
             className="no-underline hover:text-ink"

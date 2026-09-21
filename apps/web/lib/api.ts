@@ -50,9 +50,19 @@ export class ApiError extends Error {
     return this.status === 401;
   }
 
-  /** True when the org has run out of monthly credential quota. */
+  /** True when the org has run out of monthly credential quota.
+   *
+   *  Two different refusals answer 402 — this one and the template allowance —
+   *  and they need different copy, so status alone is not enough to tell them
+   *  apart. The API types the second one `template_limit_reached`. */
   get isQuotaExceeded(): boolean {
-    return this.status === 402;
+    return this.status === 402 && this.type !== "template_limit_reached";
+  }
+
+  /** True when the org already holds as many templates as its plan allows.
+   *  `details` carries `{ tier, tier_name, limit, used, upgrades }`. */
+  get isTemplateLimitReached(): boolean {
+    return this.type === "template_limit_reached";
   }
 }
 
@@ -93,6 +103,52 @@ export interface OrgBrandingUpdate {
   primaryColor?: string | null;
   accentColor?: string | null;
   footerText?: string | null;
+}
+
+/** One counter's standing: how many used, and against what limit.
+ *  `limit`/`remaining` are `null` for an unlimited tier — never a `-1`
+ *  sentinel, which is an API-internal detail. */
+export interface UsageMeter {
+  used: number;
+  limit: number | null;
+  remaining: number | null;
+}
+
+export interface UsageSummary {
+  /** YYYY-MM, the period the counters below are for. */
+  period: string;
+  /** The raw `organizations.tier` value. Free text — see `tier_known`. */
+  tier: string;
+  /** The display name of the plan whose limits are actually being enforced.
+   *  When `tier_known` is false this is Community's, not a prettified `tier`:
+   *  showing a plan name that does not match the limits in force is how a
+   *  customer comes to believe they bought something they did not get. */
+  tier_name: string;
+  /** False when `tier` is a value the API's plan table does not know. */
+  tier_known: boolean;
+  credentials: UsageMeter;
+  /** Templates the org holds, against its plan's allowance. A stock, not a
+   *  monthly flow: deleting a template frees the slot. */
+  templates: UsageMeter;
+  vision_imports: UsageMeter;
+}
+
+/** One plan, as `GET /api/v1/tiers` serves it. The pricing page renders these
+ *  rather than a table kept in TypeScript, so a price on the page and the
+ *  quota the API grants cannot drift apart. */
+export interface Tier {
+  key: string;
+  name: string;
+  tagline: string;
+  /** ISO 4217. `price_paise` is the minor unit of this currency. */
+  currency: string;
+  /** Paise per month. Integer minor units, never a float. */
+  price_paise: number;
+  /** `null` means unlimited. */
+  monthly_quota: number | null;
+  /** `null` means unlimited. */
+  template_limit: number | null;
+  features: string[];
 }
 
 export interface OrgMember {
@@ -377,6 +433,20 @@ interface RequestOptions {
   anonymous?: boolean;
   /** Endpoint returns a bare body rather than the `{success, data}` envelope. */
   unenveloped?: boolean;
+  /** Let Next cache this response for N seconds on the server.
+   *
+   *  The default everywhere else is `no-store`, and it stays that way: almost
+   *  every endpoint here is scoped to the caller's session, and a cached
+   *  response is one another visitor can be served. Only pass this for a
+   *  response that is identical for everyone — the plan catalog is the one
+   *  such endpoint today. Ignored in the browser. */
+  revalidateSeconds?: number;
+}
+
+/** `no-store` unless the caller opted this response into Next's cache. */
+function cachePolicy(options: RequestOptions): RequestInit {
+  if (options.revalidateSeconds === undefined) return { cache: "no-store" };
+  return { next: { revalidate: options.revalidateSeconds } } as RequestInit;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -455,7 +525,7 @@ export class CertForgeClient {
         // FormData sets its own multipart boundary; never stringify it.
         body: options.form ?? (options.json !== undefined ? JSON.stringify(options.json) : undefined),
         signal: options.signal,
-        cache: "no-store",
+        ...cachePolicy(options),
       });
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") throw err;
@@ -519,7 +589,7 @@ export class CertForgeClient {
         headers,
         body: options.json !== undefined ? JSON.stringify(options.json) : undefined,
         signal: options.signal,
-        cache: "no-store",
+        ...cachePolicy(options),
       });
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") throw err;
@@ -583,6 +653,18 @@ export class CertForgeClient {
 
   listOrgMembers(slug: string, signal?: AbortSignal): Promise<OrgMember[]> {
     return this.request<OrgMember[]>(`/api/v1/orgs/${encodeURIComponent(slug)}/members`, { signal });
+  }
+
+  getUsage(slug: string, signal?: AbortSignal): Promise<UsageSummary> {
+    return this.request<UsageSummary>(`/api/v1/orgs/${encodeURIComponent(slug)}/usage`, { signal });
+  }
+
+  /** Every plan on sale, in display order. Needs no session.
+   *
+   *  Cached on the server: the catalog is the same for every visitor, and the
+   *  pricing page should not wake a scaled-to-zero API machine per view. */
+  listTiers(signal?: AbortSignal, revalidateSeconds = 300): Promise<Tier[]> {
+    return this.request<Tier[]>("/api/v1/tiers", { signal, revalidateSeconds });
   }
 
   // --- credentials ---

@@ -352,9 +352,11 @@ def test_another_orgs_artwork_cannot_be_read(client: TestClient, db_session, sto
 
 
 def test_design_reading_is_metered_per_org(client: TestClient, db_session, store):
-    """Every call is a paid API request, billing is mocked, and the template
-    tier gate was removed because nobody could reach a paid tier — so without
-    this counter anyone who can create an org can run up an Anthropic bill."""
+    """Every call is a paid API request and billing is still mocked, so
+    without this counter anyone who can create an org can run up an Anthropic
+    bill. The template tier gate bounds how many templates an org may *hold*;
+    it does not bound how many times the model is asked to read a design, which
+    is what costs money. Two limits, two meters."""
     org = an_org(db_session, "vision-meter-org")
     asset_id = upload(client, "vision-meter-org", png_bytes()).json()["data"]["id"]
 

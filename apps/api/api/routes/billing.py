@@ -3,17 +3,47 @@ import hmac
 import logging
 from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import func
 
 from api.models import get_db
 from api.models.organization import Organization
+from api.models.template import Template
+from api.models.usage import UsageLedger
 from api.core.envelope import ApiResponse
 from api.core.principal import Principal, require_user, require_org_access
-from api.core.config import RAZORPAY_SECRET
+from api.core.config import (
+    BILLING_TIERS,
+    DEFAULT_TIER,
+    RAZORPAY_SECRET,
+    VISION_IMPORTS_PER_MONTH,
+    get_tier_quota,
+    get_tier_template_limit,
+    tier_catalog,
+)
+from api.services.issuance import UNLIMITED, quota_state
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/orgs", tags=["billing"])
 webhooks_router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+#: The plan catalog is public and org-independent, so it does not belong
+#: under /orgs/{slug}. The pricing page is served to signed-out visitors.
+plans_router = APIRouter(tags=["billing"])
+
+
+@plans_router.get("/tiers", response_model=ApiResponse[list])
+def list_tiers():
+    """Every plan CertForge sells, in display order. No auth.
+
+    This is the only source of plan names, prices and limits that reaches
+    a browser. apps/web renders /pricing from it rather than keeping a
+    second table in TypeScript, because a price maintained in two places
+    is a price that will disagree with the quota the API actually grants.
+
+    Deliberately not in `_build_llms_txt` or `_build_sitemap_xml`: those
+    describe the legacy product on SITE_URL, and this is CertForge.
+    """
+    return ApiResponse.ok(tier_catalog())
 
 @router.post("/{slug}/checkout", response_model=ApiResponse[dict])
 def create_checkout_session(
@@ -37,6 +67,71 @@ def create_checkout_session(
             "checkout_url": checkout_url,
             "tier": tier
         })
+
+def _meter(used: int, limit: int) -> dict:
+    """Shape one counter for the wire. `None` means unlimited, never `-1` —
+    the sentinel is an internal detail (`UNLIMITED`); a JSON consumer should
+    not have to know it."""
+    unlimited = limit == UNLIMITED
+    return {
+        "used": used,
+        "limit": None if unlimited else limit,
+        "remaining": None if unlimited else max(0, limit - used),
+    }
+
+
+@router.get("/{slug}/usage", response_model=ApiResponse[dict])
+def get_usage(
+    slug: str,
+    principal: Principal = Depends(require_user),
+):
+    """This org's quota standing for the current billing period.
+
+    Reads the same ledger `consume_quota()` and the vision-import counter in
+    `routes/templates.py` write — never creates or mutates a row, so checking
+    usage cannot itself consume any. Written for the CertForge dashboard's
+    plan card, which previously had no endpoint to call and said so.
+    """
+    with get_db() as session:
+        org = session.query(Organization).filter_by(slug=slug).first()
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found")
+
+        require_org_access(principal, str(org.id), allowed_roles=("owner", "admin", "issuer"))
+
+        period = UsageLedger.current_period()
+        cred_limit, cred_used = quota_state(session, org)
+
+        ledger = (
+            session.query(UsageLedger)
+            .filter_by(org_id=org.id, period=period)
+            .first()
+        )
+        vision_used = (ledger.vision_imports or 0) if ledger else 0
+
+        # A stock, not a flow: the live row count, so deleting a template
+        # frees the slot. Counted here rather than read off the ledger for the
+        # same reason routes/templates.py gates on it — see
+        # docs/billing-and-template-quota-plan.md, "a stock, not a flow".
+        template_used = (
+            session.query(func.count(Template.id)).filter_by(org_id=org.id).scalar() or 0
+        )
+
+        return ApiResponse.ok({
+            "period": period,
+            "tier": org.tier,
+            # The tier column is free text and has held values BILLING_TIERS
+            # does not know (the Razorpay webhook still writes "pro"). Report
+            # the row the limits were actually read from, so a dashboard
+            # showing "Community" and a gate enforcing Community's limits can
+            # never disagree.
+            "tier_name": BILLING_TIERS.get(org.tier, BILLING_TIERS[DEFAULT_TIER])["name"],
+            "tier_known": org.tier in BILLING_TIERS,
+            "credentials": _meter(cred_used, cred_limit),
+            "templates": _meter(template_used, get_tier_template_limit(org.tier)),
+            "vision_imports": _meter(vision_used, VISION_IMPORTS_PER_MONTH),
+        })
+
 
 @webhooks_router.post("/razorpay", response_model=ApiResponse[dict])
 async def razorpay_webhook(request: Request):
@@ -76,8 +171,17 @@ async def razorpay_webhook(request: Request):
             with get_db() as session:
                 org = session.query(Organization).filter_by(id=org_id).first()
                 if org:
-                    org.tier = "pro"
-                    org.monthly_quota = 500
+                    # "pro" is not a key in BILLING_TIERS, so every lookup —
+                    # quota, template limit, the dashboard's plan name — fell
+                    # back to Community while the column read paid. Grant a
+                    # tier the table knows, and take the quota from the table
+                    # rather than a literal that can drift from it.
+                    #
+                    # Which tier is still a guess: checkout is mocked, so there
+                    # is no plan_id to map from. That mapping is P1 of
+                    # docs/billing-and-template-quota-plan.md.
+                    org.tier = "starter"
+                    org.monthly_quota = get_tier_quota("starter")
                     org.razorpay_sub_id = entity.get("id")
                     session.commit()
                     

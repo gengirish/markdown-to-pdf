@@ -32,7 +32,11 @@ SAFE_HTML = "<html><body><h1>{{name}}</h1><p>{{title}}</p></body></html>"
 def org_with_key(db_session, slug, raw_key):
     org = db_session.query(Organization).filter_by(slug=slug).first()
     if org is None:
-        org = Organization(slug=slug, name=slug.title(), tier="community", monthly_quota=500)
+        # "growth", not the default "community": these tests are about
+        # template behaviour, and Community holds exactly 1 template
+        # (routes/templates.py `_enforce_template_limit`). The gate has
+        # its own suite in tests/test_template_quota.py.
+        org = Organization(slug=slug, name=slug.title(), tier="growth", monthly_quota=500)
         db_session.add(org)
         db_session.commit()
         db_session.add(ApiKey(org_id=org.id, key_hash=hash_api_key(raw_key), label="k"))
@@ -427,11 +431,19 @@ def test_preview_refuses_dangerous_html(client, db_session):
     assert r.status_code == 400
 
 
-def test_community_tier_can_now_create_templates(client, db_session):
-    """The gate used to 403 every community org, and billing is mocked, so no
-    customer could reach a paid tier to satisfy it."""
+def test_community_tier_can_still_create_its_first_template(client, db_session):
+    """The gate that used to sit here 403'd every community org outright, and
+    billing is mocked, so no customer could reach a paid tier to satisfy it.
+    The count-based gate that replaced it gives Community 1 — the free tier has
+    to be able to reach the feature at all. Built here rather than through
+    `org_with_key`, which now makes growth orgs on purpose."""
     raw = LIVE_PREFIX + "tpl-free-key"
-    org = org_with_key(db_session, "tpl-free", raw)
+    org = Organization(slug="tpl-free", name="Tpl Free", tier="community", monthly_quota=500)
+    db_session.add(org)
+    db_session.commit()
+    db_session.add(ApiKey(org_id=org.id, key_hash=hash_api_key(raw), label="k"))
+    db_session.commit()
+
     assert org.tier == "community"
     assert create(client, "tpl-free", raw).status_code == 201
 

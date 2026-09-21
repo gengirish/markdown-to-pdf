@@ -372,7 +372,11 @@ from api.routes.templates import router as templates_router
 from api.routes.studio import router as studio_router
 from api.routes.verify import router as verify_router, public_router as verify_public_router
 from api.routes.passports import router as passports_router, claims_router
-from api.routes.billing import router as billing_router, webhooks_router
+from api.routes.billing import (
+    router as billing_router,
+    webhooks_router,
+    plans_router,
+)
 from api.routes.developers import router as developers_router
 from api.routes.webhooks_clerk import router as clerk_webhooks_router
 from api.routes.credentials import router as credentials_router
@@ -384,6 +388,7 @@ app.include_router(verify_router, prefix="/api/v1")
 app.include_router(passports_router, prefix="/api/v1")
 app.include_router(claims_router, prefix="/api/v1")
 app.include_router(billing_router, prefix="/api/v1")
+app.include_router(plans_router, prefix="/api/v1")
 app.include_router(webhooks_router, prefix="/api/v1")
 app.include_router(developers_router, prefix="/api/v1")
 app.include_router(clerk_webhooks_router, prefix="/api/v1")
@@ -438,10 +443,14 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     # response_model — so v1 clients coding against the OpenAPI schema got a
     # shape it never advertised on any failure.
     if _is_v1_path(request.url.path):
+        # An ApiException names its own type and details; anything else is
+        # typed from its status code, as before.
         content = ApiResponse.fail(
             message,
             code=exc.status_code,
-            error_type=error_type_for_status(exc.status_code),
+            error_type=getattr(exc, "error_type", None)
+            or error_type_for_status(exc.status_code),
+            details=getattr(exc, "details", None),
         ).model_dump()
     else:
         # Frozen. sdk/pdfcert and the live SPA parse this verbatim.

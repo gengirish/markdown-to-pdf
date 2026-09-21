@@ -491,9 +491,65 @@ Three rules that are not negotiable:
   design reading is not a credential — one meter for two units would make
   "quota exceeded" mean two things.
 
-Cost is roughly $0.05–0.20 per call. Billing is still mocked and the template
-tier gate was removed because nobody could reach a paid tier, so that counter is
-the only thing standing between a new org and an Anthropic bill.
+Cost is roughly $0.05–0.20 per call. Billing is still mocked, so that counter
+is the only thing standing between a new org and an Anthropic bill. The template
+allowance below bounds how many designs an org may *hold*; it does not bound how
+many times the model is asked to read one, which is what costs money. Two
+limits, two meters — do not fold them together.
+
+### Tiers, and what a plan actually grants
+
+`BILLING_TIERS` in `api/core/config.py` is the one place a plan is defined:
+name, price in paise, monthly credential quota, template allowance, and the
+copy the pricing page prints. Four tiers — `community`, `starter`, `growth`,
+`scale`. Read it through `get_tier` / `get_tier_quota` /
+`get_tier_template_limit` rather than by subscripting it, because those fall
+back to Community for a tier the table does not know, and `organizations.tier`
+is free text that has held such values (the Razorpay webhook wrote `"pro"` for
+months). One fallback means an unrecognised row is the free tier *everywhere at
+once*, rather than paid by one lookup and free by another.
+
+- **`-1` is the unlimited sentinel and never leaves the process.** `tier_catalog()`
+  and the usage endpoint both render it as `null`. A consumer formatting the
+  catalog would otherwise print "-1 credentials a month" on the dearest plan.
+- **`GET /api/v1/tiers` is public and unauthenticated** (`plans_router` in
+  `routes/billing.py`), because a signed-out visitor is the pricing page's whole
+  audience. `apps/web/app/pricing/page.tsx` renders from it rather than keeping
+  a second table in TypeScript — a price maintained in two places is a price
+  that will disagree with the quota the API grants. It is deliberately **not**
+  in `_build_llms_txt` / `_build_sitemap_xml`: those describe the legacy product
+  on `SITE_URL`, and this is CertForge.
+- **The pricing page renders on demand, never prerendered.** `connection()` at
+  the top of the page is what enforces that, and it is load-bearing: Vercel
+  builds `apps/web` independently of the Fly deploy that serves `/api/v1/tiers`,
+  so a build-time fetch can run against an API without the route. That was
+  observed — the build succeeded and shipped a static "Pricing is unavailable"
+  page. The fetch itself is still cached for five minutes
+  (`listTiers`'s `revalidateSeconds`, the only caller allowed to cache, since
+  every other endpoint is session-scoped).
+
+**The template gate is back, expressed as a count.** `_enforce_template_limit`
+in `routes/templates.py` answers **402** with `error.type =
+"template_limit_reached"` once an org holds its tier's allowance — Community 1,
+Starter 5, Growth 25, Scale unlimited. Things that follow:
+
+- **It is a stock, not a monthly flow.** The check is the live row count, so
+  deleting a template frees the slot and there is no counter to drift. Seeded
+  global templates have `org_id = None` and count against nobody.
+- **All three doors are locked**: create, import a global template, and
+  from-image. A limit enforced on one of three is not a limit. On from-image the
+  gate runs *before* the vision meter, so an org that could not keep the result
+  does not spend a paid model call discovering that.
+- **402, not 403**: the caller is not forbidden, they are under-provisioned, and
+  the dashboard shows different copy for the two. A credential quota refusal is
+  also a 402, which is why this one carries its own `error.type` — raised as
+  `ApiException` (`core/envelope.py`), the one way a v1 route names its own
+  error type and details.
+- **The gate has no self-serve door yet.** `create_checkout_session` still
+  returns a fabricated URL, so an org at its limit can only be moved by hand.
+  The 402 body and the pricing page both say so outright rather than offering a
+  button that does nothing. Closing that is P1 of
+  `docs/billing-and-template-quota-plan.md`.
 
 ### Delivery state, and why it exists
 
@@ -545,9 +601,10 @@ JSON-LD injected into viewer pages are generated in `apps/api/api/index.py`
 - `docs/subagent-handover.md` — how the plan was partitioned into work packages by
   file ownership, and in what order they landed. A historical work-order, deliberately
   not kept current.
-- `docs/billing-and-template-quota-plan.md` — the way out of mocked billing, and why
-  the template tier gate cannot come back until checkout actually moves an org between
-  tiers. Proposed, not started.
+- `docs/billing-and-template-quota-plan.md` — the way out of mocked billing. P2's
+  usage endpoint and P3's template gate have landed; **P1, real Razorpay, has not**,
+  so the gate still has no self-serve door. Read its status block before planning
+  billing work.
 - `docs/certificate-internship-vtu.md` — internship field ↔ token-key mapping and the
   college workflow.
 - `docs/TODOs/` — live defects, one file each, in a consistent shape: the finding

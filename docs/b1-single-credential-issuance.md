@@ -9,7 +9,7 @@ have to be settled before the first line of code.
 pytest` → 91 passed.** Every claim below was checked in the code today, not carried
 over from the earlier plan.
 
-## Status — 2026-09-01, `main` @ `99a144e`, 379 tests passing
+## Status — 2026-09-05, `main` @ `cecee49`
 
 | | Commit | State |
 |---|---|---|
@@ -17,8 +17,12 @@ over from the earlier plan.
 | B1.1 | `resolve_principal` | **landed** — `d56557b` |
 | B1.2 | Service layer + single issuance | **landed** — `a403b68` |
 | B1.3 | The rest of the resource | **landed** — PDF route in `fad716b` (see D4/D5 below); list, get and revoke in `a403b68`; the status state machine in `629b454` |
-| B1.4 | Batch + usage surface | **part landed** — the meter exists and both paths write it (`consume_quota()`, `4ec4043`, closing H5 for bulk too). `GET /orgs/{slug}/usage` is still not started, so the number is written and never read back out |
+| B1.4 | Batch + usage surface | **landed** — the meter exists and both paths write it (`consume_quota()`, `4ec4043`, closing H5 for bulk too). `GET /orgs/{slug}/usage` now reads it back (`routes/billing.py`, `tests/test_usage.py`), and `apps/web`'s plan card calls it instead of stating the number doesn't exist |
 | B1.5 | Legacy adapter | not started, and optional by design |
+
+B1 is now fully landed except B1.5, which was always optional. The remaining open
+threads on this surface are C3 and the billing/checkout plan — see
+`api-first-optimization-plan.md`.
 
 The goal in §1 is now met end to end: an API key issues a credential in one call, the
 verify URL resolves, and `pdf_url` in the response is a real document — see D4 and D5,

@@ -23,6 +23,12 @@ E2E_ORG_SLUG = "e2e-org"
 E2E_ORG_NAME = "E2E Test College"
 E2E_API_KEY = "cf_live_e2e-fixed-key-local-only"
 
+# A second org for the tier specs. Separate because the template gate is a
+# stock on the org: a spec that fills Community's allowance on e2e-org would
+# change what every other spec sharing that org is able to do.
+E2E_QUOTA_ORG_SLUG = "e2e-quota-org"
+E2E_QUOTA_API_KEY = "cf_live_e2e-quota-key-local-only"
+
 
 def main() -> None:
     if not os.environ.get("DATABASE_URL"):
@@ -71,7 +77,28 @@ def main() -> None:
                 )
             )
 
-    print(f"[seed_e2e] ready: org={E2E_ORG_SLUG}")
+    with get_db() as session:
+        quota_org = session.query(Organization).filter_by(slug=E2E_QUOTA_ORG_SLUG).first()
+        if quota_org is None:
+            quota_org = Organization(
+                slug=E2E_QUOTA_ORG_SLUG,
+                name="E2E Quota Org",
+                tier="community",
+                monthly_quota=500,
+            )
+            session.add(quota_org)
+            session.flush()
+
+        if session.query(ApiKey).filter_by(org_id=quota_org.id).first() is None:
+            session.add(
+                ApiKey(
+                    org_id=quota_org.id,
+                    key_hash=hash_api_key(E2E_QUOTA_API_KEY),
+                    label="e2e-quota",
+                )
+            )
+
+    print(f"[seed_e2e] ready: org={E2E_ORG_SLUG}, quota_org={E2E_QUOTA_ORG_SLUG}")
 
 
 if __name__ == "__main__":

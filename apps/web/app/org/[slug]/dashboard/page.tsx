@@ -10,10 +10,11 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandingCard } from "@/components/dashboard/branding-card";
 import { IssueWizard } from "@/components/dashboard/issue-wizard";
 import { DeveloperCard } from "@/components/dashboard/developer-card";
+import { PlanCard } from "@/components/dashboard/plan-card";
 import { RecentCredentialsCard } from "@/components/dashboard/recent-credentials-card";
 import { SingleIssueCard } from "@/components/dashboard/single-issue-card";
 import { TemplatesCard } from "@/components/dashboard/templates-card";
-import { ErrorNote, Eyebrow } from "@/components/dashboard/ui";
+import { ErrorNote } from "@/components/dashboard/ui";
 
 export default function OrgDashboard({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
@@ -88,7 +89,7 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
             </div>
 
             <div className="space-y-8">
-              <PlanCard org={org} />
+              <PlanCard slug={slug} />
               <div id="recent-credentials">
                 <RecentCredentialsCard slug={slug} refreshToken={issuedToken} />
               </div>
@@ -121,24 +122,3 @@ function SignInPrompt({ slug }: { slug: string }) {
   );
 }
 
-function PlanCard({ org }: { org: OrgProfile | null }) {
-  return (
-    <section className="overflow-hidden rounded-xl border border-hair bg-surface shadow-[var(--cf-shadow-card)]">
-      <div className="h-1 bg-accent" />
-      <div className="p-6">
-        <div className="mb-3">
-          <Eyebrow tone="accent">Plan</Eyebrow>
-        </div>
-        <p className="font-display text-[30px] font-semibold capitalize leading-none tracking-[-0.03em] text-ink">
-          {org?.tier ?? "—"}
-        </p>
-        {/* No usage endpoint exists yet, and the checkout endpoint returns a
-            placeholder URL server-side, so neither is surfaced as if it worked. */}
-        <p className="mt-4 text-sm leading-relaxed text-muted">
-          Usage reporting and self-serve upgrades are not available yet. Contact support to change
-          your plan or quota.
-        </p>
-      </div>
-    </section>
-  );
-}

@@ -1,6 +1,22 @@
 # Plan: real Razorpay, an import counter, and re-gating templates
 
-Status: proposed, not started.
+Status: **partly shipped, 2026-09-21.** P2's usage endpoint and P3's gate have
+landed; P1 (real Razorpay) has not.
+
+| Package | State |
+|---|---|
+| P1 — real Razorpay | **Not started.** `create_checkout_session` still returns a fabricated URL, and there are no keys or plan ids. B2, B4 and B5 below are all still open. B3 is half-fixed: the webhook now writes a tier `BILLING_TIERS` knows and takes the quota from the table, but *which* tier is still a guess, because there is no `plan_id` to map from. |
+| P2 — the counter | **Shipped in the form that gates, not the form proposed.** `GET /orgs/{slug}/usage` exists (B7) and reports credentials, templates and vision imports. `usage_ledger.templates_imported` was **not** added: option (b) below won the argument outright, and a monotonic activity counter that nothing reads is a column to maintain for nothing. Add it when billing analytics actually needs it. |
+| P3 — the gate | **Shipped.** `_enforce_template_limit` in `routes/templates.py`, 402 / `template_limit_reached`, on all three creation paths. Limits live in `BILLING_TIERS[tier]["template_limit"]`: community 1, starter 5, growth 25, scale unlimited. Tests in `tests/test_template_quota.py`, each one verified by reintroducing its bug. |
+| P4 — dashboard | **Shipped, minus the upgrade button.** The plan card reads the usage endpoint; `apps/web/app/pricing/page.tsx` renders the public catalog from `GET /api/v1/tiers`. No checkout button, because there is no checkout. Confirmed no `vercel.json` change was needed: `apps/web` calls the API at its absolute host (`NEXT_PUBLIC_CERTFORGE_API_URL`), not through a same-origin path. |
+
+**The order was deliberately broken, with the cost stated.** This plan says ship
+P1 before P3 or the endpoint is unreachable again. P3 shipped first anyway, on
+an explicit call: the gate is a wall with no door, and an org that reaches
+Community's one template can only be moved by support. Two things keep that from
+repeating the original failure — Community gets **1**, not 0, so the free tier
+can still reach the feature; and both the 402 body and the pricing page say
+plainly that upgrades are handled by hand. Neither is a substitute for P1.
 
 ## The dependency, stated once
 
@@ -32,7 +48,7 @@ Read from `apps/api/api/routes/billing.py`, `api/core/config.py`,
 |---|---|---|
 | B1 | `create_checkout_session` returns `https://rzp.io/i/mock_{org.id}_{tier}`. No SDK, no order or subscription created. | Nobody can pay. Root of the whole chain. |
 | B2 | The route depends on `require_user` only. `require_org_access` is imported and never called, so any authenticated user can POST to any org's slug. | Harmless while the response is fake. The moment it creates a real subscription it is a billing hole — someone can start a subscription against an org they do not belong to. |
-| B3 | The webhook hardcodes `org.tier = "pro"` and `monthly_quota = 500`. `"pro"` is not a key in `BILLING_TIERS` (`community`, `starter`, `growth`, `scale`). | `get_tier_quota("pro")` silently falls back to Community's 50. A paid org would carry a tier string that config, the gate, and the dashboard all fail to recognise — paid in the `tier` column, free everywhere else. |
+| B3 | The webhook hardcodes `org.tier = "pro"` and `monthly_quota = 500`. `"pro"` is not a key in `BILLING_TIERS` (`community`, `starter`, `growth`, `scale`). | `get_tier_quota("pro")` silently falls back to Community's quota. A paid org would carry a tier string that config, the gate, and the dashboard all fail to recognise — paid in the `tier` column, free everywhere else. |
 | B4 | Only `subscription.activated` is handled. `subscription.cancelled` / `halted` / `completed` / `paused` fall through to `ApiResponse.ok`. | No downgrade path. An org that stops paying keeps its tier and quota forever. |
 | B5 | No replay guard. Razorpay retries deliveries; the same event id can arrive many times. | Idempotent today only by accident (a straight overwrite). The first time the handler adjusts a counter or writes an invoice row, it stops being. |
 | B6 | `UsageLedger` now carries `vision_imports` (`VISION_IMPORTS_PER_MONTH`, default 10), which meters the "read my design" call because it costs real money. Nothing counts *templates* — an org can hand-author or trace unlimited templates as long as it does not ask the model to read them. | Item 2 of the chain is half-built. `vision_imports` bounds the Anthropic bill, not the product allowance; it is a cost fuse, not a tier gate, and the two must not be conflated. |

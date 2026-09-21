@@ -14,10 +14,12 @@ credentials without a network call. That is worse than no feature at all —
 someone reading the screen believes it.
 
 Where the API has no endpoint, render an empty or unavailable state that says so.
-Two live examples: the plan card names the tier but states that usage reporting
-and self-serve upgrades do not exist (`POST /orgs/{slug}/checkout` returns a
-placeholder URL server-side), and `ApiStatusBadge` probes `/api/health` rather
-than hardcoding "operational".
+`ApiStatusBadge` probes `/api/health` rather than hardcoding "operational". The
+plan card (`components/dashboard/plan-card.tsx`) calls the real
+`GET /orgs/{slug}/usage` for its meters, but still states plainly that
+self-serve upgrades do not exist — `POST /orgs/{slug}/checkout` returns a
+placeholder URL server-side, so there is nothing real for an upgrade button to
+do yet.
 
 ## Talking to the API
 
