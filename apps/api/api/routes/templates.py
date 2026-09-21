@@ -17,13 +17,19 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from sqlalchemy import func
 from pydantic import BaseModel, Field
 
-from api.core.envelope import ApiResponse
+from api.core.envelope import ApiException, ApiResponse
 from api.core.auth import AuthenticatedUser, get_optional_user
 from api.core.pdf_renderer import render_credential_pdf
 from api.core.principal import Principal, resolve_principal, require_org_access
-from api.core.config import VISION_IMPORTS_PER_MONTH
+from api.core.config import (
+    BILLING_TIERS,
+    VISION_IMPORTS_PER_MONTH,
+    get_tier,
+    get_tier_template_limit,
+)
 from api.core.rate_limit import rate_limit
 from api.core.storage import StorageError, put_object, storage_available
 from api.models import get_db
@@ -31,6 +37,7 @@ from api.models.organization import Organization
 from api.models.template import Template
 from api.models.template_asset import TemplateAsset
 from api.services.backgrounds import background_data_uri
+from api.services.issuance import UNLIMITED
 from api.services.templates import (
     KIND_TRACED,
     build_html_from_config,
@@ -310,20 +317,78 @@ def get_org_template(
 
 # -- writing ------------------------------------------------------------------
 
+def _enforce_template_limit(session, org: Organization) -> None:
+    """Refuse a new template once the org holds its tier's allowance.
+
+    402, not 403: the caller is not forbidden, they are under-provisioned, and
+    the dashboard has to tell those apart. `error.type` is
+    `template_limit_reached` rather than the generic status mapping, because a
+    credential quota refusal is also a 402 and the two need different copy.
+
+    A **stock**, not a monthly flow — the live row count, so deleting a
+    template frees the slot immediately and there is no counter to drift.
+    Seeded global templates have `org_id = None` and do not count against
+    anyone; importing one makes a copy, and the copy does.
+
+    Called by every path that inserts a Template for an org — create, import,
+    and from-image. A limit enforced on one of three doors is not a limit.
+    """
+    limit = get_tier_template_limit(org.tier)
+    if limit == UNLIMITED:
+        return
+
+    used = session.query(func.count(Template.id)).filter_by(org_id=org.id).scalar() or 0
+    if used < limit:
+        return
+
+    upgrades = [
+        {
+            "tier": key,
+            "name": info["name"],
+            "template_limit": (
+                None if info["template_limit"] == UNLIMITED else info["template_limit"]
+            ),
+        }
+        for key, info in sorted(BILLING_TIERS.items(), key=lambda kv: kv[1]["order"])
+        if info["template_limit"] == UNLIMITED or info["template_limit"] > limit
+    ]
+
+    raise ApiException(
+        402,
+        f"This organization is on the {get_tier(org.tier)['name']} plan, which "
+        f"allows {limit} custom template{'' if limit == 1 else 's'}. "
+        f"Delete one to free a slot, or move to a larger plan.",
+        error_type="template_limit_reached",
+        details={
+            "tier": org.tier,
+            "tier_name": get_tier(org.tier)["name"],
+            "limit": limit,
+            "used": used,
+            "upgrades": upgrades,
+        },
+    )
+
+
 @router.post("/orgs/{slug}/templates", response_model=ApiResponse[dict], status_code=201)
 def create_org_template(
     slug: str, payload: TemplateWrite, principal: Principal = Depends(resolve_principal)
 ):
     """Create a template, from raw HTML or from guided settings.
 
-    The tier gate that used to sit here (403 for `community`) is gone. It made
-    the feature unreachable for everyone rather than only for free orgs: billing
-    is still mocked, so no customer could reach a paid tier to satisfy it. Re-add
-    it when Razorpay actually works.
+    Gated on the tier's template allowance (`_enforce_template_limit`). The
+    gate this replaces was a flat 403 for `community` — zero templates for the
+    free tier — and it was deleted because it made the feature unreachable for
+    everyone, billing being mocked. This one is a count, and Community gets 1,
+    so the free tier can reach the feature.
+
+    Checkout is still mocked, so there is no self-serve way past the limit yet;
+    the 402 body names the plans that would raise it and support moves the tier
+    by hand. See docs/billing-and-template-quota-plan.md, P1.
     """
     with get_db() as session:
         org = _org_or_404(session, slug)
         require_org_access(principal, str(org.id), allowed_roles=WRITE_ROLES)
+        _enforce_template_limit(session, org)
 
         asset = (
             _owned_asset(session, org, payload.background_asset_id)
@@ -482,6 +547,11 @@ def import_global_template(
         source = session.query(Template).filter_by(id=gid, org_id=None).first()
         if not source:
             raise HTTPException(status_code=404, detail="Global template not found")
+
+        # After the 404, so a bad id still reads as a bad id rather than as a
+        # billing problem — but before the insert, because the copy is a
+        # template the org holds like any other.
+        _enforce_template_limit(session, org)
 
         copy = Template(
             org_id=org.id,
@@ -1037,6 +1107,11 @@ def create_template_from_image(
         require_org_access(principal, str(org.id), allowed_roles=WRITE_ROLES)
         asset = _owned_asset(session, org, payload.asset_id)
         storage_key = asset.storage_key
+        # Gated before metering, and metering before the call: an org that
+        # could not keep the resulting template must not spend a vision import
+        # — or an Anthropic call — discovering that.
+        _enforce_template_limit(session, org)
+
         # Metered before the call, not after: a failed call still cost money if
         # it reached the model, and a counter that only counts successes is a
         # counter an error loop can walk straight past.

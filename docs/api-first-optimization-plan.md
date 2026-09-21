@@ -1,6 +1,6 @@
 # CertForge — API-First Plan
 
-Status: Wave 1 shipped; Wave 2 (B1) all but its usage surface · Updated: 2026-09-01, `main` @ `99a144e`, 379 tests passing · Scope: whole product
+Status: Wave 1 shipped; Wave 2 (B1) landed in full except the optional legacy adapter · Updated: 2026-09-05, `main` @ `cecee49` · Scope: whole product
 
 **Decisions taken (2026-08-23):**
 
@@ -68,9 +68,10 @@ Each fix shipped with a regression test naming the original bug. That is the rig
 - **H3** (blocking PDF/email on the event loop), **M6**, **M7** — not re-verified since;
   treat their status as unknown rather than open. Note that the PDF route shipped as a
   plain sync handler by choice, not oversight — see B1 §D4.
-- Phase 2 is now largely shipped through B1; see
+- Phase 2 is now shipped through B1; see
   [b1-single-credential-issuance.md](./b1-single-credential-issuance.md) for what
-  actually landed. The open remainder is B1.4's usage surface and B1.5.
+  actually landed. B1.4's usage surface (`GET /orgs/{slug}/usage`) landed 2026-09-05;
+  the only open remainder is B1.5, which was always optional.
 
 Two notes on what landed:
 

@@ -94,7 +94,11 @@ def store():
 def an_org(db_session, slug: str) -> Organization:
     org = db_session.query(Organization).filter_by(slug=slug).first()
     if org is None:
-        org = Organization(slug=slug, name=slug.title(), tier="community", monthly_quota=100)
+        # "growth", not the default "community": these tests are about
+        # template behaviour, and Community holds exactly 1 template
+        # (routes/templates.py `_enforce_template_limit`). The gate has
+        # its own suite in tests/test_template_quota.py.
+        org = Organization(slug=slug, name=slug.title(), tier="growth", monthly_quota=100)
         db_session.add(org)
         db_session.commit()
         db_session.add(

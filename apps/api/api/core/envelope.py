@@ -12,6 +12,7 @@ All API endpoints return this shape:
 
 from typing import Any, Generic, Optional, TypeVar
 
+from fastapi import HTTPException
 from pydantic import BaseModel
 
 T = TypeVar("T")
@@ -58,6 +59,7 @@ def error_type_for_status(status_code: int) -> str:
     """Map HTTP status codes to error type strings."""
     mapping = {
         400: "validation_error",
+        402: "payment_required",
         401: "authentication_error",
         403: "forbidden",
         404: "not_found",
@@ -74,3 +76,29 @@ def error_type_for_status(status_code: int) -> str:
     if 500 <= status_code < 600:
         return "internal_error"
     return "error"
+
+
+class ApiException(HTTPException):
+    """An HTTPException that also carries the envelope's `type` and `details`.
+
+    `error_type_for_status` can only say what a status code means in general.
+    Some refusals have to be told apart by a client that receives them —
+    "you are out of monthly credentials" and "you are out of template slots"
+    are both 402, and the dashboard shows a different thing for each.
+
+    The /api/v1 branch of the handler in `index.py` reads these two attributes;
+    the legacy branch never sees one, because nothing on the frozen surface
+    raises this.
+    """
+
+    def __init__(
+        self,
+        status_code: int,
+        message: str,
+        *,
+        error_type: Optional[str] = None,
+        details: Optional[Any] = None,
+    ):
+        super().__init__(status_code=status_code, detail=message)
+        self.error_type = error_type or error_type_for_status(status_code)
+        self.details = details
