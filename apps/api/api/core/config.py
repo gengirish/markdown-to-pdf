@@ -238,13 +238,13 @@ BILLING_TIERS = {
         "name": "Community",
         "order": 0,
         "price_paise": 0,
-        "monthly_quota": 500,
+        "monthly_quota": 50,
         "template_limit": 1,
         "tagline": "Issue real, verifiable credentials for free.",
         # Community gets one custom template, not zero. A free tier that cannot
         # reach the feature at all is how the old 403 gate came to be deleted.
         "features": [
-            "500 credentials a month",
+            "50 credentials a month",
             "1 custom template",
             "Hosted verification pages and QR codes",
             "Open Badges 3.0 badge.json",

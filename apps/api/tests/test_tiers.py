@@ -52,7 +52,7 @@ def test_unlimited_is_null_not_the_sentinel(client):
 
     assert rows["scale"]["monthly_quota"] is None
     assert rows["scale"]["template_limit"] is None
-    assert rows["community"]["monthly_quota"] == 500
+    assert rows["community"]["monthly_quota"] == 50
 
 
 def test_prices_are_paise_and_the_free_tier_is_free(client):
