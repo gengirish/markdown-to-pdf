@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +138,26 @@ def require_user(request: Request) -> Principal:
             status_code=403,
             detail="This endpoint requires a signed-in user, not an API key",
         )
+    return principal
+
+
+def require_operator(principal: Principal = Depends(require_user)) -> Principal:
+    """For CertForge staff only — the people who may change what an org is
+    allowed to do. Every org role (`owner`, `admin`, `issuer`) belongs to a
+    customer, so none of them can mean this: an "admin" quota control built on
+    org_members would let a customer raise their own limit.
+
+    - Checked against the verified `sub` (`clerk_user_id`), never a claim.
+    - An API key is refused by `require_user` before this runs: a key belongs
+      to one customer org and has no identity to be an operator with.
+    - An empty allowlist refuses everyone. The list is read at request time.
+    - 403 rather than 404: the route is in the OpenAPI schema anyway, and a
+      missing env var should be easy to tell from a missing route.
+    """
+    from api.core import config
+
+    if principal.clerk_user_id not in config.OPERATOR_USER_IDS:
+        raise HTTPException(status_code=403, detail="Operator access required")
     return principal
 
 

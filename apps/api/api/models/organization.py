@@ -64,9 +64,20 @@ class Organization(Base):
     # Derived from the tier table rather than repeated as a literal: a new org
     # is created with tier="community" and no explicit quota, so a default that
     # disagreed with BILLING_TIERS["community"] would silently win.
+    #
+    # No longer read by issuance. `effective_credential_quota()` decides the
+    # limit; this column is kept equal to it on every write so that a rollback
+    # to code that still reads it finds a current number. Dropped in W4 of
+    # docs/operator-quota-overrides-plan.md.
     monthly_quota: Mapped[int] = mapped_column(
         Integer, nullable=False, default=lambda: get_tier_quota("community")
     )
+    #: An operator-set credential limit that replaces the tier's. NULL means
+    #: none — the org follows `get_tier_quota(tier)` live. -1 means unlimited,
+    #: as in BILLING_TIERS, and never leaves the process as -1. Named for its
+    #: unit: templates and vision imports will get their own columns, so one
+    #: name never means three limits. Written only by `services/plans.py`.
+    credential_quota_override: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )

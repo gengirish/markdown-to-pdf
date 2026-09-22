@@ -42,7 +42,7 @@ def an_org(db_session, slug, quota=100):
     org = db_session.query(Organization).filter_by(slug=slug).first()
     if org is None:
         org = Organization(
-            slug=slug, name=slug.title(), tier="community", monthly_quota=quota
+            slug=slug, name=slug.title(), tier="community", credential_quota_override=quota
         )
         db_session.add(org)
         db_session.commit()

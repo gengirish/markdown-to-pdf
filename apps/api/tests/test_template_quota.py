@@ -44,7 +44,7 @@ SAFE_HTML = "<html><body><h1>{{name}}</h1></body></html>"
 
 
 def org_on(db_session, slug: str, tier: str) -> Organization:
-    org = Organization(slug=slug, name=slug.title(), tier=tier, monthly_quota=500)
+    org = Organization(slug=slug, name=slug.title(), tier=tier, credential_quota_override=500)
     db_session.add(org)
     db_session.commit()
     db_session.add(ApiKey(org_id=org.id, key_hash=hash_api_key(key_for(slug)), label="k"))

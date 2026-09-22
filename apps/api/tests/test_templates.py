@@ -36,7 +36,7 @@ def org_with_key(db_session, slug, raw_key):
         # template behaviour, and Community holds exactly 1 template
         # (routes/templates.py `_enforce_template_limit`). The gate has
         # its own suite in tests/test_template_quota.py.
-        org = Organization(slug=slug, name=slug.title(), tier="growth", monthly_quota=500)
+        org = Organization(slug=slug, name=slug.title(), tier="growth", credential_quota_override=500)
         db_session.add(org)
         db_session.commit()
         db_session.add(ApiKey(org_id=org.id, key_hash=hash_api_key(raw_key), label="k"))
@@ -438,7 +438,7 @@ def test_community_tier_can_still_create_its_first_template(client, db_session):
     to be able to reach the feature at all. Built here rather than through
     `org_with_key`, which now makes growth orgs on purpose."""
     raw = LIVE_PREFIX + "tpl-free-key"
-    org = Organization(slug="tpl-free", name="Tpl Free", tier="community", monthly_quota=500)
+    org = Organization(slug="tpl-free", name="Tpl Free", tier="community", credential_quota_override=500)
     db_session.add(org)
     db_session.commit()
     db_session.add(ApiKey(org_id=org.id, key_hash=hash_api_key(raw), label="k"))

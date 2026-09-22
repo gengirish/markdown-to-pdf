@@ -380,7 +380,7 @@ from api.routes.billing import (
 from api.routes.developers import router as developers_router
 from api.routes.webhooks_clerk import router as clerk_webhooks_router
 from api.routes.credentials import router as credentials_router
-from api.routes.admin import router as admin_router
+from api.routes.operator import router as operator_router
 
 app.include_router(orgs_router, prefix="/api/v1")
 app.include_router(studio_router, prefix="/api/v1")
@@ -394,7 +394,7 @@ app.include_router(webhooks_router, prefix="/api/v1")
 app.include_router(developers_router, prefix="/api/v1")
 app.include_router(clerk_webhooks_router, prefix="/api/v1")
 app.include_router(credentials_router, prefix="/api/v1")
-app.include_router(admin_router, prefix="/api/v1")
+app.include_router(operator_router, prefix="/api/v1")
 
 # Root-mounted public pages: /verify/{id} and /credentials/{id}/badge.json are
 # the URLs printed on certificates and embedded in QR codes. vercel.json must

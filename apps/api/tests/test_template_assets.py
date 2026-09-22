@@ -98,7 +98,7 @@ def an_org(db_session, slug: str) -> Organization:
         # template behaviour, and Community holds exactly 1 template
         # (routes/templates.py `_enforce_template_limit`). The gate has
         # its own suite in tests/test_template_quota.py.
-        org = Organization(slug=slug, name=slug.title(), tier="growth", monthly_quota=100)
+        org = Organization(slug=slug, name=slug.title(), tier="growth", credential_quota_override=100)
         db_session.add(org)
         db_session.commit()
         db_session.add(

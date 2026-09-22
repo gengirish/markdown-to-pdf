@@ -41,7 +41,7 @@ def org_with_key(db_session, slug, raw_key, quota=500):
     org = db_session.query(Organization).filter_by(slug=slug).first()
     if org:
         return org
-    org = Organization(slug=slug, name=slug.title(), tier="community", monthly_quota=quota)
+    org = Organization(slug=slug, name=slug.title(), tier="community", credential_quota_override=quota)
     db_session.add(org)
     db_session.commit()
     db_session.add(ApiKey(org_id=org.id, key_hash=hash_api_key(raw_key), label="k"))
