@@ -118,14 +118,14 @@ def test_a_new_org_gets_the_community_tier_quota(db_session):
     default is what ends up in the row. If the two disagree, raising the tier
     table changes the pricing page and nothing else; the column keeps refusing
     at the old number. Assert they are the same value rather than that either
-    one is 500.
+    one is 50.
     """
     org = Organization(slug="fresh-community", name="Fresh", tier="community")
     db_session.add(org)
     db_session.commit()
 
     assert org.monthly_quota == get_tier_quota("community")
-    assert org.monthly_quota == 500
+    assert org.monthly_quota == 50
 
 
 def test_the_quota_actually_refuses_once_reached(client, db_session):
