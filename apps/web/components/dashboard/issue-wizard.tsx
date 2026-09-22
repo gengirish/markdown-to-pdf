@@ -136,6 +136,31 @@ function checkRows(parsed: ParsedCsv, template: TemplateSummary | undefined): Pa
   return { parsed, checked, missingColumns, caseMismatches };
 }
 
+/** A starter file for the chosen template: the three columns every row can
+ *  carry plus whatever extra columns this template requires, so the sample
+ *  passes checkRows as downloaded. The quoted comma in one name and the row
+ *  with no email are deliberate — they are the two things people most often
+ *  get wrong, shown working. */
+function sampleCsv(template: TemplateSummary | undefined): string {
+  const base = ["name", "title", "email"];
+  const extra = (template?.variables ?? []).filter((v) => !base.includes(v));
+  const people = [
+    { name: "Ananya Rao", email: "ananya.rao@example.com" },
+    { name: "Rao, Vikram", email: "vikram.rao@example.com" },
+    { name: "Meera Iyer", email: "" },
+  ];
+  const rows = people.map((person) => {
+    const row: Record<string, string> = {
+      name: person.name,
+      title: "Certificate of Completion",
+      email: person.email,
+    };
+    for (const column of extra) row[column] = `Sample ${column}`;
+    return row;
+  });
+  return buildCsv([...base, ...extra], rows);
+}
+
 function downloadFile(filename: string, content: string, mime: string) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -635,6 +660,15 @@ function StepUpload({
           <Mono>email</Mono> is optional — a row with no address is issued without an attempt to
           send it anywhere.
         </p>
+        {template ? (
+          <button
+            type="button"
+            onClick={() => downloadFile("sample-cohort.csv", sampleCsv(template), "text/csv")}
+            className="mt-3 text-xs font-medium text-accent underline-offset-2 hover:underline"
+          >
+            Download a sample CSV for this template
+          </button>
+        ) : null}
       </div>
     </div>
   );
