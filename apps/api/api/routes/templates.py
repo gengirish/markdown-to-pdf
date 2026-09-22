@@ -25,10 +25,10 @@ from api.core.auth import AuthenticatedUser, get_optional_user
 from api.core.pdf_renderer import render_credential_pdf
 from api.core.principal import Principal, resolve_principal, require_org_access
 from api.core.config import (
-    BILLING_TIERS,
     VISION_IMPORTS_PER_MONTH,
     get_tier,
     get_tier_template_limit,
+    listed_tiers,
 )
 from api.core.rate_limit import rate_limit
 from api.core.storage import StorageError, put_object, storage_available
@@ -350,7 +350,7 @@ def _enforce_template_limit(session, org: Organization) -> None:
                 None if info["template_limit"] == UNLIMITED else info["template_limit"]
             ),
         }
-        for key, info in sorted(BILLING_TIERS.items(), key=lambda kv: kv[1]["order"])
+        for key, info in listed_tiers()
         if info["template_limit"] == UNLIMITED or info["template_limit"] > limit
     ]
 

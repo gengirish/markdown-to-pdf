@@ -124,10 +124,10 @@ def test_an_unknown_tier_reports_the_plan_its_limits_came_from(
     values BILLING_TIERS never had. The card must not print a plan name whose
     limits are not the ones being enforced — so the endpoint reports the row
     the numbers were actually read from, and says the raw value is unknown."""
-    org_owned_by_test_user(db_session, "usage-bogus", tier="pro")
+    org_owned_by_test_user(db_session, "usage-bogus", tier="enterprise")
 
     data = client.get("/api/v1/orgs/usage-bogus/usage").json()["data"]
-    assert data["tier"] == "pro"
+    assert data["tier"] == "enterprise"
     assert data["tier_name"] == "Community"
     assert data["tier_known"] is False
     assert data["templates"]["limit"] == 1

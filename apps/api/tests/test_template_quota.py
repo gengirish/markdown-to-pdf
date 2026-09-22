@@ -89,11 +89,9 @@ def test_community_holds_one_template_and_refuses_the_second(client, db_session)
     assert error["details"]["tier"] == "community"
     # The body has to name a way out: checkout is still mocked, so the only
     # door is support, and the message is where a customer learns that.
-    assert [u["tier"] for u in error["details"]["upgrades"]] == [
-        "starter",
-        "growth",
-        "scale",
-    ]
+    # Only plans that can actually be bought: Scale holds more templates but
+    # is hand-sold, and offering it here is an upgrade prompt that dead-ends.
+    assert [u["tier"] for u in error["details"]["upgrades"]] == ["pro"]
 
 
 def test_a_larger_tier_holds_more(client, db_session):

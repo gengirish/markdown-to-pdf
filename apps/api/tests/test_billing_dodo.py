@@ -81,7 +81,7 @@ def sid(org, name="sub_A") -> str:
     return f"{name}_{org.id.hex[:12]}"
 
 
-def subscription(org, *, sub_id="sub_A", status="active", tier="starter",
+def subscription(org, *, sub_id="sub_A", status="active", tier="pro",
                  product=None, cancel_at_next=False, next_billing_in_days=30,
                  customer_id="cus_1", metadata=True) -> dict:
     return {
@@ -141,7 +141,7 @@ def test_a_correctly_signed_activation_grants_the_tier(client, db_session):
     assert res.json()["data"]["outcome"] == "applied"
 
     org = reloaded(db_session, org)
-    assert org.tier == "starter"
+    assert org.tier == "pro"
     assert org.dodo_subscription_id == sid(org, "sub_A")
     assert org.dodo_customer_id == "cus_1"
     assert org.subscription_status == "active"
@@ -233,7 +233,7 @@ def test_a_failure_while_applying_rolls_back_the_claim_so_the_retry_applies(db_s
         retried = deliver(client, "subscription.active", data, webhook_id="evt_retry")
     assert retried.status_code == 200
     assert retried.json()["data"]["outcome"] == "applied"
-    assert reloaded(db_session, org).tier == "starter"
+    assert reloaded(db_session, org).tier == "pro"
 
 
 # ── mapping ────────────────────────────────────────────────────────────────
@@ -291,7 +291,7 @@ def test_a_failed_renewal_keeps_the_paid_tier_while_dodo_retries(client, db_sess
     deliver(client, "subscription.active", subscription(org))
     deliver(client, f"subscription.{status}", subscription(org, status=status))
     org = reloaded(db_session, org)
-    assert org.tier == "starter"
+    assert org.tier == "pro"
     assert org.subscription_status == status
 
 
@@ -301,7 +301,7 @@ def test_cancel_at_period_end_keeps_the_tier_until_expiry(client, db_session):
     deliver(client, "subscription.cancelled",
             subscription(org, status="cancelled", cancel_at_next=True))
     org = reloaded(db_session, org)
-    assert org.tier == "starter"
+    assert org.tier == "pro"
     assert org.cancel_at_period_end is True
 
     deliver(client, "subscription.expired", subscription(org, status="expired"))
@@ -320,8 +320,8 @@ def test_cancel_at_period_end_whose_period_has_passed_revokes(client, db_session
 @pytest.mark.parametrize("status", ["cancelled", "failed", "expired", "paused"])
 def test_every_ending_returns_the_org_to_community(client, db_session, status):
     org = new_org(db_session)
-    deliver(client, "subscription.active", subscription(org, tier="growth"))
-    deliver(client, f"subscription.{status}", subscription(org, status=status, tier="growth"))
+    deliver(client, "subscription.active", subscription(org, tier="scale"))
+    deliver(client, f"subscription.{status}", subscription(org, status=status, tier="scale"))
     org = reloaded(db_session, org)
     assert org.tier == "community"
     assert effective_credential_quota(org) == get_tier_quota("community")
@@ -330,9 +330,9 @@ def test_every_ending_returns_the_org_to_community(client, db_session, status):
 
 def test_a_plan_change_moves_the_tier_by_product(client, db_session):
     org = new_org(db_session)
-    deliver(client, "subscription.active", subscription(org, tier="starter"))
-    deliver(client, "subscription.plan_changed", subscription(org, tier="growth"))
-    assert reloaded(db_session, org).tier == "growth"
+    deliver(client, "subscription.active", subscription(org, tier="pro"))
+    deliver(client, "subscription.plan_changed", subscription(org, tier="scale"))
+    assert reloaded(db_session, org).tier == "scale"
 
 
 # ── ordering: only the governing subscription moves an org ─────────────────
@@ -345,13 +345,13 @@ def test_an_old_subscriptions_late_expiry_does_not_downgrade_a_resubscribed_org(
     deliver(client, "subscription.active", subscription(org, sub_id="sub_A"))
     deliver(client, "subscription.cancelled",
             subscription(org, sub_id="sub_A", status="cancelled", cancel_at_next=True))
-    deliver(client, "subscription.active", subscription(org, sub_id="sub_B", tier="growth"))
+    deliver(client, "subscription.active", subscription(org, sub_id="sub_B", tier="scale"))
     late = deliver(client, "subscription.expired",
                    subscription(org, sub_id="sub_A", status="expired"))
 
     assert late.json()["data"]["outcome"] == "ignored_not_current"
     org = reloaded(db_session, org)
-    assert org.tier == "growth"
+    assert org.tier == "scale"
     assert org.dodo_subscription_id == sid(org, "sub_B")
 
 
@@ -372,21 +372,21 @@ def test_a_second_live_subscription_does_not_take_over(client, db_session):
                      subscription(org, sub_id="sub_B", tier="scale"))
     assert second.json()["data"]["outcome"] == "ignored_not_current"
     org = reloaded(db_session, org)
-    assert org.tier == "starter"
+    assert org.tier == "pro"
     assert org.dodo_subscription_id == sid(org, "sub_A")
 
 
 def test_an_org_whose_tier_was_set_by_hand_is_not_touched_by_a_stray_event(client, db_session):
-    org = new_org(db_session, tier="growth")
+    org = new_org(db_session, tier="scale")
     res = deliver(client, "subscription.expired",
                   subscription(org, sub_id="sub_stray", status="expired"))
     assert res.json()["data"]["outcome"] == "ignored_not_current"
-    assert reloaded(db_session, org).tier == "growth"
+    assert reloaded(db_session, org).tier == "scale"
 
 
 def test_an_event_naming_no_known_org_is_recorded_as_such(client, db_session):
     data = {"subscription_id": "sub_orphan", "status": "active",
-            "product_id": PRODUCTS["starter"], "metadata": {}}
+            "product_id": PRODUCTS["pro"], "metadata": {}}
     res = deliver(client, "subscription.active", data)
     assert res.status_code == 200
     assert res.json()["data"]["outcome"] == "ignored_unknown_org"
@@ -428,7 +428,7 @@ def fake_dodo():
         yield fake
 
 
-def checkout(client, org, tier="starter"):
+def checkout(client, org, tier="pro"):
     return client.post(f"/api/v1/orgs/{org.slug}/checkout", json={"tier": tier})
 
 
@@ -439,7 +439,7 @@ def test_checkout_returns_the_hosted_url_and_tags_the_org(client, mock_clerk, db
     assert res.json()["data"]["checkout_url"].startswith("https://test.checkout.dodopayments.com/")
 
     call = fake_dodo.checkout_calls[0]
-    assert call["product_cart"] == [{"product_id": PRODUCTS["starter"], "quantity": 1}]
+    assert call["product_cart"] == [{"product_id": PRODUCTS["pro"], "quantity": 1}]
     assert call["metadata"]["org_id"] == str(org.id)
     assert f"/org/{org.slug}/dashboard" in call["return_url"]
     # mock_clerk's session carries no email, so Dodo's page collects it.
@@ -461,12 +461,29 @@ def test_only_an_owner_can_start_a_subscription(client, mock_clerk, db_session, 
     assert fake_dodo.checkout_calls == []
 
 
-@pytest.mark.parametrize("tier", ["community", "pro", None])
+@pytest.mark.parametrize("tier", ["community", "enterprise", None])
 def test_checkout_refuses_a_tier_that_is_not_for_sale(client, mock_clerk, db_session, fake_dodo, tier):
     org = new_org(db_session)
     res = checkout(client, org, tier=tier)
     assert res.status_code == 400
     assert res.json()["error"]["type"] == "invalid_tier"
+
+
+def test_checkout_on_a_retired_plan_name_buys_what_replaced_it(
+    client, mock_clerk, db_session, fake_dodo
+):
+    """A client can hold a retired name for a long time — a pricing page loaded
+    before the change, a saved link, a support thread. Starter is sold as Pro
+    now, so the checkout is for Pro's product rather than a 400 telling a
+    paying customer the plan they were about to buy does not exist."""
+    org = new_org(db_session)
+    res = checkout(client, org, tier="starter")
+
+    assert res.status_code == 200
+    assert res.json()["data"]["tier"] == "pro"
+    assert fake_dodo.checkout_calls[-1]["product_cart"] == [
+        {"product_id": PRODUCTS["pro"], "quantity": 1}
+    ]
 
 
 def test_checkout_without_an_api_key_is_503_and_carries_no_url(client, mock_clerk, db_session):
@@ -480,7 +497,7 @@ def test_checkout_without_an_api_key_is_503_and_carries_no_url(client, mock_cler
 
 def test_checkout_for_a_tier_with_no_product_configured_is_503(client, mock_clerk, db_session, fake_dodo):
     org = new_org(db_session)
-    with patch.dict(config.DODO_PRODUCTS, {"starter": ""}):
+    with patch.dict(config.DODO_PRODUCTS, {"pro": ""}):
         assert checkout(client, org).status_code == 503
     assert fake_dodo.checkout_calls == []
 
@@ -488,7 +505,7 @@ def test_checkout_for_a_tier_with_no_product_configured_is_503(client, mock_cler
 def test_checkout_while_subscribed_is_409(client, mock_clerk, db_session, fake_dodo):
     org = new_org(db_session)
     deliver(client, "subscription.active", subscription(org))
-    res = checkout(client, org, tier="growth")
+    res = checkout(client, org, tier="scale")
     assert res.status_code == 409
     assert res.json()["error"]["type"] == "already_subscribed"
 
@@ -498,7 +515,7 @@ def test_checkout_after_cancelling_at_period_end_is_allowed(client, mock_clerk, 
     deliver(client, "subscription.active", subscription(org))
     deliver(client, "subscription.cancelled",
             subscription(org, status="cancelled", cancel_at_next=True))
-    assert checkout(client, org, tier="growth").status_code == 200
+    assert checkout(client, org, tier="scale").status_code == 200
 
 
 def test_a_provider_failure_is_502(client, mock_clerk, db_session, fake_dodo):
@@ -589,11 +606,11 @@ def test_a_dodo_plan_change_clears_an_operator_override_and_logs_it(client, db_s
     from api.models.quota_change import CredentialQuotaChange
 
     org = new_org(db_session, credential_quota_override=1000)
-    deliver(client, "subscription.active", subscription(org, tier="growth"))
+    deliver(client, "subscription.active", subscription(org, tier="scale"))
     org = reloaded(db_session, org)
-    assert org.tier == "growth"
+    assert org.tier == "scale"
     assert org.credential_quota_override is None
-    assert effective_credential_quota(org) == get_tier_quota("growth")
+    assert effective_credential_quota(org) == get_tier_quota("scale")
 
     rows = db_session.query(CredentialQuotaChange).filter_by(org_id=org.id).all()
     assert [(r.actor, r.previous_override, r.new_override) for r in rows] == [
@@ -607,12 +624,12 @@ def test_a_redelivered_dodo_event_keeps_an_override_set_since(client, db_session
     from api.models.quota_change import CredentialQuotaChange
 
     org = new_org(db_session)
-    deliver(client, "subscription.active", subscription(org, tier="growth"))
+    deliver(client, "subscription.active", subscription(org, tier="scale"))
     org = reloaded(db_session, org)
     org.credential_quota_override = 9000
     db_session.commit()
 
-    deliver(client, "subscription.renewed", subscription(org, tier="growth"))
+    deliver(client, "subscription.renewed", subscription(org, tier="scale"))
     org = reloaded(db_session, org)
     assert org.credential_quota_override == 9000
     assert db_session.query(CredentialQuotaChange).filter_by(org_id=org.id).count() == 0

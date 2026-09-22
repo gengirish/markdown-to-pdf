@@ -279,7 +279,7 @@ def test_the_log_row_rolls_back_with_the_change(client, operator, db_session):
 
 
 def test_a_downgrade_clears_the_override_too(db_session):
-    org = make_org(db_session, "op-downgrade", tier="growth", override=5000)
+    org = make_org(db_session, "op-downgrade", tier="scale", override=5000)
     assert change_tier(db_session, org, "community", actor="test") is True
     assert org.credential_quota_override is None
     assert effective_credential_quota(org) == get_tier_quota("community")
@@ -288,19 +288,19 @@ def test_a_downgrade_clears_the_override_too(db_session):
 def test_change_tier_refuses_a_tier_the_table_does_not_know(db_session):
     org = make_org(db_session, "op-unknown-fn")
     with pytest.raises(UnknownTier):
-        change_tier(db_session, org, "pro", actor="test")
+        change_tier(db_session, org, "enterprise", actor="test")
     assert org.tier == "community"
 
 
 # -- the manual plan change --------------------------------------------------------
 
-def test_an_operator_can_move_an_org_to_starter_without_payment(client, operator, db_session):
+def test_an_operator_can_move_an_org_to_a_paid_plan_without_payment(client, operator, db_session):
     make_org(db_session, "op-upgrade")
-    r = put_tier(client, "op-upgrade", "starter")
+    r = put_tier(client, "op-upgrade", "pro")
     assert r.status_code == 200, r.text
     data = r.json()["data"]
-    assert (data["tier"], data["previous_tier"], data["changed"]) == ("starter", "community", True)
-    assert reload(db_session, "op-upgrade").tier == "starter"
+    assert (data["tier"], data["previous_tier"], data["changed"]) == ("pro", "community", True)
+    assert reload(db_session, "op-upgrade").tier == "pro"
 
 
 def test_a_manual_plan_change_is_what_the_gates_read(client, operator, db_session):
@@ -309,20 +309,20 @@ def test_a_manual_plan_change_is_what_the_gates_read(client, operator, db_sessio
     make_org(db_session, "op-gates", member=True)
     assert client.get("/api/v1/orgs/op-gates/usage").json()["data"]["templates"]["limit"] == 1
 
-    put_tier(client, "op-gates", "growth")
+    put_tier(client, "op-gates", "pro")
 
     after = client.get("/api/v1/orgs/op-gates/usage").json()["data"]
-    assert after["tier_name"] == "Growth"
-    assert after["templates"]["limit"] == 25
-    assert after["credentials"]["limit"] == get_tier_quota("growth")
+    assert after["tier_name"] == "Pro"
+    assert after["templates"]["limit"] == 5
+    assert after["credentials"]["limit"] == get_tier_quota("pro")
     assert after["credentials"]["source"] == "tier"
 
 
 def test_a_manual_plan_change_clears_the_override_under_the_operators_name(client, operator, db_session):
     org = make_org(db_session, "op-manual-clear", override=1000)
-    data = put_tier(client, "op-manual-clear", "growth").json()["data"]
+    data = put_tier(client, "op-manual-clear", "pro").json()["data"]
     assert data["override_cleared"] is True
-    assert data["effective"] == get_tier_quota("growth")
+    assert data["effective"] == get_tier_quota("pro")
 
     rows = changes(db_session, org)
     assert len(rows) == 1
@@ -340,7 +340,7 @@ def test_a_manual_change_to_the_current_plan_is_a_no_op(client, operator, db_ses
 
 def test_an_unknown_tier_is_refused_and_nothing_changes(client, operator, db_session):
     make_org(db_session, "op-bogus")
-    r = put_tier(client, "op-bogus", "pro")
+    r = put_tier(client, "op-bogus", "enterprise")
     assert r.status_code == 422
     assert r.json()["error"]["type"] == "unknown_tier"
     assert reload(db_session, "op-bogus").tier == "community"
@@ -353,7 +353,7 @@ def test_a_plan_change_needs_a_reason(client, operator, db_session):
 
 
 def test_missing_org_is_404(client, operator):
-    assert put_tier(client, "nope-not-here", "starter").status_code == 404
+    assert put_tier(client, "nope-not-here", "pro").status_code == 404
     assert put_quota(client, "nope-not-here", 10).status_code == 404
 
 

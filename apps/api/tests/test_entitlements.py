@@ -14,7 +14,7 @@ a tier that advertises one thing and is granted another fails here.
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
-from api.core.config import BILLING_TIERS, get_tier_csv_batch_limit
+from api.core.config import BILLING_TIERS, get_tier_csv_batch_limit, listed_tiers
 from api.models.credential import CredentialBatch
 from api.models.organization import Organization, OrgMember
 from api.models.template import Template
@@ -87,7 +87,7 @@ def test_community_gets_one_csv_batch_a_month(client, mock_clerk, db_session):
     assert error["type"] == "csv_batch_limit_reached"
     assert error["details"]["limit"] == 1
     assert error["details"]["used"] == 1
-    assert "starter" in [u["tier"] for u in error["details"]["upgrades"]]
+    assert "pro" in [u["tier"] for u in error["details"]["upgrades"]]
 
 
 def test_a_refused_batch_spends_no_quota(client, mock_clerk, db_session):
@@ -193,7 +193,7 @@ def test_every_tier_is_granted_what_the_catalog_advertises(
     """The join test. Each tier the public catalog lists is walked through
     every gate, and what the route lets through must be what the row says."""
     rows = client.get("/api/v1/tiers").json()["data"]
-    assert {row["key"] for row in rows} == set(BILLING_TIERS)
+    assert {row["key"] for row in rows} == {key for key, _ in listed_tiers()}
 
     for row in rows:
         tier = row["key"]
@@ -227,13 +227,17 @@ def test_no_tier_advertises_a_capability_it_is_not_granted():
             assert "unlimited csv" not in text, key
 
 
-def test_starter_buys_capabilities_community_is_actually_refused():
-    """Starter is sold on capability as well as volume, so every capability it
-    names has to be one the API really withholds from Community."""
-    community, starter = BILLING_TIERS["community"], BILLING_TIERS["starter"]
-    assert not community["custom_artwork"] and starter["custom_artwork"]
-    assert not community["api_access"] and starter["api_access"]
-    assert community["csv_batch_limit"] != -1 and starter["csv_batch_limit"] == -1
+def test_pro_buys_both_volume_and_capability():
+    """Community and Starter used to share a quota, so the upgrade had to be
+    sold on capability alone. Pro raises both, and every capability it adds
+    has to be one the API actually withholds from Community — otherwise the
+    pricing page is describing a difference that does not exist."""
+    community, pro = BILLING_TIERS["community"], BILLING_TIERS["pro"]
+    assert pro["monthly_quota"] > community["monthly_quota"]
+    assert pro["template_limit"] > community["template_limit"]
+    assert not community["custom_artwork"] and pro["custom_artwork"]
+    assert not community["api_access"] and pro["api_access"]
+    assert community["csv_batch_limit"] != -1 and pro["csv_batch_limit"] == -1
 
 
 def test_month_start_is_the_first_utc_instant():

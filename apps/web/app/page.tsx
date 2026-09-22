@@ -35,7 +35,7 @@ const AUDIENCES = [
     index: "03",
     who: "Developers",
     title: "Issue from one call",
-    body: "Templates, credentials, batches and revocation are the whole surface. Every issuance returns its verify URL, its badge document and its PDF. API keys start on Starter.",
+    body: "Templates, credentials, batches and revocation are the whole surface. Every issuance returns its verify URL, its badge document and its PDF. API keys start on Pro.",
     cta: "Read the API",
     href: "https://api.certforge.intelliforge.tech/docs",
   },
@@ -45,7 +45,7 @@ const LIFECYCLE = [
   {
     step: "1",
     title: "Define a template",
-    body: "The guided form, hand-written HTML, or — from Starter — your own certificate design with the fields dragged onto it.",
+    body: "The guided form, hand-written HTML, or — from Pro — your own certificate design with the fields dragged onto it.",
   },
   {
     step: "2",
@@ -151,10 +151,10 @@ export default function Home() {
                 exactly how far it goes. Numbers here mirror BILLING_TIERS in
                 apps/api/api/core/config.py, which the pricing page renders. */}
             <p className="mb-5 max-w-[520px] text-sm leading-relaxed text-muted">
-              Free includes one cohort upload a month. Unlimited uploads, your own artwork and API
-              keys start on{" "}
+              Free includes 50 credentials and one cohort upload a month. Unlimited uploads, your
+              own artwork and API keys start on{" "}
               <Link href="/pricing" className="text-accent no-underline hover:underline">
-                Starter
+                Pro
               </Link>
               .
             </p>

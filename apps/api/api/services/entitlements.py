@@ -19,10 +19,10 @@ from datetime import datetime, timezone
 from sqlalchemy import func
 
 from api.core.config import (
-    BILLING_TIERS,
     TIER_GRANTS,
     get_tier,
     get_tier_csv_batch_limit,
+    listed_tiers,
     tier_grants,
 )
 from api.core.envelope import ApiException
@@ -30,7 +30,7 @@ from api.services.issuance import UNLIMITED
 
 
 def _tiers_in_order():
-    return sorted(BILLING_TIERS.items(), key=lambda kv: kv[1]["order"])
+    return listed_tiers()
 
 
 def _plan_name(org) -> str:
