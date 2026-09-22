@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 
 import { buildCsv, LOOSE_EMAIL, parseCsv, type ParsedCsv } from "@/lib/csv";
 import {
@@ -1081,9 +1082,9 @@ function StepReport({
         >
           Download batch report
         </button>
-        <a href="#recent-credentials" className={`${buttonClass("secondary")} no-underline`}>
-          See it in Recent credentials
-        </a>
+        <Link href="?tab=credentials" className={`${buttonClass("secondary")} no-underline`}>
+          See it in Credentials
+        </Link>
         <button type="button" onClick={onStartOver} className={buttonClass("quiet")}>
           Start a new batch
         </button>

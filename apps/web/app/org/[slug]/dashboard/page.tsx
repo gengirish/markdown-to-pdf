@@ -1,7 +1,8 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { SignInButton, useAuth } from "@clerk/nextjs";
 
 import { publicApi, toApiError, type OrgProfile } from "@/lib/api";
@@ -47,6 +48,20 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
 
   const handleIssued = useCallback(() => setIssuedToken((current) => current + 1), []);
 
+  // The tab lives in the URL so a section can be linked to and Back works.
+  // Other params are kept: billing returns here with `?checkout=complete`.
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const activeTab: TabId = isTabId(requestedTab) ? requestedTab : "issue";
+  const selectTab = useCallback(
+    (tab: TabId) => {
+      const next = new URLSearchParams(searchParams.toString());
+      next.set("tab", tab);
+      window.history.pushState(null, "", `?${next.toString()}`);
+    },
+    [searchParams],
+  );
+
   if (!isLoaded) {
     return <div className="min-h-screen bg-ground" />;
   }
@@ -79,24 +94,92 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
         {!isSignedIn ? (
           <SignInPrompt slug={slug} />
         ) : (
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-            <div className="space-y-8 lg:col-span-2">
-              <SingleIssueCard slug={slug} onIssued={handleIssued} />
-              <IssueWizard slug={slug} onIssued={handleIssued} />
-              <TemplatesCard slug={slug} />
-              <BrandingCard slug={slug} org={org} onSaved={setOrg} />
-              <DeveloperCard slug={slug} />
-            </div>
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+            <SectionNav active={activeTab} onSelect={selectTab} />
 
-            <div className="space-y-8">
-              <PlanCard slug={slug} />
-              <div id="recent-credentials">
+            {/* Every panel stays mounted and is only hidden. Unmounting would
+                throw away a half-reviewed bulk upload the moment somebody
+                glanced at another tab, and the credential list has to be
+                mounted to hear `issuedToken` when a batch settles. */}
+            <div className="min-w-0 flex-1">
+              <TabPanel id="issue" active={activeTab}>
+                <SingleIssueCard slug={slug} onIssued={handleIssued} />
+                <IssueWizard slug={slug} onIssued={handleIssued} />
+              </TabPanel>
+              <TabPanel id="credentials" active={activeTab}>
                 <RecentCredentialsCard slug={slug} refreshToken={issuedToken} />
-              </div>
+              </TabPanel>
+              <TabPanel id="templates" active={activeTab}>
+                <TemplatesCard slug={slug} />
+              </TabPanel>
+              <TabPanel id="branding" active={activeTab}>
+                <BrandingCard slug={slug} org={org} onSaved={setOrg} />
+              </TabPanel>
+              <TabPanel id="developers" active={activeTab}>
+                <DeveloperCard slug={slug} />
+              </TabPanel>
+              <TabPanel id="plan" active={activeTab}>
+                <PlanCard slug={slug} />
+              </TabPanel>
             </div>
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+const TABS = [
+  { id: "issue", label: "Issue" },
+  { id: "credentials", label: "Credentials" },
+  { id: "templates", label: "Templates" },
+  { id: "branding", label: "Branding" },
+  { id: "developers", label: "Developers" },
+  { id: "plan", label: "Plan & usage" },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
+
+function isTabId(value: string | null): value is TabId {
+  return TABS.some((tab) => tab.id === value);
+}
+
+/** Sidebar on wide screens, a horizontally scrolling strip on narrow ones. */
+function SectionNav({ active, onSelect }: { active: TabId; onSelect: (tab: TabId) => void }) {
+  return (
+    <nav
+      aria-label="Credential Studio sections"
+      className="-mx-6 overflow-x-auto px-6 sm:-mx-8 sm:px-8 lg:sticky lg:top-8 lg:mx-0 lg:w-52 lg:shrink-0 lg:overflow-visible lg:px-0"
+    >
+      <ul className="flex gap-1 lg:flex-col">
+        {TABS.map((tab) => {
+          const current = tab.id === active;
+          return (
+            <li key={tab.id} className="shrink-0">
+              <button
+                type="button"
+                onClick={() => onSelect(tab.id)}
+                aria-current={current ? "page" : undefined}
+                className={`w-full whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                  current
+                    ? "bg-surface font-medium text-ink shadow-[var(--cf-shadow-card)] ring-1 ring-hair"
+                    : "text-muted hover:bg-surface hover:text-ink"
+                }`}
+              >
+                {tab.label}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
+}
+
+function TabPanel({ id, active, children }: { id: TabId; active: TabId; children: ReactNode }) {
+  return (
+    <div hidden={id !== active} className="space-y-8">
+      {children}
     </div>
   );
 }
