@@ -35,7 +35,7 @@ const AUDIENCES = [
     index: "03",
     who: "Developers",
     title: "Issue from one call",
-    body: "Templates, credentials, batches and revocation are the whole surface. Every issuance returns its verify URL, its badge document and its PDF.",
+    body: "Templates, credentials, batches and revocation are the whole surface. Every issuance returns its verify URL, its badge document and its PDF. API keys start on Starter.",
     cta: "Read the API",
     href: "https://api.certforge.intelliforge.tech/docs",
   },
@@ -45,17 +45,17 @@ const LIFECYCLE = [
   {
     step: "1",
     title: "Define a template",
-    body: "The guided form, hand-written HTML, or your own certificate design with the fields dragged onto it.",
+    body: "The guided form, hand-written HTML, or — from Starter — your own certificate design with the fields dragged onto it.",
   },
   {
     step: "2",
     title: "Upload the cohort",
-    body: "A CSV against that template. Every row is rendered and signed; the batch reports what succeeded and what did not.",
+    body: "A CSV against that template. Every row is rendered and signed; the batch reports what succeeded and what did not. Community includes one upload a month.",
   },
   {
     step: "3",
     title: "Recipients claim",
-    body: "Unclaimed credentials still verify. Claiming only adds the passport — it never changes whether the credential is valid.",
+    body: "From a claim link you share. Unclaimed credentials still verify — claiming only adds the passport, it never changes whether the credential is valid.",
   },
   {
     step: "4",
@@ -78,18 +78,18 @@ const STATUS = [
       "Single-credential API issuance",
       "Certificates rendered on demand",
       "Issuer revocation",
+      "Recipient passports, claimed by link",
+      "Your own artwork as a template",
+      "Credential email, with per-recipient delivery status",
+      "Usage and quota reporting",
     ],
   },
   {
     label: "In build",
     tone: "warn" as const,
-    items: [
-      "Recipient passports",
-      "Claim-by-email flow",
-      "Your own artwork as a template",
-      "Email delivery reporting",
-      "Usage and quota reporting",
-    ],
+    // Passports and the /claim page are live, but nothing sends a recipient
+    // there yet: the delivery email carries the verify and PDF links only.
+    items: ["Claim link in the delivery email"],
   },
   {
     label: "Not yet",
@@ -146,6 +146,18 @@ export default function Home() {
             <div className="mb-8">
               <AccountPanel />
             </div>
+
+            {/* The headline is a promise the free plan has to keep, so say
+                exactly how far it goes. Numbers here mirror BILLING_TIERS in
+                apps/api/api/core/config.py, which the pricing page renders. */}
+            <p className="mb-5 max-w-[520px] text-sm leading-relaxed text-muted">
+              Free includes one cohort upload a month. Unlimited uploads, your own artwork and API
+              keys start on{" "}
+              <Link href="/pricing" className="text-accent no-underline hover:underline">
+                Starter
+              </Link>
+              .
+            </p>
 
             <ul className="flex list-none flex-wrap gap-x-6 gap-y-2.5 p-0">
               {["CSV or REST", "Your own artwork", "Issuer revocation", "No recipient account"].map(
@@ -236,7 +248,7 @@ export default function Home() {
                 </p>
               </div>
               <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-faint">
-                Updated Aug 2026
+                Updated Sep 2026
               </span>
             </div>
 

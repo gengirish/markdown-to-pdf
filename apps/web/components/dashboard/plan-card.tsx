@@ -65,6 +65,7 @@ export function PlanCard({ slug }: { slug: string }) {
                 count the API gates template creation on, so the bar filling up
                 is the only warning before a 402. */}
             <MeterRow label="Templates held" meter={usage.templates} />
+            <MeterRow label="CSV uploads this month" meter={usage.csv_batches} />
             <MeterRow label="Design readings this month" meter={usage.vision_imports} />
           </div>
         ) : null}

@@ -11,6 +11,7 @@ from api.models.api_key import ApiKey, WebhookEndpoint
 from api.core.envelope import ApiResponse
 from api.core.principal import LIVE_PREFIX, TEST_PREFIX
 from api.core.principal import Principal, require_user, require_org_access
+from api.services.entitlements import require_grant
 
 router = APIRouter(prefix="/orgs/{slug}", tags=["developers"])
 
@@ -30,7 +31,10 @@ def create_api_key(
             return ApiResponse.fail("Organization not found", code=404)
             
         require_org_access(principal, str(org.id), allowed_roles=("owner", "admin"))
-        
+        # Gated on creation only. A key made before the org's plan changed
+        # keeps authenticating — see require_grant.
+        require_grant(org, "api_access")
+
         label = payload.get("label", "Default Key")
 
         # Test keys authenticate exactly like live ones and write to the same
@@ -120,7 +124,8 @@ def create_webhook(
             return ApiResponse.fail("Organization not found", code=404)
             
         require_org_access(principal, str(org.id), allowed_roles=("owner", "admin"))
-        
+        require_grant(org, "api_access")
+
         url = payload.get("url")
         if not url:
             return ApiResponse.fail("Webhook URL is required", code=400)

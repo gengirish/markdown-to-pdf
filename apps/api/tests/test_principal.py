@@ -23,8 +23,8 @@ from api.models.api_key import ApiKey
 from api.models.organization import Organization
 
 
-def make_org(db_session, slug):
-    org = Organization(slug=slug, name=slug.title(), tier="community")
+def make_org(db_session, slug, tier="community"):
+    org = Organization(slug=slug, name=slug.title(), tier=tier)
     db_session.add(org)
     db_session.commit()
     return org
@@ -165,7 +165,9 @@ def test_a_live_key_is_not_flagged_as_test(db_session):
 def test_minting_supports_both_kinds(client, mock_clerk, db_session):
     from api.models.organization import OrgMember
 
-    org = make_org(db_session, "minter")
+    # Minting through the route needs a plan with API access
+    # (services/entitlements.py); Community is refused with a 402.
+    org = make_org(db_session, "minter", tier="starter")
     db_session.add(OrgMember(org_id=org.id, clerk_user_id="test_user_123", role="owner"))
     db_session.commit()
 
@@ -180,7 +182,9 @@ def test_minting_supports_both_kinds(client, mock_clerk, db_session):
 def test_an_unknown_kind_is_rejected(client, mock_clerk, db_session):
     from api.models.organization import OrgMember
 
-    org = make_org(db_session, "badkind")
+    # Minting through the route needs a plan with API access
+    # (services/entitlements.py); Community is refused with a 402.
+    org = make_org(db_session, "badkind", tier="starter")
     db_session.add(OrgMember(org_id=org.id, clerk_user_id="test_user_123", role="owner"))
     db_session.commit()
 

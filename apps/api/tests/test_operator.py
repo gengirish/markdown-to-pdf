@@ -7,8 +7,6 @@ through the operator route has to bind at issuance, and a plan change from
 the webhook has to go through the same rule as one from an operator.
 """
 
-import hashlib
-import hmac
 import json
 from unittest.mock import patch
 
@@ -275,47 +273,9 @@ def test_the_log_row_rolls_back_with_the_change(client, operator, db_session):
 
 # -- a plan change clears the override (Decision 4) -------------------------------
 
-WEBHOOK_SECRET = "operator-test-webhook-secret"
-
-
-def post_activation(client, org):
-    body = json.dumps({
-        "event": "subscription.activated",
-        "payload": {"subscription": {"entity": {"id": "sub_1", "notes": {"org_id": str(org.id)}}}},
-    }).encode()
-    sig = hmac.new(WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
-    with patch("api.routes.billing.RAZORPAY_SECRET", WEBHOOK_SECRET):
-        return client.post(
-            "/api/v1/webhooks/razorpay",
-            content=body,
-            headers={"Content-Type": "application/json", "X-Razorpay-Signature": sig},
-        )
-
-
-def test_a_webhook_plan_change_clears_the_override_and_logs_it(client, db_session):
-    org = make_org(db_session, "op-webhook", override=1000)
-
-    assert post_activation(client, org).status_code == 200
-    org = reload(db_session, "op-webhook")
-    assert org.tier == "starter"
-    assert org.credential_quota_override is None
-    assert effective_credential_quota(org) == get_tier_quota("starter")
-    assert org.monthly_quota == get_tier_quota("starter")
-
-    rows = changes(db_session, org)
-    assert len(rows) == 1
-    assert rows[0].actor == "razorpay-webhook"
-    assert (rows[0].previous_override, rows[0].new_override) == (1000, None)
-    assert "community to starter" in rows[0].reason
-
-
-def test_a_repeated_webhook_for_the_same_plan_changes_nothing(client, db_session):
-    """Razorpay retries. An override set after the first delivery survives."""
-    org = make_org(db_session, "op-webhook-retry", tier="starter", override=9000)
-
-    assert post_activation(client, org).status_code == 200
-    assert reload(db_session, "op-webhook-retry").credential_quota_override == 9000
-    assert changes(db_session, org) == []
+# The webhook half of Decision 4 — a Dodo plan change clears the override and
+# logs it, a redelivery for the same tier changes nothing — is tested beside
+# the webhook, in tests/test_billing_dodo.py.
 
 
 def test_a_downgrade_clears_the_override_too(db_session):

@@ -1,27 +1,28 @@
-import hashlib
-import hmac
 import logging
 import uuid
 from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 
 from api.models import get_db
+from api.models.billing_event import BillingEvent
 from api.models.organization import Organization
 from api.models.template import Template
 from api.models.usage import UsageLedger
-from api.core.envelope import ApiResponse
+from api.core.envelope import ApiException, ApiResponse
 from api.core.principal import Principal, require_user, require_org_access
 from api.core.config import (
     BILLING_TIERS,
     DEFAULT_TIER,
-    RAZORPAY_SECRET,
     VISION_IMPORTS_PER_MONTH,
+    get_tier_csv_batch_limit,
     get_tier_template_limit,
     tier_catalog,
 )
+from api.services import billing
+from api.services.entitlements import csv_batches_this_month
 from api.services.issuance import UNLIMITED, credential_quota_source, quota_state
-from api.services.plans import change_tier
 
 logger = logging.getLogger(__name__)
 
@@ -46,28 +47,106 @@ def list_tiers():
     """
     return ApiResponse.ok(tier_catalog())
 
+def _billing_unavailable(exc: Exception) -> ApiException:
+    logger.error("Billing is unavailable: %s", exc)
+    return ApiException(
+        503,
+        "Billing is not available right now. Nothing was charged.",
+        error_type="billing_unavailable",
+    )
+
+
+def _provider_error() -> ApiException:
+    return ApiException(
+        502,
+        "The payment provider could not start this request. Nothing was charged; try again.",
+        error_type="billing_provider_error",
+    )
+
+
+def _owned_org(session, slug: str, principal: Principal) -> Organization:
+    org = session.query(Organization).filter_by(slug=slug).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    # Owner only. Starting a subscription commits the org to paying, and
+    # before this check any signed-in user could do it to any org's slug.
+    require_org_access(principal, str(org.id), allowed_roles=("owner",))
+    return org
+
+
 @router.post("/{slug}/checkout", response_model=ApiResponse[dict])
 def create_checkout_session(
     slug: str,
     payload: Dict[str, Any],
     principal: Principal = Depends(require_user)
 ):
-    """Create a Razorpay checkout session for upgrading org tier."""
-    # In a real app, integrate with razorpay python SDK
+    """Start a Dodo Payments checkout that subscribes this org to `tier`.
+
+    Returns the hosted checkout URL. The tier does not change here, nor when
+    the browser comes back: only the signed webhook moves it, once Dodo says
+    the subscription is active.
+    """
     with get_db() as session:
-        org = session.query(Organization).filter_by(slug=slug).first()
-        if not org:
-            raise HTTPException(status_code=404, detail="Organization not found")
-            
-        tier = payload.get("tier", "pro")
-        
-        # Mocking a Razorpay session URL for Phase 2 demo
-        checkout_url = f"https://rzp.io/i/mock_{org.id}_{tier}"
-        
+        org = _owned_org(session, slug, principal)
+
+        tier = payload.get("tier")
+        if tier not in BILLING_TIERS or tier == DEFAULT_TIER:
+            raise ApiException(
+                400,
+                "Choose a paid plan to check out.",
+                error_type="invalid_tier",
+                details={"tier": tier, "paid_tiers": [
+                    key for key in BILLING_TIERS if key != DEFAULT_TIER
+                ]},
+            )
+        if billing.holds_live_subscription(org):
+            # A second checkout would create a second subscription, billed in
+            # parallel with the first. Changing plan is a different operation.
+            raise ApiException(
+                409,
+                "This organization already has an active subscription. "
+                "Change plan from the billing portal instead.",
+                error_type="already_subscribed",
+                details={"tier": org.tier},
+            )
+
+        try:
+            started = billing.create_checkout(org, tier, principal.email)
+        except billing.BillingUnavailable as exc:
+            raise _billing_unavailable(exc)
+        except billing.BillingProviderError:
+            raise _provider_error()
+
         return ApiResponse.ok({
-            "checkout_url": checkout_url,
-            "tier": tier
+            "checkout_url": started["checkout_url"],
+            "session_id": started["session_id"],
+            "tier": tier,
         })
+
+
+@router.post("/{slug}/billing/portal", response_model=ApiResponse[dict])
+def create_billing_portal_session(
+    slug: str,
+    principal: Principal = Depends(require_user),
+):
+    """A link to Dodo's customer portal: card, cancellation, invoices, and
+    recovering a subscription whose renewal failed. Links expire after 24
+    hours, so one is minted per request."""
+    with get_db() as session:
+        org = _owned_org(session, slug, principal)
+        if not org.dodo_customer_id:
+            raise ApiException(
+                409,
+                "This organization has no billing account yet. Subscribe to a plan first.",
+                error_type="no_billing_account",
+            )
+        try:
+            link = billing.create_portal_link(org)
+        except billing.BillingUnavailable as exc:
+            raise _billing_unavailable(exc)
+        except billing.BillingProviderError:
+            raise _provider_error()
+        return ApiResponse.ok({"portal_url": link})
 
 def _meter(used: int, limit: int) -> dict:
     """Shape one counter for the wire. `None` means unlimited, never `-1` —
@@ -122,7 +201,7 @@ def get_usage(
             "period": period,
             "tier": org.tier,
             # The tier column is free text and has held values BILLING_TIERS
-            # does not know (the Razorpay webhook still writes "pro"). Report
+            # does not know (the old Razorpay webhook wrote "pro"). Report
             # the row the limits were actually read from, so a dashboard
             # showing "Community" and a gate enforcing Community's limits can
             # never disagree.
@@ -136,69 +215,85 @@ def get_usage(
             },
             "templates": _meter(template_used, get_tier_template_limit(org.tier)),
             "vision_imports": _meter(vision_used, VISION_IMPORTS_PER_MONTH),
+            # The same count services/entitlements.py gates bulk uploads on.
+            "csv_batches": _meter(
+                csv_batches_this_month(session, org),
+                get_tier_csv_batch_limit(org.tier),
+            ),
+            # None for an org that has never subscribed, including every org
+            # whose tier was set by hand.
+            "subscription": billing.subscription_summary(org),
         })
 
 
-@webhooks_router.post("/razorpay", response_model=ApiResponse[dict])
-async def razorpay_webhook(request: Request):
-    """Handle Razorpay webhooks to update org tiers."""
-    payload = await request.body()
-    signature = request.headers.get("X-Razorpay-Signature", "")
+#: Subscription events the handler reconciles. Every one is handled the same
+#: way — by reading the subscription's state — so this list only decides which
+#: payloads carry a subscription, not what happens to the org.
+SUBSCRIPTION_EVENT_PREFIX = "subscription."
 
-    # Fail closed when unconfigured. This handler grants paid tiers, so an
-    # unset secret must reject rather than fall back to a shared default value
-    # that anyone could HMAC against.
-    # ApiResponse.fail() alone would answer 200 with an error body, which tells
-    # Razorpay the hook succeeded. Raise so the rejection is a real HTTP status.
-    if not RAZORPAY_SECRET:
-        logger.error("Razorpay webhook received but RAZORPAY_WEBHOOK_SECRET is not configured")
+
+@webhooks_router.post("/dodo", response_model=ApiResponse[dict])
+async def dodo_webhook(request: Request):
+    """Apply a Dodo Payments webhook to the organization it concerns.
+
+    Register this at the API host, not the dashboard's:
+    https://api.certforge.intelliforge.tech/api/v1/webhooks/dodo. That host
+    reaches Fly directly, so no vercel.json rewrite is involved.
+
+    Status codes are how Dodo decides whether to retry, so they are chosen for
+    it: 401 for an unverifiable delivery, 503 when unconfigured, 500 when
+    applying failed (the transaction rolled back, so the retry can apply it),
+    and 200 for everything Dodo should stop sending — including every event
+    recorded as deliberately ignored.
+    """
+    raw_body = await request.body()
+
+    try:
+        event = billing.verify_webhook(raw_body, request.headers)
+    except billing.BillingUnavailable as exc:
+        # Fail closed. This handler grants paid tiers; an unset or unusable
+        # key must reject rather than accept anything.
+        logger.error("Dodo webhook received but cannot be verified: %s", exc)
         raise HTTPException(status_code=503, detail="Webhook signing is not configured")
-    if not signature:
-        raise HTTPException(status_code=400, detail="Missing signature")
+    except billing.InvalidWebhook as exc:
+        logger.warning("Rejected a Dodo webhook that failed verification: %s", exc)
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
-    expected = hmac.new(RAZORPAY_SECRET.encode(), payload, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected, signature):
-        logger.warning("Rejected Razorpay webhook with an invalid signature")
-        raise HTTPException(status_code=400, detail="Invalid signature")
+    # Verified, so the header is present — verification signs over it.
+    webhook_id = request.headers["webhook-id"]
+    event_type = str(event.get("type") or "")
+    data = event.get("data") if isinstance(event.get("data"), dict) else {}
 
-    data = await request.json()
-    event = data.get("event")
+    try:
+        with get_db() as session:
+            # The replay guard. Checked first to answer a retry cheaply, and
+            # enforced by the unique constraint for two deliveries that race.
+            if session.query(BillingEvent.id).filter_by(webhook_id=webhook_id).first():
+                return ApiResponse.ok({"status": "duplicate"})
 
-    if event == "subscription.activated":
-        # Walk the payload defensively — Razorpay sends several event shapes and
-        # a KeyError here would 500 on a request we have already authenticated.
-        entity = (
-            data.get("payload", {})
-            .get("subscription", {})
-            .get("entity", {})
-        )
-        # Parsed rather than passed through: the column is a UUID, and a raw
-        # string reaches the driver unconverted. No test had ever delivered
-        # this event for a real org, so the lookup had never run.
-        try:
-            org_id = uuid.UUID(str((entity.get("notes") or {}).get("org_id")))
-        except ValueError:
-            org_id = None
-        if org_id:
-            with get_db() as session:
-                org = session.query(Organization).filter_by(id=org_id).first()
-                if org:
-                    # "pro" is not a key in BILLING_TIERS, so every lookup —
-                    # quota, template limit, the dashboard's plan name — fell
-                    # back to Community while the column read paid. Grant a
-                    # tier the table knows, and take the quota from the table
-                    # rather than a literal that can drift from it.
-                    #
-                    # Which tier is still a guess: checkout is mocked, so there
-                    # is no plan_id to map from. That mapping is P1 of
-                    # docs/billing-and-template-quota-plan.md.
-                    #
-                    # Through change_tier(), never by writing the columns: a
-                    # plan change clears an operator's quota override and logs
-                    # it, and a retried delivery for the plan the org already
-                    # has must change nothing.
-                    change_tier(session, org, "starter", actor="razorpay-webhook")
-                    org.razorpay_sub_id = entity.get("id")
-                    session.commit()
-                    
-    return ApiResponse.ok({"status": "received"})
+            if event_type.startswith(SUBSCRIPTION_EVENT_PREFIX):
+                outcome, org = billing.reconcile_subscription(session, data)
+            else:
+                # Payments, refunds, disputes: nothing here moves a tier.
+                # Recorded so the trail is complete; refunds and disputes are
+                # logged louder because a person may need to act on them.
+                outcome, org = billing.IGNORED_EVENT_TYPE, None
+                log = logger.warning if event_type.startswith(("refund.", "dispute.")) else logger.info
+                log("Dodo %s event %s received; no entitlement change", event_type, webhook_id)
+
+            # Same transaction as the change it records. If anything above or
+            # the commit fails, both roll back and Dodo's retry starts clean.
+            session.add(BillingEvent(
+                webhook_id=webhook_id,
+                event_type=event_type or "unknown",
+                subscription_id=data.get("subscription_id"),
+                org_id=org.id if org is not None else None,
+                outcome=outcome,
+            ))
+    except IntegrityError:
+        # A concurrent delivery of the same webhook-id committed first. Its
+        # transaction applied the event; this one rolled back having done
+        # nothing, which is the correct result.
+        return ApiResponse.ok({"status": "duplicate"})
+
+    return ApiResponse.ok({"status": "received", "outcome": outcome})

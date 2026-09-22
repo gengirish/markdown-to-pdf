@@ -12,7 +12,9 @@ def _create_org(db_session: Session, slug: str) -> dict:
     against the database, so an org with no members rejects every write.
     """
     org_id = uuid.uuid4()
-    db_session.add(Organization(id=org_id, name="Test Org", slug=slug))
+    # "starter": API keys and webhooks start there (services/entitlements.py).
+    # The refusal on Community has its own suite in tests/test_entitlements.py.
+    db_session.add(Organization(id=org_id, name="Test Org", slug=slug, tier="starter"))
     db_session.add(OrgMember(org_id=org_id, clerk_user_id="test_user_123", role="owner"))
     db_session.commit()
     return {"id": str(org_id), "slug": slug}

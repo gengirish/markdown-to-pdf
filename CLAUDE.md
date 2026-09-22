@@ -545,6 +545,19 @@ Starter 5, Growth 25, Scale unlimited. Things that follow:
   also a 402, which is why this one carries its own `error.type` — raised as
   `ApiException` (`core/envelope.py`), the one way a v1 route names its own
   error type and details.
+- **Capabilities are gated too, in `api/services/entitlements.py`.** The pricing
+  page sold CSV, artwork and API keys as Starter features while every tier got
+  all three. Now `csv_batch_limit` (Community: 1 a month, counted off
+  `credential_batches`), `custom_artwork` (the artwork upload; the logo upload
+  is not gated) and `api_access` (creating API keys and webhooks) are enforced
+  as 402s typed `csv_batch_limit_reached` / `plan_feature_required`. They are
+  checked where a capability is *acquired*, never where it is used, so a
+  downgraded org keeps its artwork rendering and its existing keys working.
+  `test_entitlements.py` walks every catalog tier through every gate, and fails
+  if a tier's `features` copy names a capability it is not granted. Starter
+  is sold on capability as well as volume (500 a month against Community's
+  50). No page states a quota as a literal: the pricing page reads them from
+  `/api/v1/tiers`.
 - **The gate has no self-serve door yet.** `create_checkout_session` still
   returns a fabricated URL, so an org at its limit can only be moved by hand.
   The 402 body and the pricing page both say so outright rather than offering a

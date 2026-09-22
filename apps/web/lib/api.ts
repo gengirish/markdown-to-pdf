@@ -52,11 +52,25 @@ export class ApiError extends Error {
 
   /** True when the org has run out of monthly credential quota.
    *
-   *  Two different refusals answer 402 — this one and the template allowance —
-   *  and they need different copy, so status alone is not enough to tell them
-   *  apart. The API types the second one `template_limit_reached`. */
+   *  Several different refusals answer 402 and they need different copy, so
+   *  status alone is not enough to tell them apart. Every other one carries its
+   *  own type: `template_limit_reached`, `csv_batch_limit_reached`,
+   *  `plan_feature_required`. */
   get isQuotaExceeded(): boolean {
-    return this.status === 402 && this.type !== "template_limit_reached";
+    return this.status === 402 && !PLAN_REFUSAL_TYPES.has(this.type);
+  }
+
+  /** True when the org's plan does not include the capability asked for
+   *  (artwork upload, API keys, webhooks). `details` carries
+   *  `{ tier, tier_name, feature, upgrades }`. */
+  get isPlanFeatureRequired(): boolean {
+    return this.type === "plan_feature_required";
+  }
+
+  /** True when the org has used its plan's CSV uploads for this month.
+   *  `details` carries `{ tier, tier_name, limit, used, upgrades }`. */
+  get isCsvBatchLimitReached(): boolean {
+    return this.type === "csv_batch_limit_reached";
   }
 
   /** True when the org already holds as many templates as its plan allows.
@@ -65,6 +79,13 @@ export class ApiError extends Error {
     return this.type === "template_limit_reached";
   }
 }
+
+/** The 402s that are about the plan rather than the monthly credential quota. */
+const PLAN_REFUSAL_TYPES = new Set([
+  "template_limit_reached",
+  "csv_batch_limit_reached",
+  "plan_feature_required",
+]);
 
 /** Coerce anything thrown by a request into an `ApiError` for rendering. */
 export function toApiError(err: unknown): ApiError {
@@ -131,6 +152,8 @@ export interface UsageSummary {
    *  monthly flow: deleting a template frees the slot. */
   templates: UsageMeter;
   vision_imports: UsageMeter;
+  /** CSV uploads this calendar month, against the plan's allowance. */
+  csv_batches: UsageMeter;
 }
 
 /** One plan, as `GET /api/v1/tiers` serves it. The pricing page renders these
@@ -148,6 +171,12 @@ export interface Tier {
   monthly_quota: number | null;
   /** `null` means unlimited. */
   template_limit: number | null;
+  /** CSV uploads a month. `null` means unlimited. */
+  csv_batch_limit: number | null;
+  /** Whether the plan may upload its own certificate artwork. */
+  custom_artwork: boolean;
+  /** Whether the plan may create API keys and webhooks. */
+  api_access: boolean;
   features: string[];
 }
 

@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Integer, Boolean, ForeignKey, UniqueConstraint, Index
+from sqlalchemy import String, Integer, Boolean, ForeignKey, UniqueConstraint, Index, false
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -60,7 +60,33 @@ class Organization(Base):
     accent_color: Mapped[str | None] = mapped_column(String(20), nullable=True)
     footer_text: Mapped[str | None] = mapped_column(String(255), nullable=True)
     tier: Mapped[str] = mapped_column(String(50), nullable=False, default="community")
+    #: Retired: only ever written by the Razorpay webhook, which never had a
+    #: configured secret. Kept until production is confirmed to hold no value
+    #: in it (step D0 of docs/dodo-payments-integration-plan.md), then dropped.
     razorpay_sub_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # ── Dodo Payments ──────────────────────────────────────────────────────
+    #: The Dodo customer this org pays as. Reused by later checkouts and by the
+    #: billing portal, so one org never becomes several Dodo customers.
+    dodo_customer_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    #: The one subscription that governs this org's tier. A webhook for any
+    #: other subscription id is recorded and ignored — without that, an old
+    #: subscription's late `expired` event downgrades an org that resubscribed.
+    #: NULL for every org whose tier was set by hand, which is what keeps
+    #: webhooks from ever touching those.
+    dodo_subscription_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, index=True
+    )
+    #: Mirrors of the governing subscription, as of the last webhook applied.
+    #: For display and for deciding whether a new subscription may take over;
+    #: the tier itself is always recomputed from the webhook payload.
+    subscription_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
+    cancel_at_period_end: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     # Derived from the tier table rather than repeated as a literal: a new org
     # is created with tier="community" and no explicit quota, so a default that
     # disagreed with BILLING_TIERS["community"] would silently win.

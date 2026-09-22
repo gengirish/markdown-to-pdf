@@ -37,6 +37,7 @@ from api.models.organization import Organization
 from api.models.template import Template
 from api.models.template_asset import TemplateAsset
 from api.services.backgrounds import background_data_uri
+from api.services.entitlements import require_grant
 from api.services.issuance import UNLIMITED
 from api.services.templates import (
     KIND_TRACED,
@@ -832,6 +833,15 @@ async def upload_template_asset(
             status_code=503,
             detail="Image upload is not available: object storage is not configured.",
         )
+
+    # Before the file is read or decoded: an org whose plan cannot keep the
+    # artwork should not pay for a Pillow round-trip finding that out. The
+    # logo upload below is deliberately not gated — it is branding, not a
+    # certificate design, and every plan prints the org's mark.
+    with get_db() as session:
+        org = _org_or_404(session, slug)
+        require_org_access(principal, str(org.id), allowed_roles=WRITE_ROLES)
+        require_grant(org, "custom_artwork")
 
     # One byte past the limit, so an oversize file is refused on the strength of
     # what actually arrived rather than what the client said would arrive.
