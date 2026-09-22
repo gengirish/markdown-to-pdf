@@ -1,6 +1,7 @@
 # Plan: let an operator change one organization's credential quota
 
-Status: **proposed, 2026-09-21. Not started.**
+Status: **proposed, 2026-09-21. Not started.** The one open question was
+decided on 2026-09-22: a plan change clears the override (Decision 4).
 
 Today the only way to change how many credentials an org may issue is a code
 edit to `BILLING_TIERS` and a deploy. It happened twice in two days: Community
@@ -51,8 +52,9 @@ the same way templates already do (Q2). Changing a number in `BILLING_TIERS`
 then takes effect on the next deploy with no migration. PR #8's migration would
 have been unnecessary under this design.
 
-It also fixes Q3. A tier change writes `tier` and nothing else, so an override
-survives an upgrade.
+It also fixes Q3. A tier change no longer rewrites a stored limit behind
+anyone's back. What happens to an override on a tier change is now a stated
+rule with a log entry (Decision 4), not a side effect of the webhook.
 
 **Alternative considered:** keep `monthly_quota` and add a
 `quota_source = 'tier' | 'operator'` flag so tier changes skip overridden rows.
@@ -115,7 +117,7 @@ Add a new append-only table `credential_quota_changes`:
 | `previous_override`, `new_override` | nullable int (NULL = no override) |
 | `effective_before`, `effective_after` | int, the result of `effective_credential_quota()` before and after |
 | `reason` | text, **required**, at least 10 characters |
-| `actor_clerk_user_id` | the operator who made the change |
+| `actor` | who made the change: the operator's Clerk user id (`user_…`), or `razorpay-webhook` when a plan change cleared it (Decision 4) |
 | `created_at` | timestamptz |
 
 The row is inserted in the same transaction as the update, so a rolled-back
@@ -123,6 +125,43 @@ change leaves no record and a committed change always has one. The reason is
 required because the question you'll be asked in six months is "why does
 acme get 5,000?". Storing `effective_*` as well as the override means the
 history still reads correctly after a tier's default changes.
+
+`actor` is free text rather than a Clerk user id column, because the webhook
+is not a user. A plan change that clears an override has to be in this log
+too. Otherwise the history would show an override set and never show it
+removed, and the only record of why would be a log line that has rolled off.
+
+## Decision 4: a plan change clears the override
+
+**Decided 2026-09-22.** When an org moves to a different tier, any override is
+removed and the org follows its new tier's quota. An org given 1,000 on
+Community that pays for Growth goes to 2,000, with no one needing to notice.
+
+- **One function changes a tier:** `change_tier(session, org, new_tier, *,
+  actor, reason)` in `services/`. The Razorpay webhook calls it, and so does
+  any later path that moves an org between plans (cancellation handling, B4 in
+  the billing plan; a manual plan change). Nothing else writes `org.tier`, so
+  every path follows the same rule.
+- **Only a real change clears it.** If `new_tier == org.tier` the function does
+  nothing. Razorpay retries deliveries (B5 in the billing plan), and a repeated
+  `subscription.activated` for the plan the org already has must not wipe an
+  override set since.
+- **Downgrades clear it too.** The rule is "the plan changed", not "the plan
+  went up", so there is one rule to reason about.
+- **It is logged.** `change_tier` writes a `credential_quota_changes` row in the
+  same transaction, with actor `razorpay-webhook` and a reason like
+  "Plan changed from community to growth". If the org had no override it
+  writes no row, because the override didn't change.
+
+**The cost, accepted:** an override set *below* the plan on purpose, for
+example to stop abuse, is lifted by the org's next plan change. The operator
+panel says this next to the input ("A plan change removes this limit"), and
+the log shows when it happened. If that becomes a real problem, the fix is a
+separate "hold" flag that `change_tier` respects, not a change to this rule.
+
+**Rejected:** the override wins until an operator removes it. It never changes
+a limit without a person, but it leaves a paying customer below their plan
+until someone notices, and that failure is silent.
 
 ## Endpoints
 
@@ -163,7 +202,8 @@ or `_build_sitemap_xml`.
   page. The actual check is `require_operator` on the API.
 - **Content:** a search box and a table with slug, tier, plan limit, override,
   and used/limit. Clicking a row opens a side panel with:
-  - a number input and an "Unlimited" checkbox
+  - a number input and an "Unlimited" checkbox, with the note "A plan change
+    removes this limit" beside it (Decision 4)
   - a required reason field
   - "Remove override"
   - the change history
@@ -186,7 +226,7 @@ or `_build_sitemap_xml`.
 
 Each package ships separately and can be rolled back separately.
 
-### W1: The column, and computing the limit on every request (`models/organization.py`, `services/issuance.py`, `routes/billing.py`, migration)
+### W1: The column, the change log, and computing the limit on every request (`models/organization.py`, `models/`, `services/issuance.py`, `services/`, `routes/billing.py`, migration)
 
 1. Migration: add `credential_quota_override` (nullable int). Backfill it from
    `monthly_quota` only where the row **differs from its tier's quota**. Those
@@ -201,8 +241,11 @@ Each package ships separately and can be rolled back separately.
    to the override or the tier also sets
    `monthly_quota = effective_credential_quota(org)`. If this deploy has to be
    rolled back, the old code reads `monthly_quota`, and it needs to be current.
-4. The webhook writes `tier` only (plus the extra `monthly_quota` write from
-   step 3).
+4. The `credential_quota_changes` table (Decision 3) and `change_tier()`
+   (Decision 4). The webhook calls `change_tier(..., actor="razorpay-webhook")`
+   instead of writing `tier` and `monthly_quota` itself. The table lands here
+   rather than in W2 because `change_tier` has to record a cleared override
+   from the first deploy. The backfill in step 1 can already create overrides.
 5. Test fixtures: the 11 test files that pass `monthly_quota=` to
    `Organization(...)` switch to `credential_quota_override=`. Mechanical, but
    it has to happen in this package or the fixtures test a column nothing reads.
@@ -213,9 +256,10 @@ and check the backfill with
 The pytest suite builds its schema with `create_all` and never runs Alembic, so
 nothing in CI runs this SQL.
 
-### W2: Operators, the endpoints and the change log (`core/config.py`, `core/principal.py`, `routes/operator.py`, `models/`, migration, `index.py`)
+### W2: Operators and the endpoints (`core/config.py`, `core/principal.py`, `routes/operator.py`, `index.py`)
 
-Decisions 2 and 3, plus the Endpoints section. Also add `credentials.source`
+Decision 2 and the Endpoints section. The operator endpoints write to the
+change log W1 created. Also add `credentials.source`
 to the usage endpoint.
 
 **Before deploying:** `fly secrets set CERTFORGE_OPERATOR_USER_IDS=user_…`.
@@ -241,7 +285,8 @@ bug it describes before it counts.
 | A customer cannot change their own quota by any route: `PATCH /orgs/{slug}` with `credential_quota_override` in the body leaves it unchanged. | Add the field to `OrgUpdate`. |
 | **Override → issuance:** set the limit to 2 through `PUT /operator/…`, then issue three credentials. The third returns 402. This connects the operator endpoint to the issuance check; testing either half alone would miss a break between them. | Make `quota_state()` read `monthly_quota`. |
 | Removing the override brings back the tier's quota. Monkeypatching `BILLING_TIERS` changes a non-overridden org's limit with no migration. | Same as above. |
-| A webhook tier change keeps an existing override. | Have the webhook clear or rewrite the override. |
+| A webhook moving an org from Community to Growth clears its override, the org's limit becomes Growth's, and one change log row is written with actor `razorpay-webhook`. | Have the webhook write `org.tier` directly instead of calling `change_tier()`. |
+| A repeated webhook for the tier the org already has leaves the override in place and writes no row. | Drop the `new_tier == org.tier` check. |
 | A change log row is written in the same transaction as the update. A rejected request (bad `limit`, missing `reason`) writes neither. | Commit the change log row in a separate session. |
 | The usage endpoint reports `source: "override"` and the effective limit. | Have `get_usage` read the tier directly. |
 | `/operator` is in `proxy.ts`'s protected list; `/verify`, `/credentials` and `/orgs` are still excluded. | Remove the `/operator` entry. |
@@ -251,21 +296,6 @@ Add two read-only checks to `scripts/smoke_test.sh`:
   A 404 would mean the route wasn't deployed.
 - `/operator` on the dashboard host redirects to sign-in rather than
   returning 404.
-
-## One decision for you
-
-**When an org with an override changes tier, which limit applies?**
-
-This plan has the override win until an operator removes it: it's explicit,
-and nothing changes without someone choosing it. The downside: if you give a
-Community org 1,000 and it later pays for Growth (2,000), it stays at 1,000
-until someone notices.
-
-To make that easy to spot, the operator list flags any override **below** the
-org's tier quota as "below plan". The alternative is to have the webhook clear
-the override on any upgrade and log it with actor `razorpay-webhook`. That
-decision fits better in P1 of `docs/billing-and-template-quota-plan.md`, once
-real payments exist to trigger it.
 
 ## Out of scope
 
