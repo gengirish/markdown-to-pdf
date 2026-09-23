@@ -16,6 +16,7 @@ from api.models.organization import Organization
 from api.models.template import Template
 from api.models.credential import Credential, CredentialBatch
 from api.core.worker import process_batch
+from api.services.entitlements import enforce_csv_batch_limit
 from api.services.issuance import QuotaExceeded, consume_quota
 
 # Mounted under /api/v1 by api/index.py — the prefix here must NOT repeat it,
@@ -49,6 +50,11 @@ async def upload_bulk_csv(
         
         if not template:
             raise HTTPException(status_code=404, detail="Template not found or not accessible")
+
+        # After the 404s, so a bad slug or template still reads as that rather
+        # than as a billing problem; before the CSV is parsed or any quota is
+        # spent. Community gets one batch a month (BILLING_TIERS).
+        enforce_csv_batch_limit(session, org)
 
         # Parse CSV
         content = await file.read()

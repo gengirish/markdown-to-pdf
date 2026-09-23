@@ -5,8 +5,6 @@ trusting something it should not have.
 """
 
 import base64
-import hashlib
-import hmac
 import json
 from unittest.mock import Mock, patch
 
@@ -114,45 +112,6 @@ def test_non_uuid_org_id_is_forbidden_not_a_500(client):
     with pytest.raises(HTTPException) as exc:
         auth.require_org_role(user, "'; drop table org_members; --")
     assert exc.value.status_code == 403
-
-
-# ── Razorpay webhook ──────────────────────────────────────────────────────
-
-WEBHOOK_BODY = b'{"event":"subscription.activated","payload":{}}'
-
-
-def _sign(secret: str) -> str:
-    return hmac.new(secret.encode(), WEBHOOK_BODY, hashlib.sha256).hexdigest()
-
-
-def _post_webhook(client, signature=None):
-    headers = {"Content-Type": "application/json"}
-    if signature is not None:
-        headers["X-Razorpay-Signature"] = signature
-    return client.post("/api/v1/webhooks/razorpay", content=WEBHOOK_BODY, headers=headers)
-
-
-def test_webhook_rejects_the_old_default_secret(client):
-    """`rzp_test_secret` used to be the built-in default, so it was public."""
-    with patch("api.routes.billing.RAZORPAY_SECRET", "a-real-configured-secret"):
-        assert _post_webhook(client, _sign("rzp_test_secret")).status_code == 400
-
-
-def test_webhook_accepts_a_correctly_signed_payload(client):
-    with patch("api.routes.billing.RAZORPAY_SECRET", "a-real-configured-secret"):
-        res = _post_webhook(client, _sign("a-real-configured-secret"))
-    assert res.status_code == 200
-    assert res.json()["success"] is True
-
-
-def test_webhook_without_a_configured_secret_rejects_everything(client):
-    with patch("api.routes.billing.RAZORPAY_SECRET", ""):
-        assert _post_webhook(client, _sign("")).status_code == 503
-
-
-def test_webhook_requires_a_signature_header(client):
-    with patch("api.routes.billing.RAZORPAY_SECRET", "a-real-configured-secret"):
-        assert _post_webhook(client).status_code == 400
 
 
 # ── Rate limiting behind the proxy chain ──────────────────────────────────

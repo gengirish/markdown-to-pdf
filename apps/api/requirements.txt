@@ -21,6 +21,10 @@ anthropic==0.86.0
 PyJWT[crypto]==2.10.1
 python-dotenv==1.0.1
 agentmail==0.4.15
+# CertForge billing (api/services/billing.py). The [webhooks] extra pulls in
+# standardwebhooks, which verifies Dodo's webhook signatures; without it the
+# webhook answers 503 rather than accepting anything unverified.
+dodopayments[webhooks]==1.117.0
 httpx>=0.21.2
 procrastinate
 sqlalchemy

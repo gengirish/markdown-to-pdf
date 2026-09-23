@@ -37,16 +37,6 @@ IS_PROD = os.environ.get("VERCEL_ENV") == "production" or os.environ.get("ENV") 
 
 CERT_SECRET = _sanitize_env(os.environ.get("CERT_SECRET_KEY", ""))
 
-# Razorpay webhook signing secret. Deliberately has NO default: the webhook
-# handler upgrades an org's tier on a valid signature, so a known fallback
-# value would let anyone forge that request. Unset means the webhook rejects
-# every call (see routes/billing.py).
-RAZORPAY_SECRET = _env("RAZORPAY_WEBHOOK_SECRET") or _env("RAZORPAY_SECRET_KEY")
-if not RAZORPAY_SECRET:
-    logger.warning(
-        "RAZORPAY_WEBHOOK_SECRET not set — Razorpay webhooks will be rejected."
-    )
-
 if not CERT_SECRET:
     if IS_PROD:
         raise RuntimeError("CERT_SECRET_KEY environment variable is required in production")
@@ -242,6 +232,18 @@ API_V1_RATE_WINDOW = int(_env("API_V1_RATE_LIMIT_WINDOW_SECONDS", "60") or "60")
 #:
 #: `order` is the display order, and is deliberately explicit rather than
 #: dict-insertion order — a JSON object has no order once it crosses the wire.
+#:
+#: `csv_batch_limit`, `custom_artwork` and `api_access` are what the API
+#: *enforces* (`services/entitlements.py`). `features` is only what the pricing
+#: page prints. They sat side by side for months with the page selling CSV,
+#: artwork and API keys as Starter features while every tier was granted all
+#: three — so a line in `features` that names a paid capability must have a
+#: flag here, and `test_tiers.py` holds the two together.
+#:
+#: Starter is sold on capability — unlimited CSV batches, your own artwork, API
+#: access — as well as volume (500 against Community's 50). Community gets one
+#: CSV batch a month rather than none, because the homepage promises a cohort in
+#: one upload and a free org must be able to do exactly that once.
 BILLING_TIERS = {
     "community": {
         "name": "Community",
@@ -249,15 +251,21 @@ BILLING_TIERS = {
         "price_paise": 0,
         "monthly_quota": 50,
         "template_limit": 1,
-        "tagline": "Issue real, verifiable credentials for free.",
+        "csv_batch_limit": 1,
+        "custom_artwork": False,
+        "api_access": False,
+        "tagline": "Issue a real cohort of verifiable credentials, free.",
         # Community gets one custom template, not zero. A free tier that cannot
         # reach the feature at all is how the old 403 gate came to be deleted.
         "features": [
             "50 credentials a month",
+            "One CSV upload a month — a whole cohort at once",
             "1 custom template",
+            "Single credentials from the dashboard",
             "Hosted verification pages and QR codes",
             "Open Badges 3.0 badge.json",
-            "Email delivery",
+            "Credentials emailed to recipients",
+            "Recipient passports",
         ],
     },
     "starter": {
@@ -266,13 +274,17 @@ BILLING_TIERS = {
         "price_paise": 299900,
         "monthly_quota": 500,
         "template_limit": 5,
-        "tagline": "For a team running a handful of programmes.",
+        "csv_batch_limit": -1,
+        "custom_artwork": True,
+        "api_access": True,
+        "tagline": "Every cohort, your design, your code.",
         "features": [
             "500 credentials a month",
-            "5 custom templates",
+            "Unlimited CSV uploads",
             "Upload your own certificate artwork",
-            "Bulk issuance from CSV",
             "API keys and webhooks",
+            "5 custom templates",
+            "Everything in Community",
         ],
     },
     "growth": {
@@ -281,13 +293,16 @@ BILLING_TIERS = {
         "price_paise": 999900,
         "monthly_quota": 2000,
         "template_limit": 25,
+        "csv_batch_limit": -1,
+        "custom_artwork": True,
+        "api_access": True,
         "tagline": "For institutions issuing at semester scale.",
         "features": [
             "2,000 credentials a month",
             "25 custom templates",
             "Read a design with AI to place fields",
-            "Recipient passports",
             "Priority support",
+            "Everything in Starter",
         ],
     },
     "scale": {
@@ -296,12 +311,16 @@ BILLING_TIERS = {
         "price_paise": 2499900,
         "monthly_quota": -1,  # -1 = unlimited
         "template_limit": -1,
+        "csv_batch_limit": -1,
+        "custom_artwork": True,
+        "api_access": True,
         "tagline": "Unlimited issuance for a credentialing operation.",
         "features": [
             "Unlimited credentials",
             "Unlimited custom templates",
             "Custom domain for verification pages",
             "SLA and onboarding support",
+            "Everything in Growth",
         ],
     },
 }
@@ -315,8 +334,8 @@ def get_tier(tier: str) -> dict:
     """The tier table's row for `tier`, falling back to Community.
 
     The fallback is not cosmetic. `Organization.tier` is a free-text column and
-    has historically held values this table does not know — the Razorpay
-    webhook still writes `"pro"`, which is not a key here. Falling back means
+    has historically held values this table does not know — the old Razorpay
+    webhook wrote `"pro"`, which is not a key here. Falling back means
     such a row is treated as the free tier everywhere at once, rather than as
     one thing by the quota lookup and another by the gate.
     """
@@ -335,6 +354,26 @@ def get_tier_template_limit(tier: str) -> int:
     deleting a template frees the slot. See docs/billing-and-template-quota-plan.md.
     """
     return get_tier(tier)["template_limit"]
+
+
+def get_tier_csv_batch_limit(tier: str) -> int:
+    """How many CSV batches an org on this tier may upload per calendar month
+    (UTC). -1 means unlimited. A flow, unlike the template stock."""
+    return get_tier(tier)["csv_batch_limit"]
+
+
+#: The boolean capabilities a tier can grant, and how a refusal names each.
+TIER_GRANTS = {
+    "custom_artwork": "Uploading your own certificate artwork",
+    "api_access": "API keys and webhooks",
+}
+
+
+def tier_grants(tier: str, grant: str) -> bool:
+    """Whether this tier includes a boolean capability from TIER_GRANTS."""
+    if grant not in TIER_GRANTS:
+        raise KeyError(grant)
+    return bool(get_tier(tier)[grant])
 
 
 def tier_catalog() -> list[dict]:
@@ -357,7 +396,69 @@ def tier_catalog() -> list[dict]:
             "price_paise": info["price_paise"],
             "monthly_quota": _limit(info["monthly_quota"]),
             "template_limit": _limit(info["template_limit"]),
+            "csv_batch_limit": _limit(info["csv_batch_limit"]),
+            "custom_artwork": info["custom_artwork"],
+            "api_access": info["api_access"],
             "features": list(info["features"]),
         })
     rows.sort(key=lambda row: BILLING_TIERS[row["key"]]["order"])
     return rows
+
+
+# ── Dodo Payments ──────────────────────────────────────────────────────────
+#
+# The billing provider for CertForge plans (never the legacy surface). See
+# docs/dodo-payments-integration-plan.md. Every value below deliberately has
+# NO default: the API key starts real charges and the webhook key authorises
+# requests that grant paid tiers, so a fallback would either bill against the
+# wrong account or let anyone forge an upgrade. Unset means the billing routes
+# answer 503 and the webhook rejects every delivery.
+
+DODO_PAYMENTS_API_KEY = _env("DODO_PAYMENTS_API_KEY")
+DODO_PAYMENTS_WEBHOOK_KEY = _env("DODO_PAYMENTS_WEBHOOK_KEY")
+
+# Narrowed rather than passed through: the SDK takes Literal["live_mode",
+# "test_mode"] and raises on anything else. Anything but an exact "live_mode"
+# selects test mode, so a typo can never reach real cards.
+DODO_PAYMENTS_ENVIRONMENT = (
+    "live_mode" if _env("DODO_PAYMENTS_ENVIRONMENT") == "live_mode" else "test_mode"
+)
+
+if not DODO_PAYMENTS_API_KEY:
+    logger.warning("DODO_PAYMENTS_API_KEY not set — checkout and the billing portal will answer 503.")
+if not DODO_PAYMENTS_WEBHOOK_KEY:
+    logger.warning("DODO_PAYMENTS_WEBHOOK_KEY not set — Dodo webhooks will be rejected.")
+if IS_PROD and DODO_PAYMENTS_API_KEY and DODO_PAYMENTS_ENVIRONMENT != "live_mode":
+    logger.warning("Production is running Dodo Payments in test_mode — no real charges will be made.")
+
+#: The Dodo product each paid tier is sold as. Env-backed because test mode and
+#: live mode issue different ids for the same product, so any checked-in
+#: literal is wrong in one of them. Keyed off BILLING_TIERS so a tier added to
+#: the table is a tier this mapping has an opinion about — `community` is free
+#: and is never sold.
+DODO_PRODUCTS: dict[str, str] = {
+    tier: _env(f"DODO_PRODUCT_{tier.upper()}")
+    for tier, info in BILLING_TIERS.items()
+    if info["price_paise"] > 0
+}
+
+
+def product_for_tier(tier: str) -> str | None:
+    """The Dodo product id `tier` is sold as, or None if it is not for sale
+    (free, unknown, or its env var is unset)."""
+    return DODO_PRODUCTS.get(tier) or None
+
+
+def tier_for_product(product_id: str | None) -> str | None:
+    """The tier a Dodo product grants, or None for a product we do not sell.
+
+    None is an answer, not a prompt to guess. The Razorpay webhook this
+    replaced hardcoded a tier on every activation because it had nothing to
+    map from; a caller that falls back to a default here reintroduces that.
+    """
+    if not product_id:
+        return None
+    for tier, configured in DODO_PRODUCTS.items():
+        if configured and configured == product_id:
+            return tier
+    return None

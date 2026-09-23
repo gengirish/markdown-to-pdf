@@ -96,3 +96,4 @@ from api.models.passport import Passport, PassportCredential  # noqa: F401, E402
 from api.models.api_key import ApiKey, WebhookEndpoint  # noqa: F401, E402
 from api.models.usage import UsageLedger  # noqa: F401, E402
 from api.models.quota_change import CredentialQuotaChange  # noqa: F401, E402
+from api.models.billing_event import BillingEvent  # noqa: F401, E402

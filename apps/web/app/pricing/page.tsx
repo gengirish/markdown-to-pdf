@@ -91,8 +91,9 @@ export default async function PricingPage() {
         </h1>
         <p className="max-w-[560px] text-lg leading-relaxed text-muted text-pretty">
           Every plan issues the same credential: signed, verifiable from its ID alone, and
-          exportable as an Open Badges 3.0 document. What changes is how many you issue a month
-          and how many designs you keep.
+          exportable as an Open Badges 3.0 document. What changes is how many you issue a month,
+          how many designs you keep, and whether you issue every cohort from CSV, on your own
+          artwork, from your own code.
         </p>
       </section>
 
@@ -157,6 +158,7 @@ function TierCard({ tier }: { tier: Tier }) {
         <dl className="m-0 grid grid-cols-1 gap-2 border-y border-hair py-4">
           <Row term="Credentials" value={limit(tier.monthly_quota, " / month")} />
           <Row term="Templates" value={limit(tier.template_limit)} />
+          <Row term="CSV uploads" value={limit(tier.csv_batch_limit, " / month")} />
         </dl>
 
         <ul className="m-0 flex list-none flex-col gap-2 p-0">

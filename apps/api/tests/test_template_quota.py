@@ -212,9 +212,12 @@ def test_from_image_is_gated_before_it_spends_a_vision_import(client, db_session
     """The model call costs real money. An org that could not keep the result
     has to be refused before the meter moves — the meter is a cost fuse, and a
     request refused before the call cost nothing."""
-    org = org_on(db_session, "quota-vision", "community")
+    # Starter, not Community: artwork upload starts on Starter
+    # (services/entitlements.py), and from-image needs an uploaded asset.
+    org = org_on(db_session, "quota-vision", "starter")
     asset_id = upload(client, "quota-vision", png_bytes()).json()["data"]["id"]
-    assert create(client, "quota-vision", name="First").status_code == 201
+    for n in range(get_tier_template_limit("starter")):
+        assert create(client, "quota-vision", name=f"T{n}").status_code == 201
 
     with stub_vision(FakeResponse(a_layout())):
         refused = from_image(client, "quota-vision", asset_id, name="Read this")

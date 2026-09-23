@@ -3,6 +3,10 @@
 Status: **partly shipped, 2026-09-21.** P2's usage endpoint and P3's gate have
 landed; P1 (real Razorpay) has not.
 
+> **P1 is superseded, 2026-09-22.** The provider is now Dodo Payments, not
+> Razorpay. See `docs/dodo-payments-integration-plan.md`. Findings B1–B5 below
+> still describe what is wrong; that plan is how they get fixed.
+
 | Package | State |
 |---|---|
 | P1 — real Razorpay | **Not started.** `create_checkout_session` still returns a fabricated URL, and there are no keys or plan ids. B2, B4 and B5 below are all still open. B3 is half-fixed: the webhook now writes a tier `BILLING_TIERS` knows and takes the quota from the table, but *which* tier is still a guess, because there is no `plan_id` to map from. |
