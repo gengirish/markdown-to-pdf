@@ -74,7 +74,17 @@ def _existing(client) -> dict[str, object]:
     discover, and Dodo has no field of ours to match on.
     """
     found = {}
-    for product in client.products.list():
+    try:
+        products = list(client.products.list())
+    except Exception as exc:  # noqa: BLE001 — the SDK's error types vary by version
+        if "401" in str(exc) or "Unauthorized" in str(exc):
+            sys.exit(
+                "Dodo rejected the key (401). A key belongs to one mode: a live key "
+                "cannot read test mode, and vice versa. Re-run with --live if this is "
+                "a live key, or check the key has not been rotated."
+            )
+        raise
+    for product in products:
         name = getattr(product, "name", None)
         if name:
             found[name] = product
