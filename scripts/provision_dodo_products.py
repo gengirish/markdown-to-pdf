@@ -35,6 +35,14 @@ import os
 import sys
 from pathlib import Path
 
+# A Windows console is cp1252, which has no rupee sign: printing one raises
+# UnicodeEncodeError and takes the whole run down mid-report. Amounts are
+# written as "INR 1,999.00" for that reason — but the SDK can put a currency
+# symbol in an error message too, so the stream is widened as well.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps" / "api"))
 
 from api.core.config import BILLING_TIERS  # noqa: E402
@@ -119,13 +127,13 @@ def main() -> int:
             env[key] = found.id
             if amount is not None and amount != price:
                 repriced.append(
-                    f"  {name}: Dodo has ₹{amount / 100:,.2f}, BILLING_TIERS says ₹{rupees:,.2f}"
+                    f"  {name}: Dodo has INR {amount / 100:,.2f}, BILLING_TIERS says INR {rupees:,.2f}"
                 )
             print(f"exists  {name:24} {found.id}")
             continue
 
         if not args.apply:
-            print(f"create  {name:24} ₹{rupees:,.2f}/{INTERVAL.lower()}  (dry run)")
+            print(f"create  {name:24} INR {rupees:,.2f}/{INTERVAL.lower()}  (dry run)")
             continue
 
         created = client.products.create(
@@ -149,7 +157,7 @@ def main() -> int:
             },
         )
         env[key] = created.id
-        print(f"created {name:24} {created.id}  ₹{rupees:,.2f}/{INTERVAL.lower()}")
+        print(f"created {name:24} {created.id}  INR {rupees:,.2f}/{INTERVAL.lower()}")
 
     if repriced:
         print("\nPrice drift — NOT changed here, because editing a live product "
