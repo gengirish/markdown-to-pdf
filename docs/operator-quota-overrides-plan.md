@@ -1,7 +1,14 @@
 # Plan: let an operator change one organization's credential quota
 
-Status: **proposed, 2026-09-21. Not started.** The one open question was
-decided on 2026-09-22: a plan change clears the override (Decision 4).
+Status: **W1 and W2 in review (#11), 2026-09-22.** W3 (the page) and W4 (drop
+`monthly_quota`) not started. The one open question was decided on 2026-09-22:
+a plan change clears the override (Decision 4).
+
+#11 also adds `PUT /operator/orgs/{slug}/tier`, the manual plan change Decision
+4 anticipates, and one guard the Tests table below does not list: issuance
+checked against a tier default changed after the row was written. The
+"`quota_state()` reads `monthly_quota`" bug cannot fail the override →
+issuance guard while W1 step 3 keeps that column in sync.
 
 Today the only way to change how many credentials an org may issue is a code
 edit to `BILLING_TIERS` and a deploy. It happened twice in two days: Community

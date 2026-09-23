@@ -58,7 +58,10 @@ def main() -> None:
                 slug=E2E_ORG_SLUG,
                 name=E2E_ORG_NAME,
                 tier="community",
+                # An override, because the tier's quota is what binds
+                # otherwise. monthly_quota kept equal until W4 drops it.
                 monthly_quota=10_000,
+                credential_quota_override=10_000,
                 # Branding is deliberately set: the viewer must be seen to use
                 # the organization's colours, not the global env fallback.
                 primary_color="#12124a",
@@ -85,6 +88,7 @@ def main() -> None:
                 name="E2E Quota Org",
                 tier="community",
                 monthly_quota=500,
+                credential_quota_override=500,
             )
             session.add(quota_org)
             session.flush()

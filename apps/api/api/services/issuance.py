@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from api.core.config import get_tier_quota
 from api.core.credential_signature import sign_credential
 from api.core.crypto import generate_credential_id
 from api.core.idempotency import IdempotencyConflict, fingerprint, issuance_store
@@ -169,11 +170,30 @@ def resolve_template_id(
     return global_default.id if global_default is not None else None
 
 
+def effective_credential_quota(org: Organization) -> int:
+    """The credential limit this org is held to. -1 (UNLIMITED) means none.
+
+    The only place that decides it. An operator's override wins; otherwise the
+    tier's quota, read live — so changing a number in BILLING_TIERS reaches
+    every org without an override on the next deploy, with no migration. The
+    usage endpoint and the operator screens call this too, so the dashboard
+    cannot show a limit that issuance does not enforce.
+    """
+    if org.credential_quota_override is not None:
+        return org.credential_quota_override
+    return get_tier_quota(org.tier)
+
+
+def credential_quota_source(org: Organization) -> str:
+    """Where `effective_credential_quota()` got its answer: "tier" or "override"."""
+    return "tier" if org.credential_quota_override is None else "override"
+
+
 def quota_state(session, org: Organization) -> tuple[int, int]:
     """Return (limit, used) for this org in the current period."""
     period = UsageLedger.current_period()
     ledger = session.query(UsageLedger).filter_by(org_id=org.id, period=period).first()
-    return org.monthly_quota, (ledger.credentials_issued if ledger else 0)
+    return effective_credential_quota(org), (ledger.credentials_issued if ledger else 0)
 
 
 def consume_quota(session, org: Organization, count: int) -> tuple[int, int]:

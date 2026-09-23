@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import logging
+import uuid
 from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
@@ -16,11 +17,11 @@ from api.core.config import (
     DEFAULT_TIER,
     RAZORPAY_SECRET,
     VISION_IMPORTS_PER_MONTH,
-    get_tier_quota,
     get_tier_template_limit,
     tier_catalog,
 )
-from api.services.issuance import UNLIMITED, quota_state
+from api.services.issuance import UNLIMITED, credential_quota_source, quota_state
+from api.services.plans import change_tier
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,12 @@ def get_usage(
             # never disagree.
             "tier_name": BILLING_TIERS.get(org.tier, BILLING_TIERS[DEFAULT_TIER])["name"],
             "tier_known": org.tier in BILLING_TIERS,
-            "credentials": _meter(cred_used, cred_limit),
+            # `source` lets the plan card say "custom limit" rather than show
+            # 1,000 beside a Community plan the pricing page says allows 50.
+            "credentials": {
+                **_meter(cred_used, cred_limit),
+                "source": credential_quota_source(org),
+            },
             "templates": _meter(template_used, get_tier_template_limit(org.tier)),
             "vision_imports": _meter(vision_used, VISION_IMPORTS_PER_MONTH),
         })
@@ -166,7 +172,13 @@ async def razorpay_webhook(request: Request):
             .get("subscription", {})
             .get("entity", {})
         )
-        org_id = (entity.get("notes") or {}).get("org_id")
+        # Parsed rather than passed through: the column is a UUID, and a raw
+        # string reaches the driver unconverted. No test had ever delivered
+        # this event for a real org, so the lookup had never run.
+        try:
+            org_id = uuid.UUID(str((entity.get("notes") or {}).get("org_id")))
+        except ValueError:
+            org_id = None
         if org_id:
             with get_db() as session:
                 org = session.query(Organization).filter_by(id=org_id).first()
@@ -180,8 +192,12 @@ async def razorpay_webhook(request: Request):
                     # Which tier is still a guess: checkout is mocked, so there
                     # is no plan_id to map from. That mapping is P1 of
                     # docs/billing-and-template-quota-plan.md.
-                    org.tier = "starter"
-                    org.monthly_quota = get_tier_quota("starter")
+                    #
+                    # Through change_tier(), never by writing the columns: a
+                    # plan change clears an operator's quota override and logs
+                    # it, and a retried delivery for the plan the org already
+                    # has must change nothing.
+                    change_tier(session, org, "starter", actor="razorpay-webhook")
                     org.razorpay_sub_id = entity.get("id")
                     session.commit()
                     

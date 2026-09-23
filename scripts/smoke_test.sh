@@ -164,6 +164,15 @@ esac
 check_abs_contains "badge.json is reachable on the API host" \
   "$CF_API/credentials/CF-2026-NOTREAL/badge.json" "Credential not found"
 
+# The operator routes refuse a caller with no token. 401 means they are
+# deployed; FastAPI's own 404 would mean they are not. Pinned to the message as
+# well, because a status alone cannot tell this route's 401 from a proxy's.
+cf_op_code="$(status "$CF_API/api/v1/operator/orgs")"
+[ "$cf_op_code" = "401" ] && ok "the operator routes are deployed and refuse anonymous callers" \
+  || bad "the operator routes are deployed and refuse anonymous callers" "HTTP 401" "HTTP $cf_op_code"
+check_abs_contains "  ... with the API's own refusal" \
+  "$CF_API/api/v1/operator/orgs" "Missing authentication token"
+
 head_ "CORS"
 A="$(acao -H "Origin: https://smoke-test.invalid" "$BASE/api/health")"
 [ -z "$A" ] && ok "unknown origin gets no ACAO" || bad "unknown origin is refused" "no ACAO header" "$A"

@@ -549,7 +549,39 @@ Starter 5, Growth 25, Scale unlimited. Things that follow:
   returns a fabricated URL, so an org at its limit can only be moved by hand.
   The 402 body and the pricing page both say so outright rather than offering a
   button that does nothing. Closing that is P1 of
-  `docs/billing-and-template-quota-plan.md`.
+  `docs/billing-and-template-quota-plan.md`. "By hand" now means
+  `PUT /api/v1/operator/orgs/{slug}/tier`, not SQL — see below.
+
+### Operators, and an org's own credential limit
+
+`docs/operator-quota-overrides-plan.md` is the design; W1 and W2 have landed.
+
+- **`effective_credential_quota(org)`** in `services/issuance.py` is the only
+  place an org's credential limit is decided: `credential_quota_override` if
+  set, else the tier's quota **read live**. Issuance, `/usage` and the
+  operator screens all call it. A change to `BILLING_TIERS` therefore reaches
+  every org without an override on the next deploy — no migration, unlike the
+  two in a row that 50 → 500 → 50 needed.
+- **`monthly_quota` is no longer read** by anything that enforces. It is still
+  written equal to the effective limit on every change, so a rollback finds a
+  current number. W4 drops it; do not start reading it again.
+- **`services/plans.py` is the only writer of `tier` and the override.**
+  `change_tier()` — called by the Razorpay webhook and the operator route —
+  does nothing for a same-tier change (webhooks retry) and otherwise **clears
+  the override**, up or down, logging that it did. Write `org.tier` anywhere
+  else and a paying org can be left pinned below its plan.
+- **Every override change lands in `credential_quota_changes`** in the same
+  transaction, with a required reason and an `actor` (a Clerk user id, or
+  `razorpay-webhook`). An override travels as `null` (none) or
+  `{"limit": n | null}` (null = unlimited), because a bare `null` cannot
+  distinguish "no override" from "unlimited".
+- **Operators are `CERTFORGE_OPERATOR_USER_IDS`**, verified Clerk `sub`s, set
+  with `fly secrets set`. `require_operator` in `core/principal.py`. Empty
+  means nobody, in every environment; an API key is never an operator; org
+  roles never are either — an org `admin` is a customer. The routes are under
+  `/api/v1/operator` (`routes/operator.py`) and are not in `llms.txt`.
+- **A test fixture passes `credential_quota_override=`**, not
+  `monthly_quota=` — the latter is a column nothing reads.
 
 ### Delivery state, and why it exists
 

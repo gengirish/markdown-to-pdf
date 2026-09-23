@@ -93,7 +93,7 @@ def issued(client, db_session):
             slug="contract-urls",
             name="Contract Test College",
             tier="community",
-            monthly_quota=500,
+            credential_quota_override=500,
         )
         db_session.add(org)
         db_session.commit()

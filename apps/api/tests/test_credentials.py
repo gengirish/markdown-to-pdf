@@ -1,7 +1,7 @@
 """Single-credential issuance, and the quota that never bound until now.
 
 `UsageLedger` was read in studio.py and written nowhere, so `used` was always 0
-and `monthly_quota` was decoration. These tests are the proof it counts.
+and the quota was decoration. These tests are the proof it counts.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -17,7 +17,7 @@ from api.models.usage import UsageLedger
 
 
 def org_with_key(db_session, slug, raw_key, quota=50):
-    org = Organization(slug=slug, name=slug.title(), tier="community", monthly_quota=quota)
+    org = Organization(slug=slug, name=slug.title(), tier="community", credential_quota_override=quota)
     db_session.add(org)
     db_session.commit()
     db_session.add(ApiKey(org_id=org.id, key_hash=hash_api_key(raw_key), label="k"))
@@ -111,25 +111,29 @@ def test_issuing_increments_the_usage_ledger(client, db_session):
     assert ledger.credentials_issued == 3
 
 
-def test_a_new_org_gets_the_community_tier_quota(db_session):
-    """BILLING_TIERS is not what binds — organizations.monthly_quota is.
+def test_a_new_org_follows_the_community_tier_quota(db_session):
+    """A new org has no override, so its limit is the tier's, read live.
 
-    orgs.py creates an org with a tier and no explicit quota, so the model
-    default is what ends up in the row. If the two disagree, raising the tier
-    table changes the pricing page and nothing else; the column keeps refusing
-    at the old number. Assert they are the same value rather than that either
-    one is 50.
+    It used to be a copy in `monthly_quota`, and a copy that disagreed with the
+    tier table meant raising the table changed the pricing page and nothing
+    else. Assert the effective limit is the tier's rather than that it is 50.
+    `monthly_quota` is still written for rollback safety until W4, so it must
+    agree too.
     """
+    from api.services.issuance import credential_quota_source, effective_credential_quota
+
     org = Organization(slug="fresh-community", name="Fresh", tier="community")
     db_session.add(org)
     db_session.commit()
 
-    assert org.monthly_quota == get_tier_quota("community")
-    assert org.monthly_quota == 50
+    assert org.credential_quota_override is None
+    assert credential_quota_source(org) == "tier"
+    assert effective_credential_quota(org) == get_tier_quota("community")
+    assert org.monthly_quota == effective_credential_quota(org)
 
 
 def test_the_quota_actually_refuses_once_reached(client, db_session):
-    """The whole point: monthly_quota was never enforced before."""
+    """The whole point: the quota was never enforced before."""
     raw = LIVE_PREFIX + "small-quota-key"
     org_with_key(db_session, "tiny", raw, quota=2)
 

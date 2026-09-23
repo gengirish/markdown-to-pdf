@@ -62,6 +62,15 @@ ADMIN_KEY = _env("ADMIN_KEY")
 if not ADMIN_KEY and not IS_PROD:
     ADMIN_KEY = "admin-dev-key"
 
+#: CertForge staff, by verified Clerk user id (`user_…`), comma-separated.
+#: Set with `fly secrets set CERTFORGE_OPERATOR_USER_IDS=…`. Unset or empty
+#: means nobody is an operator, in every environment — deliberately no dev
+#: fallback like ADMIN_KEY's. Read by `principal.require_operator`.
+OPERATOR_USER_IDS: frozenset[str] = frozenset(
+    uid for uid in (_sanitize_env(u) for u in _env("CERTFORGE_OPERATOR_USER_IDS").split(","))
+    if uid
+)
+
 DATABASE_URL = _env("DATABASE_URL")
 
 # ── Clerk ──────────────────────────────────────────────────────────────────

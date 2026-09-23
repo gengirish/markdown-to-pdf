@@ -5,7 +5,7 @@ the vision-import counter in routes/templates.py, but nothing ever read it
 back — apps/web's PlanCard said so outright rather than fake a number. This
 is that read path: it must reflect exactly what those two writers left
 behind, never create a ledger row itself, and represent an unlimited tier
-(monthly_quota == -1) as `null`, not the internal `-1` sentinel.
+(an effective quota of -1) as `null`, not the internal `-1` sentinel.
 """
 
 from fastapi.testclient import TestClient
@@ -16,8 +16,8 @@ from api.models.template import Template
 from api.models.usage import UsageLedger
 
 
-def org_owned_by_test_user(db_session, slug, *, tier="community", quota=50):
-    org = Organization(slug=slug, name=slug.title(), tier=tier, monthly_quota=quota)
+def org_owned_by_test_user(db_session, slug, *, tier="community", override=None):
+    org = Organization(slug=slug, name=slug.title(), tier=tier, credential_quota_override=override)
     db_session.add(org)
     db_session.commit()
     db_session.add(OrgMember(org_id=org.id, clerk_user_id="test_user_123", role="owner"))
@@ -28,13 +28,13 @@ def org_owned_by_test_user(db_session, slug, *, tier="community", quota=50):
 def test_usage_with_no_ledger_row_reports_zero(client: TestClient, mock_clerk, db_session):
     """A fresh org has issued nothing this month and has no ledger row at
     all — the endpoint must not create one just because it was asked."""
-    org = org_owned_by_test_user(db_session, "usage-fresh", quota=50)
+    org = org_owned_by_test_user(db_session, "usage-fresh")
 
     response = client.get("/api/v1/orgs/usage-fresh/usage")
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["tier"] == "community"
-    assert data["credentials"] == {"used": 0, "limit": 50, "remaining": 50}
+    assert data["credentials"] == {"used": 0, "limit": 50, "remaining": 50, "source": "tier"}
     assert data["vision_imports"] == {"used": 0, "limit": 10, "remaining": 10}
     # Community's template allowance, counted from rows rather than a ledger.
     assert data["templates"] == {"used": 0, "limit": 1, "remaining": 1}
@@ -43,7 +43,7 @@ def test_usage_with_no_ledger_row_reports_zero(client: TestClient, mock_clerk, d
 
 
 def test_usage_reflects_what_the_writers_left(client: TestClient, mock_clerk, db_session):
-    org = org_owned_by_test_user(db_session, "usage-active", quota=50)
+    org = org_owned_by_test_user(db_session, "usage-active")
     ledger = UsageLedger(
         org_id=org.id,
         period=UsageLedger.current_period(),
@@ -56,14 +56,14 @@ def test_usage_reflects_what_the_writers_left(client: TestClient, mock_clerk, db
     response = client.get("/api/v1/orgs/usage-active/usage")
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["credentials"] == {"used": 12, "limit": 50, "remaining": 38}
+    assert data["credentials"] == {"used": 12, "limit": 50, "remaining": 38, "source": "tier"}
     assert data["vision_imports"] == {"used": 3, "limit": 10, "remaining": 7}
 
 
 def test_unlimited_tier_reports_null_not_the_sentinel(client: TestClient, mock_clerk, db_session):
-    """monthly_quota == -1 means unlimited internally (UNLIMITED). A JSON
+    """An effective quota of -1 means unlimited internally (UNLIMITED). A JSON
     consumer should never have to know that sentinel — it must see `null`."""
-    org_owned_by_test_user(db_session, "usage-scale", tier="scale", quota=-1)
+    org_owned_by_test_user(db_session, "usage-scale", tier="scale")
 
     response = client.get("/api/v1/orgs/usage-scale/usage")
     assert response.status_code == 200
@@ -80,7 +80,7 @@ def test_usage_404s_for_an_unknown_org(client: TestClient, mock_clerk):
 
 def test_usage_403s_for_a_non_member(client: TestClient, mock_clerk, db_session):
     """test_user_123 (mock_clerk) must not be a member of this org."""
-    org = Organization(slug="usage-not-mine", name="Not Mine", tier="community", monthly_quota=50)
+    org = Organization(slug="usage-not-mine", name="Not Mine", tier="community")
     db_session.add(org)
     db_session.commit()
     db_session.add(OrgMember(org_id=org.id, clerk_user_id="someone_else", role="owner"))
@@ -92,7 +92,7 @@ def test_usage_403s_for_a_non_member(client: TestClient, mock_clerk, db_session)
 
 def test_usage_requires_sign_in(client: TestClient, db_session):
     """No mock_clerk override here — the request carries no credentials."""
-    org = Organization(slug="usage-anon", name="Anon", tier="community", monthly_quota=50)
+    org = Organization(slug="usage-anon", name="Anon", tier="community")
     db_session.add(org)
     db_session.commit()
 
@@ -131,3 +131,13 @@ def test_an_unknown_tier_reports_the_plan_its_limits_came_from(
     assert data["tier_name"] == "Community"
     assert data["tier_known"] is False
     assert data["templates"]["limit"] == 1
+
+
+def test_an_override_is_reported_as_the_source(client: TestClient, mock_clerk, db_session):
+    """1,000 beside a Community plan the pricing page says allows 50 looks
+    like a bug unless the plan card can say where the number came from."""
+    org_owned_by_test_user(db_session, "usage-override", override=1000)
+
+    data = client.get("/api/v1/orgs/usage-override/usage").json()["data"]
+    assert data["tier_name"] == "Community"
+    assert data["credentials"] == {"used": 0, "limit": 1000, "remaining": 1000, "source": "override"}
