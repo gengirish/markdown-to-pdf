@@ -153,9 +153,16 @@ async def upload_bulk_csv(
         # Ordering is deliberate. If the enqueue raises, this propagates and
         # get_db rolls the batch back, so the caller gets an error and can
         # retry against a clean slate. The opposite failure — job queued, then
-        # the commit fails — leaves an orphan job, which the worker already
-        # handles by logging "not found or not pending" and returning. An
+        # the commit fails — leaves an orphan job, which the worker handles by
+        # waiting briefly for the batch, logging that it never appeared, and
+        # returning. An
         # orphan job is recoverable noise; an orphan batch is a silent hang.
+        #
+        # That ordering also means the job can reach the worker before this
+        # commit does — Procrastinate commits on its own connection — so
+        # process_batch waits for the row rather than reading "not found" as
+        # done. recover_batches is the backstop for a batch whose job is lost
+        # anyway.
         await process_batch.defer_async(batch_id_str=str(batch.id))
 
         # Read while the row is still attached to a live session.

@@ -14,7 +14,7 @@ import logging
 import os
 import uuid
 from contextlib import asynccontextmanager, suppress
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import procrastinate
 
@@ -93,27 +93,100 @@ async def lifespan(app):
                 await worker_task
 
 
+# How long process_batch waits for its batch row to become visible. The upload
+# route defers the job inside its own transaction, on Procrastinate's separate
+# connection, so the job is committed — and the worker woken — before the
+# batch is. Reading "not found" at that moment used to end the job as a
+# success and leave the batch pending with nothing left to run it.
+BATCH_VISIBLE_ATTEMPTS = 10
+BATCH_VISIBLE_WAIT_SECONDS = 1.0
+
+
 @worker_app.task(queue="issuance")
 async def process_batch(batch_id_str: str):
     """Background task to process a CredentialBatch."""
-    # We must run DB synchronous code in a thread pool since this task is async,
-    # or just use loop.run_in_executor
-    import uuid
-
     batch_id = uuid.UUID(batch_id_str)
-    
-    # Run sync code in thread
-    retry_ids = await asyncio.to_thread(_process_batch_sync, batch_id)
+
+    for _ in range(BATCH_VISIBLE_ATTEMPTS):
+        retry_ids = await asyncio.to_thread(_process_batch_sync, batch_id)
+        if retry_ids is not None:
+            break
+        await asyncio.sleep(BATCH_VISIBLE_WAIT_SECONDS)
+    else:
+        # The upload rolled back after queueing: an orphan job, not a batch.
+        logger.warning("Batch %s never became visible; nothing to process.", batch_id)
+        return
 
     # Deferred rather than retried inline: a provider outage would otherwise
     # stall the whole batch behind one address, and Procrastinate already gives
     # us the scheduling. Failing to queue a retry must not fail the batch —
     # the credentials are issued and verifiable either way.
-    for public_id in retry_ids or []:
+    for public_id in retry_ids:
         try:
             await retry_delivery.defer_async(public_id=public_id)
         except Exception:
             logger.exception("Could not queue a delivery retry for %s", public_id)
+
+
+# A batch still pending this long after upload has probably lost its job.
+# Probably: the worker runs one job at a time, so a batch queued behind a large
+# one waits legitimately. Re-queueing that one is harmless — whichever job
+# claims it first processes it and the other finds it taken — and the queueing
+# lock keeps the sweep to one extra job per batch however many minutes it waits.
+STRANDED_BATCH_AFTER_SECONDS = 120
+
+
+@worker_app.periodic(cron="* * * * *")
+@worker_app.task(queue="issuance")
+async def recover_batches(timestamp: int):
+    """Put stuck batches back on the queue.
+
+    Two ways a batch used to hang at "0 of N" forever, both silent:
+
+    - The machine stopped mid-batch — a deploy replaces it, and Fly stops it
+      on idle. The job stays ``doing`` under a worker that no longer exists,
+      and the batch stays ``processing``. Nothing retried it, and a retry
+      would have refused a batch that was not ``pending``.
+    - The batch was committed but its job was lost.
+
+    Runs only while the machine is up, which it is whenever anyone is
+    watching a batch; it adds no inbound traffic, so it does not hold the
+    machine awake.
+    """
+    job_manager = worker_app.job_manager
+    for job in await job_manager.get_stalled_jobs(task_name=process_batch.name):
+        batch_id = (job.task_kwargs or {}).get("batch_id_str")
+        if batch_id:
+            await asyncio.to_thread(_release_batch, uuid.UUID(batch_id))
+        logger.warning("Retrying stalled job %s (batch %s)", job.id, batch_id)
+        await job_manager.retry_job(job)
+
+    for batch_id in await asyncio.to_thread(_stranded_batch_ids):
+        try:
+            await process_batch.configure(
+                queueing_lock=f"recover-batch:{batch_id}"
+            ).defer_async(batch_id_str=batch_id)
+            logger.warning("Re-queued stranded batch %s", batch_id)
+        except procrastinate.exceptions.AlreadyEnqueued:
+            pass
+
+
+def _release_batch(batch_id: uuid.UUID) -> None:
+    """Hand a batch whose worker died back to ``pending`` so it can be claimed."""
+    with get_db() as session:
+        session.query(CredentialBatch).filter_by(
+            id=batch_id, status="processing"
+        ).update({"status": "pending"}, synchronize_session=False)
+
+
+def _stranded_batch_ids() -> list[str]:
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=STRANDED_BATCH_AFTER_SECONDS)
+    with get_db() as session:
+        rows = session.query(CredentialBatch.id).filter(
+            CredentialBatch.status == "pending",
+            CredentialBatch.created_at < cutoff,
+        ).all()
+        return [str(row.id) for row in rows]
 
 
 @worker_app.task(queue="issuance", retry=False)
@@ -147,12 +220,15 @@ def _retry_delivery_sync(public_id: str) -> None:
         deliver_credential_email(cred)
 
 
-def _process_batch_sync(batch_id: uuid.UUID) -> list[str]:
+def _process_batch_sync(batch_id: uuid.UUID) -> list[str] | None:
     """Synchronous core logic for processing a batch.
 
     Returns the public IDs whose delivery failed and is still worth retrying.
     The caller defers those; queueing from here would mean reaching into the
     async Procrastinate app from inside a worker thread.
+
+    Returns None when the batch row is not visible yet, so the caller can tell
+    "not committed yet" apart from "already handled".
     """
     logger.info(f"Processing batch {batch_id}")
     import csv
@@ -160,13 +236,19 @@ def _process_batch_sync(batch_id: uuid.UUID) -> list[str]:
     import time
     
     with get_db() as session:
-        batch = session.query(CredentialBatch).filter_by(id=batch_id).first()
-        if not batch or batch.status != "pending":
-            logger.warning(f"Batch {batch_id} not found or not pending.")
-            return []
-
-        batch.status = "processing"
+        # Claimed with a conditional UPDATE rather than read-then-write, so two
+        # jobs for one batch — a recovery sweep racing the original — cannot
+        # both process it.
+        claimed = session.query(CredentialBatch).filter_by(
+            id=batch_id, status="pending"
+        ).update({"status": "processing"}, synchronize_session=False)
         session.commit()
+        batch = session.query(CredentialBatch).filter_by(id=batch_id).first()
+        if not batch:
+            return None
+        if not claimed:
+            logger.warning(f"Batch {batch_id} is {batch.status}, not pending; skipping.")
+            return []
 
         template = session.query(Template).filter_by(id=batch.template_id).first()
         if not template:
@@ -192,13 +274,17 @@ def _process_batch_sync(batch_id: uuid.UUID) -> list[str]:
         # mostly absorb that, but "mostly" is not a plan for a 500-row batch.
         batch_background = background_data_uri(template)
 
-        success_count = 0
-        failed_count = 0
+        # Started from the batch's own counts, not zero: a batch resumed after
+        # its machine died has already committed some rows, and only the
+        # still-pending ones are processed again. Rows and counts are committed
+        # together, so the two agree at every commit.
+        success_count = batch.succeeded
+        failed_count = batch.failed
         # Counted apart from success/failed, which measure RENDERS. A batch that
         # rendered 30 PDFs and delivered none of them used to report "30
         # succeeded" and nothing else.
-        delivered_count = 0
-        delivery_failed_count = 0
+        delivered_count = batch.delivered
+        delivery_failed_count = batch.delivery_failed
         retry_ids: list[str] = []
         errors = {}
 
