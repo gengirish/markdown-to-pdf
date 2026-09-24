@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { HeaderAccount } from "@/components/header-account";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 /** The redesign's sticky masthead, shared by every public page.
@@ -23,7 +24,10 @@ export function SiteHeader({ children }: { children?: React.ReactNode }) {
           </span>
         </Link>
         {children}
-        <ThemeToggle className="ml-auto" />
+        <div className="ml-auto flex items-center gap-3">
+          <ThemeToggle />
+          <HeaderAccount />
+        </div>
       </div>
     </header>
   );
