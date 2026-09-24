@@ -59,15 +59,16 @@ test.describe('CertForge plans', () => {
     // No Authorization header: the pricing page is for people without an account.
     const tiers = await catalog(request)
 
-    expect(tiers.map((t) => t.key)).toEqual(['community', 'starter', 'growth', 'scale'])
+    expect(tiers.map((t) => t.key)).toEqual(['community', 'pro'])
 
     const prices = tiers.map((t) => t.price_paise)
     expect(prices).toEqual([...prices].sort((a, b) => a - b))
     expect(tiers[0].price_paise).toBe(0)
 
-    const scale = tiers.find((t) => t.key === 'scale')
-    expect(scale.monthly_quota).toBeNull()
-    expect(scale.template_limit).toBeNull()
+    // Scale is a real tier the gates honour, but it is hand-sold: `listed` is
+    // false, so it must not reach the pricing page. A card for it would be a
+    // button with no checkout behind it.
+    expect(tiers.find((t) => t.key === 'scale')).toBeUndefined()
     for (const t of tiers) {
       expect(t.monthly_quota).not.toBe(-1)
       expect(t.template_limit).not.toBe(-1)
@@ -99,7 +100,9 @@ test.describe('CertForge plans', () => {
     expect(error.type).toBe('template_limit_reached')
     expect(error.details.limit).toBe(limit)
     expect(error.details.tier).toBe('community')
-    expect(error.details.upgrades.map((u) => u.tier)).toEqual(['starter', 'growth', 'scale'])
+    // Only what can actually be bought: Scale holds more templates but is
+    // hand-sold, and offering it here is an upgrade prompt that dead-ends.
+    expect(error.details.upgrades.map((u) => u.tier)).toEqual(['pro'])
   })
 
   test('deleting a template gives the slot back', async ({ request }) => {
