@@ -75,6 +75,19 @@ def _sellable() -> list[tuple[str, dict]]:
     )
 
 
+def _amount(product) -> int | None:
+    """The product's price in paise, from either shape the SDK returns.
+
+    A listing gives `price` as a plain integer; a create gives a price object
+    whose own `price` holds the amount. Reading the wrong one silently yields
+    None, which would make the drift check below pass on every product.
+    """
+    price = getattr(product, "price", None)
+    if isinstance(price, int):
+        return price
+    return getattr(price, "price", None)
+
+
 def _existing(client) -> dict[str, object]:
     """Products already in this Dodo account, keyed by name.
 
@@ -122,14 +135,13 @@ def main() -> int:
         found = existing.get(name)
 
         if found is not None:
-            current = getattr(found, "price", None)
-            amount = getattr(current, "price", None) if current is not None else None
-            env[key] = found.id
+            env[key] = found.product_id
+            amount = _amount(found)
             if amount is not None and amount != price:
                 repriced.append(
                     f"  {name}: Dodo has INR {amount / 100:,.2f}, BILLING_TIERS says INR {rupees:,.2f}"
                 )
-            print(f"exists  {name:24} {found.id}")
+            print(f"exists  {name:24} {found.product_id}")
             continue
 
         if not args.apply:
@@ -156,8 +168,8 @@ def main() -> int:
                 "tax_inclusive": False,
             },
         )
-        env[key] = created.id
-        print(f"created {name:24} {created.id}  INR {rupees:,.2f}/{INTERVAL.lower()}")
+        env[key] = created.product_id
+        print(f"created {name:24} {created.product_id}  INR {rupees:,.2f}/{INTERVAL.lower()}")
 
     if repriced:
         print("\nPrice drift — NOT changed here, because editing a live product "
