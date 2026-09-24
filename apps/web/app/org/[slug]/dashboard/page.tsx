@@ -14,6 +14,7 @@ import { IssueWizard } from "@/components/dashboard/issue-wizard";
 import { DeveloperCard } from "@/components/dashboard/developer-card";
 import { PlanCard } from "@/components/dashboard/plan-card";
 import { RecentCredentialsCard } from "@/components/dashboard/recent-credentials-card";
+import { SetupChecklist } from "@/components/dashboard/setup-checklist";
 import { SingleIssueCard } from "@/components/dashboard/single-issue-card";
 import { TemplatesCard } from "@/components/dashboard/templates-card";
 import { ErrorNote } from "@/components/dashboard/ui";
@@ -105,35 +106,46 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
         {!isSignedIn ? (
           <SignInPrompt slug={slug} />
         ) : (
-          <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
-            <SectionNav active={activeTab} onSelect={selectTab} />
+          <>
+            {/* Refetches on a settled batch and on every tab change — the
+                templates card has no callback, and leaving its tab is the
+                moment a new template can have appeared. */}
+            <SetupChecklist
+              slug={slug}
+              org={org}
+              refreshKey={`${issuedToken}:${activeTab}`}
+              onSelectTab={selectTab}
+            />
+            <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+              <SectionNav active={activeTab} onSelect={selectTab} />
 
-            {/* Every panel stays mounted and is only hidden. Unmounting would
-                throw away a half-reviewed bulk upload the moment somebody
-                glanced at another tab, and the credential list has to be
-                mounted to hear `issuedToken` when a batch settles. */}
-            <div className="min-w-0 flex-1">
-              <TabPanel id="issue" active={activeTab}>
-                <SingleIssueCard slug={slug} onIssued={handleIssued} />
-                <IssueWizard slug={slug} onIssued={handleIssued} />
-              </TabPanel>
-              <TabPanel id="credentials" active={activeTab}>
-                <RecentCredentialsCard slug={slug} refreshToken={issuedToken} />
-              </TabPanel>
-              <TabPanel id="templates" active={activeTab}>
-                <TemplatesCard slug={slug} />
-              </TabPanel>
-              <TabPanel id="branding" active={activeTab}>
-                <BrandingCard slug={slug} org={org} onSaved={setOrg} />
-              </TabPanel>
-              <TabPanel id="developers" active={activeTab}>
-                <DeveloperCard slug={slug} />
-              </TabPanel>
-              <TabPanel id="plan" active={activeTab}>
-                <PlanCard slug={slug} />
-              </TabPanel>
+              {/* Every panel stays mounted and is only hidden. Unmounting would
+                  throw away a half-reviewed bulk upload the moment somebody
+                  glanced at another tab, and the credential list has to be
+                  mounted to hear `issuedToken` when a batch settles. */}
+              <div className="min-w-0 flex-1">
+                <TabPanel id="issue" active={activeTab}>
+                  <SingleIssueCard slug={slug} onIssued={handleIssued} />
+                  <IssueWizard slug={slug} onIssued={handleIssued} />
+                </TabPanel>
+                <TabPanel id="credentials" active={activeTab}>
+                  <RecentCredentialsCard slug={slug} refreshToken={issuedToken} />
+                </TabPanel>
+                <TabPanel id="templates" active={activeTab}>
+                  <TemplatesCard slug={slug} />
+                </TabPanel>
+                <TabPanel id="branding" active={activeTab}>
+                  <BrandingCard slug={slug} org={org} onSaved={setOrg} />
+                </TabPanel>
+                <TabPanel id="developers" active={activeTab}>
+                  <DeveloperCard slug={slug} />
+                </TabPanel>
+                <TabPanel id="plan" active={activeTab}>
+                  <PlanCard slug={slug} />
+                </TabPanel>
+              </div>
             </div>
-          </div>
+          </>
         )}
       </main>
     </div>
