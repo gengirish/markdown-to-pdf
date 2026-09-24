@@ -14,7 +14,8 @@ delivery bug: an outcome that leaves no way to tell it apart from success.
            asyncio.create_task after the commit. If that failed — swallowed
            exception, garbage-collected task, or a machine that scaled to zero
            first — the batch row committed anyway with status="pending" and no
-           job. Nothing reconciles that. There is no reaper.
+           job. Nothing reconciled that at the time. recover_batches in
+           api/core/worker.py is the backstop now (tests/test_batch_recovery.py).
 """
 
 from unittest.mock import AsyncMock, patch

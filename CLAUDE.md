@@ -643,6 +643,20 @@ back, so bulk issuance went unmetered while single issuance metered correctly.
 Bulk issuance runs on Procrastinate (`api/core/worker.py`), embedded in the FastAPI
 lifespan so it scales with the web process.
 
+- **A batch must never be left without a job.** `process_batch` claims a batch
+  with a conditional `UPDATE … WHERE status = 'pending'`, so a duplicate job is
+  harmless, and it waits for a batch it cannot see yet: the route defers inside
+  its transaction and Procrastinate commits on its own connection, so the job
+  can reach the worker before the batch row does. Reading that as "done" left
+  batches at "0 of N" forever.
+- **`recover_batches` is a once-a-minute Procrastinate periodic task**, not an
+  HTTP check, so it does not hold the machine awake. It retries jobs stranded in
+  `doing` by a dead worker (a deploy or idle stop mid-batch), handing their batch
+  back to `pending` first, and re-queues batches pending longer than
+  `STRANDED_BATCH_AFTER_SECONDS`. A resumed batch keeps its counts and processes
+  only its still-pending rows; rows rendered after the last commit may be emailed
+  twice, which beats never.
+
 ## Agent-discovery surface
 
 `/llms.txt`, `/robots.txt`, `/sitemap.xml`, `/.well-known/ai-plugin.json`, and the
