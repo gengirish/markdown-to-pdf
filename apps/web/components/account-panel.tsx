@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { OrganizationSwitcher, SignInButton, SignUpButton, UserButton, useAuth, useOrganization } from "@clerk/nextjs";
+import { OrganizationSwitcher, SignInButton, SignUpButton, useAuth, useOrganization } from "@clerk/nextjs";
 
 /**
  * The landing page's auth-dependent call to action.
@@ -52,15 +52,15 @@ export function AccountPanel() {
     );
   }
 
+  // From `lg` up the Studio link and the account controls live in the
+  // header's top-right corner (`HeaderAccount`). A narrower header, already
+  // carrying the nav, has no room for the link, so the hero keeps it there.
   return (
-    <div className="flex flex-wrap items-center gap-4">
-      <Link
-        href={`/org/${organization.slug}/dashboard`}
-        className="rounded-lg bg-accent px-6 py-3 text-sm font-medium text-ground no-underline transition-colors hover:bg-accent-hover"
-      >
-        Open {organization.name} Studio
-      </Link>
-      <UserButton />
-    </div>
+    <Link
+      href={`/org/${organization.slug}/dashboard`}
+      className="inline-block rounded-lg bg-accent px-6 py-3 text-sm font-medium text-ground no-underline transition-colors hover:bg-accent-hover lg:hidden"
+    >
+      Open {organization.name} Studio
+    </Link>
   );
 }
