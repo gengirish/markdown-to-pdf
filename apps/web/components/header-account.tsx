@@ -12,11 +12,14 @@ import { SignInButton, SignOutButton, UserButton, useAuth, useOrganization } fro
  * looking for it, and that is who this control exists for.
  *
  * `showStudioLink` is off in the dashboard's own header, where the Studio is
- * the page already on screen.
+ * the page already on screen. Everywhere else, signing in goes to
+ * `/dashboard`; on a Studio page it stays put, since that org is the one the
+ * visitor came for.
  */
 export function HeaderAccount({ showStudioLink = true }: { showStudioLink?: boolean }) {
   const { isLoaded, isSignedIn } = useAuth();
   const { organization } = useOrganization();
+  const afterSignIn = showStudioLink ? "/dashboard" : undefined;
 
   if (!isLoaded) {
     return <div className="h-8 w-24 animate-pulse rounded-lg bg-well" aria-hidden />;
@@ -24,7 +27,11 @@ export function HeaderAccount({ showStudioLink = true }: { showStudioLink?: bool
 
   if (!isSignedIn) {
     return (
-      <SignInButton mode="modal">
+      <SignInButton
+        mode="modal"
+        forceRedirectUrl={afterSignIn}
+        signUpForceRedirectUrl={afterSignIn}
+      >
         <button className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-well hover:text-ink">
           Sign in
         </button>
