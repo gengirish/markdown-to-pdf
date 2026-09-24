@@ -54,7 +54,12 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
   // Other params are kept: billing returns here with `?checkout=complete`.
   const searchParams = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const activeTab: TabId = isTabId(requestedTab) ? requestedTab : "issue";
+  // Dodo's return URL names no tab; the plan card is where its outcome shows.
+  const activeTab: TabId = isTabId(requestedTab)
+    ? requestedTab
+    : searchParams.get("checkout")
+      ? "plan"
+      : "issue";
   const selectTab = useCallback(
     (tab: TabId) => {
       const next = new URLSearchParams(searchParams.toString());
