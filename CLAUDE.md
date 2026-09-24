@@ -531,7 +531,7 @@ once*, rather than paid by one lookup and free by another.
 **The template gate is back, expressed as a count.** `_enforce_template_limit`
 in `routes/templates.py` answers **402** with `error.type =
 "template_limit_reached"` once an org holds its tier's allowance — Community 1,
-Starter 5, Growth 25, Scale unlimited. Things that follow:
+Pro 5, Scale unlimited. Things that follow:
 
 - **It is a stock, not a monthly flow.** The check is the live row count, so
   deleting a template frees the slot and there is no counter to drift. Seeded
@@ -554,16 +554,31 @@ Starter 5, Growth 25, Scale unlimited. Things that follow:
   checked where a capability is *acquired*, never where it is used, so a
   downgraded org keeps its artwork rendering and its existing keys working.
   `test_entitlements.py` walks every catalog tier through every gate, and fails
-  if a tier's `features` copy names a capability it is not granted. Starter
-  is sold on capability as well as volume (500 a month against Community's
-  50). No page states a quota as a literal: the pricing page reads them from
+  if a tier's `features` copy names a capability it is not granted. No page
+  states a quota as a literal: the pricing page reads them from
   `/api/v1/tiers`.
-- **The gate has no self-serve door yet.** `create_checkout_session` still
-  returns a fabricated URL, so an org at its limit can only be moved by hand.
-  The 402 body and the pricing page both say so outright rather than offering a
-  button that does nothing. Closing that is P1 of
-  `docs/billing-and-template-quota-plan.md`. "By hand" now means
-  `PUT /api/v1/operator/orgs/{slug}/tier`, not SQL — see below.
+- **The gate has a self-serve door now.** `create_checkout` starts a real Dodo
+  hosted checkout, and only the signed webhook moves a tier. D4 — an in-app
+  plan change — is still missing, so a *downgrade* is done by hand, which now
+  means `PUT /api/v1/operator/orgs/{slug}/tier` rather than SQL (see below).
+
+**Two plans are sold, and a third is not.** Community (free, 50 a month) and
+Pro (₹1,999, 1,000 a month) are what `tier_catalog()` publishes; Scale is a
+real tier the gates honour but carries `listed: False`, because an unlimited
+plan needs onboarding nobody can staff yet. `listed` reaches the wire and
+nothing else — a hidden tier is still enforced normally, and every "move to a
+larger plan" list is built from `listed_tiers()` so it cannot offer a plan
+with no checkout behind it. Prices are set against CertPie (₹999 for 500,
+₹2,499 unlimited, checked 22 September 2026), which is what an Indian cohort
+founder actually weighs this against.
+
+**A retired plan name resolves, it does not fall back.** `TIER_ALIASES` maps
+`starter` and `growth` onto `pro` *before* `get_tier`'s Community fallback,
+because for a paid name the fallback is the wrong answer: an org still marked
+Starter is a paying org, and quietly handing it the free tier's limits is the
+same bug the fallback exists to prevent. Checkout resolves the alias too, so a
+stale pricing page buys what replaced the plan it lists. Migration
+`f4b28e0c71da` renames the rows.
 
 ### Operators, and an org's own credential limit
 

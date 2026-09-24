@@ -240,21 +240,29 @@ API_V1_RATE_WINDOW = int(_env("API_V1_RATE_LIMIT_WINDOW_SECONDS", "60") or "60")
 #: three — so a line in `features` that names a paid capability must have a
 #: flag here, and `test_tiers.py` holds the two together.
 #:
-#: Starter is sold on capability — unlimited CSV batches, your own artwork, API
-#: access — as well as volume (500 against Community's 50). Community gets one
-#: CSV batch a month rather than none, because the homepage promises a cohort in
-#: one upload and a free org must be able to do exactly that once.
+#: Two plans are sold self-serve, and `listed` is what says so: Scale is still
+#: a real tier an operator can set by hand, but it is not on the pricing page,
+#: because there is nobody to onboard an unlimited plan today. A tier the
+#: catalog hides is still a tier the gates honour — `listed` reaches the wire,
+#: nothing else.
+#:
+#: The prices are set against CertPie (₹999/month for 500 credentials, ₹2,499
+#: for unlimited, checked 22 September 2026), which is what an Indian cohort
+#: founder actually weighs this against. Community gets one CSV batch a month
+#: rather than none, because the homepage promises a cohort in one upload and a
+#: free org must be able to do exactly that once.
 BILLING_TIERS = {
     "community": {
         "name": "Community",
         "order": 0,
+        "listed": True,
         "price_paise": 0,
         "monthly_quota": 50,
         "template_limit": 1,
         "csv_batch_limit": 1,
         "custom_artwork": False,
         "api_access": False,
-        "tagline": "Issue a real cohort of verifiable credentials, free.",
+        "tagline": "Issue your first cohort of verifiable credentials, free.",
         # Community gets one custom template, not zero. A free tier that cannot
         # reach the feature at all is how the old 403 gate came to be deleted.
         "features": [
@@ -268,46 +276,34 @@ BILLING_TIERS = {
             "Recipient passports",
         ],
     },
-    "starter": {
-        "name": "Starter",
+    "pro": {
+        "name": "Pro",
         "order": 1,
-        "price_paise": 299900,
-        "monthly_quota": 500,
+        "listed": True,
+        "price_paise": 199900,
+        "monthly_quota": 1000,
         "template_limit": 5,
         "csv_batch_limit": -1,
         "custom_artwork": True,
         "api_access": True,
-        "tagline": "Every cohort, your design, your code.",
+        "tagline": "Every cohort, your design, your code, your proof.",
         "features": [
-            "500 credentials a month",
+            "1,000 credentials a month",
             "Unlimited CSV uploads",
             "Upload your own certificate artwork",
+            "Read a design with AI to place fields",
             "API keys and webhooks",
             "5 custom templates",
             "Everything in Community",
         ],
     },
-    "growth": {
-        "name": "Growth",
-        "order": 2,
-        "price_paise": 999900,
-        "monthly_quota": 2000,
-        "template_limit": 25,
-        "csv_batch_limit": -1,
-        "custom_artwork": True,
-        "api_access": True,
-        "tagline": "For institutions issuing at semester scale.",
-        "features": [
-            "2,000 credentials a month",
-            "25 custom templates",
-            "Read a design with AI to place fields",
-            "Priority support",
-            "Everything in Starter",
-        ],
-    },
+    # Hand-sold, and `listed: False` for that reason: an unlimited plan needs
+    # onboarding and an SLA that nobody can staff today, so it is set by an
+    # operator rather than bought. Every gate still reads it normally.
     "scale": {
         "name": "Scale",
-        "order": 3,
+        "order": 2,
+        "listed": False,
         "price_paise": 2499900,
         "monthly_quota": -1,  # -1 = unlimited
         "template_limit": -1,
@@ -318,11 +314,25 @@ BILLING_TIERS = {
         "features": [
             "Unlimited credentials",
             "Unlimited custom templates",
-            "Custom domain for verification pages",
             "SLA and onboarding support",
-            "Everything in Growth",
+            "Everything in Pro",
         ],
     },
+}
+
+#: Tier names that are no longer sold but are still written down: in
+#: `organizations.tier` (free text), in an old Dodo product's metadata, in a
+#: support thread. They resolve to what replaced them, so an org that was put
+#: on Starter keeps a paid plan instead of silently falling back to the free
+#: tier — which is what `get_tier`'s fallback would otherwise do the moment a
+#: key left the table.
+#:
+#: Growth resolves *down* to Pro's 1,000 a month. That is a real reduction for
+#: any org holding it, which is why this is safe only while no external org
+#: does; check before adding an alias that lowers a limit.
+TIER_ALIASES = {
+    "starter": "pro",
+    "growth": "pro",
 }
 
 #: The tier an org has until something moves it. Named rather than repeated as
@@ -330,16 +340,37 @@ BILLING_TIERS = {
 DEFAULT_TIER = "community"
 
 
+def canonical_tier(tier: str) -> str:
+    """The key `tier` is sold as today: itself, or what an alias resolves to.
+
+    Unknown names are returned unchanged, so a caller can still tell "this row
+    holds something nobody recognises" from "this row holds a retired name".
+    """
+    return TIER_ALIASES.get(tier, tier)
+
+
+def is_known_tier(tier: str) -> bool:
+    """Whether this tier resolves to a row in the table rather than the
+    fallback. What the usage endpoint reports as `tier_known`."""
+    return canonical_tier(tier) in BILLING_TIERS
+
+
 def get_tier(tier: str) -> dict:
-    """The tier table's row for `tier`, falling back to Community.
+    """The tier table's row for `tier`, resolving aliases, falling back to
+    Community.
 
     The fallback is not cosmetic. `Organization.tier` is a free-text column and
     has historically held values this table does not know — the old Razorpay
-    webhook wrote `"pro"`, which is not a key here. Falling back means
-    such a row is treated as the free tier everywhere at once, rather than as
-    one thing by the quota lookup and another by the gate.
+    webhook wrote `"pro"`, which was not a key here at the time. Falling back
+    means such a row is treated as the free tier everywhere at once, rather
+    than as one thing by the quota lookup and another by the gate.
+
+    Retired names go through `TIER_ALIASES` first, because for those the
+    fallback is the wrong answer: an org on Starter is a paying org, and
+    quietly handing it the free tier's limits is the same class of bug the
+    fallback exists to prevent.
     """
-    return BILLING_TIERS.get(tier, BILLING_TIERS[DEFAULT_TIER])
+    return BILLING_TIERS.get(canonical_tier(tier), BILLING_TIERS[DEFAULT_TIER])
 
 
 def get_tier_quota(tier: str) -> int:
@@ -354,6 +385,18 @@ def get_tier_template_limit(tier: str) -> int:
     deleting a template frees the slot. See docs/billing-and-template-quota-plan.md.
     """
     return get_tier(tier)["template_limit"]
+
+
+def listed_tiers() -> list[tuple[str, dict]]:
+    """(key, row) for the tiers a customer can actually buy, in display order.
+
+    Every "move to a larger plan" list is built from this, not from the table:
+    offering an org a plan with no checkout is an upgrade prompt that dead-ends.
+    """
+    return sorted(
+        ((key, info) for key, info in BILLING_TIERS.items() if info["listed"]),
+        key=lambda kv: kv[1]["order"],
+    )
 
 
 def get_tier_csv_batch_limit(tier: str) -> int:
@@ -379,6 +422,9 @@ def tier_grants(tier: str, grant: str) -> bool:
 def tier_catalog() -> list[dict]:
     """The public plan catalog, in display order, shaped for the wire.
 
+    Only `listed` tiers: a hand-sold plan on the pricing page is a button that
+    cannot be pressed. It is the catalog that hides them, not the gates.
+
     `monthly_quota` / `template_limit` of -1 are rendered as `null` here for
     the same reason the usage endpoint does it: the sentinel is ours, not a
     consumer's.
@@ -388,6 +434,8 @@ def tier_catalog() -> list[dict]:
 
     rows = []
     for key, info in BILLING_TIERS.items():
+        if not info["listed"]:
+            continue
         rows.append({
             "key": key,
             "name": info["name"],

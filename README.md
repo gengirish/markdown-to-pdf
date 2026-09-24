@@ -257,7 +257,7 @@ Copy [`.env.example`](.env.example) as a starting point.
 | `DODO_PAYMENTS_API_KEY` | For billing | Dodo Payments API key. **No default**: unset means checkout and the billing portal answer 503 |
 | `DODO_PAYMENTS_WEBHOOK_KEY` | For billing | Dodo webhook signing secret (`whsec_…`). **No default**: unset means `/api/v1/webhooks/dodo` rejects every request, because a valid signature can change an org's tier |
 | `DODO_PAYMENTS_ENVIRONMENT` | No | `live_mode` to charge real cards. Anything else, including unset or a typo, is `test_mode` |
-| `DODO_PRODUCT_STARTER` / `_GROWTH` / `_SCALE` | For billing | The Dodo product id each paid tier is sold as. These differ between test and live mode. A tier whose variable is unset cannot be bought (checkout answers 503) |
+| `DODO_PRODUCT_PRO` / `_SCALE` | For billing | The Dodo product id each paid tier is sold as. These differ between test and live mode. A tier whose variable is unset cannot be bought (checkout answers 503) |
 | `RATE_LIMIT_MAX_REQUESTS` | No | Requests per window per client IP (default: `10`) |
 | `RATE_LIMIT_WINDOW_SECONDS` | No | Rate-limit window in seconds (default: `60`) |
 | `TRUSTED_PROXY_HOPS` | No | Reverse proxies in front of the app, used to pick the caller out of `X-Forwarded-For` (default: `2`, for browser → Vercel → Fly). Set to `0` to ignore forwarding headers |

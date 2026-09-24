@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import or_
 
-from api.core.config import BILLING_TIERS, DEFAULT_TIER, get_tier_quota
+from api.core.config import BILLING_TIERS, DEFAULT_TIER, canonical_tier, get_tier_quota
 from api.core.envelope import ApiException, ApiResponse
 from api.core.principal import Principal, require_operator
 from api.models import get_db
@@ -245,7 +245,11 @@ def set_tier(
     a downgrade — the entitlement gates run where a capability is acquired,
     not where it is used.
     """
-    if payload.tier not in BILLING_TIERS:
+    # Resolved first: an operator working from an older runbook types the name
+    # the plan was sold under, and storing that retired name in `tier` is worse
+    # than a 422 — it is a row that only reads correctly through the alias.
+    tier = canonical_tier(payload.tier)
+    if tier not in BILLING_TIERS:
         raise ApiException(
             422,
             f"Unknown tier {payload.tier!r}",
@@ -257,7 +261,7 @@ def set_tier(
         previous_tier = org.tier
         had_override = org.credential_quota_override is not None
         changed = change_tier(
-            session, org, payload.tier,
+            session, org, tier,
             actor=principal.clerk_user_id, reason=payload.reason,
         )
         session.flush()

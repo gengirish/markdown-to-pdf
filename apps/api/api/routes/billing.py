@@ -16,8 +16,11 @@ from api.core.config import (
     BILLING_TIERS,
     DEFAULT_TIER,
     VISION_IMPORTS_PER_MONTH,
+    canonical_tier,
+    get_tier,
     get_tier_csv_batch_limit,
     get_tier_template_limit,
+    is_known_tier,
     tier_catalog,
 )
 from api.services import billing
@@ -89,14 +92,18 @@ def create_checkout_session(
     with get_db() as session:
         org = _owned_org(session, slug, principal)
 
-        tier = payload.get("tier")
+        # Resolved first, so a client holding a retired plan name — the
+        # pricing page it loaded this morning, a saved link — checks out on
+        # the plan that replaced it rather than being told it does not exist.
+        tier = canonical_tier(payload.get("tier") or "")
         if tier not in BILLING_TIERS or tier == DEFAULT_TIER:
             raise ApiException(
                 400,
                 "Choose a paid plan to check out.",
                 error_type="invalid_tier",
-                details={"tier": tier, "paid_tiers": [
-                    key for key in BILLING_TIERS if key != DEFAULT_TIER
+                details={"tier": payload.get("tier"), "paid_tiers": [
+                    key for key, info in BILLING_TIERS.items()
+                    if key != DEFAULT_TIER and info["listed"]
                 ]},
             )
         if billing.holds_live_subscription(org):
@@ -205,8 +212,8 @@ def get_usage(
             # the row the limits were actually read from, so a dashboard
             # showing "Community" and a gate enforcing Community's limits can
             # never disagree.
-            "tier_name": BILLING_TIERS.get(org.tier, BILLING_TIERS[DEFAULT_TIER])["name"],
-            "tier_known": org.tier in BILLING_TIERS,
+            "tier_name": get_tier(org.tier)["name"],
+            "tier_known": is_known_tier(org.tier),
             # `source` lets the plan card say "custom limit" rather than show
             # 1,000 beside a Community plan the pricing page says allows 50.
             "credentials": {
