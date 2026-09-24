@@ -22,12 +22,12 @@ export function AccountPanel() {
   if (!isSignedIn) {
     return (
       <div className="flex flex-col gap-3 sm:flex-row">
-        <SignInButton mode="modal">
+        <SignInButton mode="modal" forceRedirectUrl="/dashboard" signUpForceRedirectUrl="/dashboard">
           <button className="rounded-lg bg-accent px-6 py-3 text-sm font-medium text-ground transition-colors hover:bg-accent-hover">
             Sign in
           </button>
         </SignInButton>
-        <SignUpButton mode="modal">
+        <SignUpButton mode="modal" forceRedirectUrl="/dashboard" signInForceRedirectUrl="/dashboard">
           <button className="rounded-lg border border-hair-strong px-6 py-3 text-sm font-medium text-ink transition-colors hover:border-accent hover:text-accent">
             Create an account
           </button>
