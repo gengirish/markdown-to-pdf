@@ -16,10 +16,16 @@ someone reading the screen believes it.
 Where the API has no endpoint, render an empty or unavailable state that says so.
 `ApiStatusBadge` probes `/api/health` rather than hardcoding "operational". The
 plan card (`components/dashboard/plan-card.tsx`) calls the real
-`GET /orgs/{slug}/usage` for its meters, but still states plainly that
-self-serve upgrades do not exist — `POST /orgs/{slug}/checkout` returns a
-placeholder URL server-side, so there is nothing real for an upgrade button to
-do yet.
+`GET /orgs/{slug}/usage` for its meters, and its Upgrade button starts a real
+Dodo checkout through `POST /orgs/{slug}/checkout`.
+
+**The return from checkout proves nothing.** Only the signed webhook moves
+the tier. So a return with `?checkout=complete` shows "waiting", polls
+`/usage` until `subscription.status` is live, and says so plainly if that has
+not happened within a minute — it never announces the new plan on the
+browser's word. The price on the button comes from `/api/v1/tiers`, the same
+catalog the API sells from; a failed catalog load hides the offer rather than
+printing a remembered price.
 
 ## Talking to the API
 

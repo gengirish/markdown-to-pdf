@@ -105,18 +105,15 @@ export default async function PricingPage() {
         </div>
       </section>
 
-      {/* Self-serve checkout is not built — `create_checkout_session` returns a
-          fabricated URL. A button that opened it would be a lie on the page
-          that decides whether someone pays. Say what actually happens. */}
+      {/* Say what actually happens, including the part that is not instant:
+          the plan moves on Dodo's signed webhook, not on the browser's return. */}
       <section className="mx-auto max-w-[1200px] px-6 py-12 sm:px-8">
         <div className="grid grid-cols-1 gap-10 md:grid-cols-3">
-          <Note title="How an upgrade works today">
-            Checkout is not self-serve yet. Email{" "}
-            <a className="text-accent no-underline" href="mailto:support@intelliforge.tech">
-              support@intelliforge.tech
-            </a>{" "}
-            with your organization slug and the plan you want, and we move the account over by
-            hand. Nothing you have already issued is affected.
+          <Note title="How an upgrade works">
+            The organization&apos;s owner upgrades from the Plan tab in the Credential Studio and
+            pays through Dodo Payments, with GST added at checkout. The new limits apply as soon
+            as the payment is confirmed, usually within seconds. Card, invoices and cancellation
+            live in the billing portal. Nothing you have already issued is affected.
           </Note>
           <Note title="What counts as a credential">
             One rendered, signed credential — whether it came from the API, the dashboard or a
@@ -179,14 +176,15 @@ function TierCard({ tier }: { tier: Tier }) {
               Start free
             </Link>
           ) : (
-            <a
-              href={`mailto:support@intelliforge.tech?subject=${encodeURIComponent(
-                `CertForge ${tier.name} plan`,
-              )}`}
+            // Checkout is started from the plan card, not here: it needs an
+            // org and its owner, which /dashboard resolves (signing in first
+            // if need be) before landing on the Plan tab.
+            <Link
+              href="/dashboard?tab=plan"
               className="block rounded-lg border border-hair-strong px-4 py-2.5 text-center text-sm font-medium text-ink no-underline transition-colors hover:border-accent hover:text-accent"
             >
-              Talk to us
-            </a>
+              Upgrade to {tier.name}
+            </Link>
           )}
         </div>
       </div>

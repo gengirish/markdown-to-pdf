@@ -154,6 +154,29 @@ export interface UsageSummary {
   vision_imports: UsageMeter;
   /** CSV uploads this calendar month, against the plan's allowance. */
   csv_batches: UsageMeter;
+  /** The Dodo subscription that governs the tier, or `null` for an org that
+   *  has never subscribed — including every org whose tier was set by hand. */
+  subscription: SubscriptionSummary | null;
+}
+
+export interface SubscriptionSummary {
+  /** Dodo's own state. `active`, `on_hold` and `past_due` keep the paid
+   *  tier (the last two are a grace period while Dodo retries the renewal);
+   *  anything else has ended it. */
+  status: string | null;
+  current_period_end: string | null;
+  /** Cancelled, but paid up until `current_period_end`. */
+  cancel_at_period_end: boolean;
+  /** Whether a billing-portal link can be minted for this org. */
+  manageable: boolean;
+}
+
+export interface CheckoutSession {
+  /** Dodo's hosted checkout. The tier does not change when the browser comes
+   *  back from it — only the signed webhook moves it. */
+  checkout_url: string;
+  session_id: string;
+  tier: string;
 }
 
 /** One plan, as `GET /api/v1/tiers` serves it. The pricing page renders these
@@ -694,6 +717,24 @@ export class CertForgeClient {
    *  pricing page should not wake a scaled-to-zero API machine per view. */
   listTiers(signal?: AbortSignal, revalidateSeconds = 300): Promise<Tier[]> {
     return this.request<Tier[]>("/api/v1/tiers", { signal, revalidateSeconds });
+  }
+
+  /** Owner only. Rejects 409 `already_subscribed` for an org that holds a
+   *  live subscription — a second checkout would bill a second one. */
+  startCheckout(slug: string, tier: string, signal?: AbortSignal): Promise<CheckoutSession> {
+    return this.request<CheckoutSession>(`/api/v1/orgs/${encodeURIComponent(slug)}/checkout`, {
+      method: "POST",
+      json: { tier },
+      signal,
+    });
+  }
+
+  /** Owner only. The link expires after 24 hours, so mint one per click. */
+  openBillingPortal(slug: string, signal?: AbortSignal): Promise<{ portal_url: string }> {
+    return this.request<{ portal_url: string }>(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/billing/portal`,
+      { method: "POST", signal },
+    );
   }
 
   // --- credentials ---
