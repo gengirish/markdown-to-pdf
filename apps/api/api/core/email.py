@@ -20,6 +20,14 @@ logger = logging.getLogger(__name__)
 EMAIL_SEND_TIMEOUT_SEC = 20.0
 AGENTMAIL_HTTP_TIMEOUT_SEC = 10.0
 
+#: The SDK retries a 429 or 5xx twice by default, sleeping on `retry-after`
+#: (capped at 60s) between tries. Sends here run inside a request, so that is
+#: up to two minutes of a held request and a busy vCPU — observed in
+#: production against a daily limit that reset fourteen hours later. Retrying
+#: is the caller's decision, made on the credential row (`delivery_attempts`),
+#: not the SDK's.
+_SEND_OPTIONS = {"max_retries": 0}
+
 _agentmail_client = None
 _agentmail_ready = False
 _agentmail_inbox_cached: str = ""
@@ -172,6 +180,7 @@ def agentmail_deliver(
             subject=subject,
             text=text,
             html=html,
+            request_options=_SEND_OPTIONS,
         )
         logger.info(f"AgentMail sent to {recipient} from inbox {inbox_id}")
         return True, ""
@@ -186,6 +195,7 @@ def agentmail_deliver(
                         subject=subject,
                         text=text,
                         html=html,
+                        request_options=_SEND_OPTIONS,
                     )
                     logger.info(f"AgentMail sent to {recipient} from inbox {resolved}")
                     return True, ""
@@ -194,5 +204,9 @@ def agentmail_deliver(
         err = _agentmail_error_message(e)
         logger.warning(f"AgentMail send to {recipient} failed: {e}")
         if err and "Could not deliver" not in err:
+            # Provider messages often carry no full stop ("Daily send limit
+            # exceeded"), and this string is shown verbatim in the dashboard.
+            if not err.endswith((".", "!", "?")):
+                err += "."
             return False, f"{err} Share the {link_hint} link instead."
         return False, fallback
