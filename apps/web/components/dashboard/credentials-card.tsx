@@ -528,7 +528,7 @@ function RevokeDialog({
                 await onConfirm(credential);
                 setBusy(false);
               }}
-              className="inline-flex items-center justify-center rounded-lg bg-danger px-3 py-1.5 text-sm font-medium text-ground transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center justify-center rounded-lg bg-danger px-3 py-1.5 text-sm font-medium text-ground transition-colors disabled:cursor-not-allowed disabled:bg-well disabled:text-muted"
             >
               {busy ? "Revoking…" : "Revoke"}
             </button>

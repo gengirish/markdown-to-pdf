@@ -164,7 +164,7 @@ function ApiKeysPanel({ slug }: { slug: string }) {
             <button
               onClick={() => revoke(key.id)}
               disabled={busy}
-              className="text-danger transition-colors hover:text-danger disabled:opacity-50"
+              className="text-danger transition-colors hover:text-danger disabled:cursor-not-allowed disabled:text-muted"
             >
               Revoke
             </button>
@@ -265,7 +265,7 @@ function WebhooksPanel({ slug }: { slug: string }) {
           <button
             onClick={add}
             disabled={busy || !url.trim()}
-            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-ground transition-colors hover:bg-accent-hover disabled:opacity-50"
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-ground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-well disabled:text-muted disabled:hover:bg-well"
           >
             Save
           </button>
@@ -316,7 +316,7 @@ function WebhooksPanel({ slug }: { slug: string }) {
             <button
               onClick={() => remove(webhook.id)}
               disabled={busy}
-              className="shrink-0 text-danger transition-colors hover:text-danger disabled:opacity-50"
+              className="shrink-0 text-danger transition-colors hover:text-danger disabled:cursor-not-allowed disabled:text-muted"
             >
               Delete
             </button>

@@ -64,7 +64,13 @@ Contrast is measured, not eyeballed. White on the dark-mode accent measured 2.42
 `text-ground` passes in both (6.17 light, 7.66 dark). The design's own `faint`
 (`#8A857A`) measured 3.67:1 on white — below what small label text needs — and was
 walked down its own hue to `#777369`, the one deliberate deviation from the source
-design's light values.
+design's light values. `placeholder` has since been moved onto `faint`'s values too
+(it measured 2.48:1), and disabled buttons are a solid `well`/`muted` rather than
+half opacity (which took a primary label to 2.23:1).
+
+`lib/contrast.test.ts` (`npm test`) keeps those measurements: every small-text pair
+the dashboard renders, in both themes, must clear 4.5:1, and the two dark-mode blocks
+below must define identical colours.
 
 Dark-mode values are **not** from the design, which specifies light only. They are
 derived from the same warm-neutral logic and flagged as such in `globals.css`. If a

@@ -282,7 +282,7 @@ function summary(steps: Step[], orgName: string): string {
   if (lookDone) {
     return "Your design is ready. Issue a credential to see it on a real document.";
   }
-  return `You can issue a credential right now on the standard design. The other steps make it look like it came from ${orgName}.`;
+  return `Add your brand so every certificate looks like it’s from ${orgName}.`;
 }
 
 // Per org and per browser: hiding is a viewing preference, not org state, so

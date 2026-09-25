@@ -1008,7 +1008,7 @@ function ChecklistItem({ done, children }: { done: boolean; children: React.Reac
     <li className="flex items-center gap-2.5">
       <span
         className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] ${
-          done ? "bg-accent text-ground" : "bg-well text-faint"
+          done ? "bg-accent text-ground" : "bg-well text-muted"
         }`}
       >
         {done ? "✓" : "·"}

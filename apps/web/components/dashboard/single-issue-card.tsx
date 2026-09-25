@@ -251,7 +251,7 @@ export function SingleIssueCard({ slug, onIssued }: { slug: string; onIssued: ()
           disabled={disabled}
           aria-describedby={disabledReason ? reasonId : undefined}
           title={disabledReason ?? undefined}
-          className="flex items-center gap-2 rounded-lg bg-accent px-6 py-3 font-medium text-ground transition-colors hover:bg-accent-hover disabled:opacity-50"
+          className="flex items-center gap-2 rounded-lg bg-accent px-6 py-3 font-medium text-ground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-well disabled:text-muted disabled:hover:bg-well"
         >
           {submitting ? (
             <>
