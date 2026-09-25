@@ -12,7 +12,9 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandingCard } from "@/components/dashboard/branding-card";
 import { IssueWizard } from "@/components/dashboard/issue-wizard";
 import { DeveloperCard } from "@/components/dashboard/developer-card";
+import { OverviewCard } from "@/components/dashboard/overview-card";
 import { PlanCard } from "@/components/dashboard/plan-card";
+import { RecentCredentialsCard } from "@/components/dashboard/recent-credentials-card";
 import { CredentialsCard } from "@/components/dashboard/credentials-card";
 import { SetupChecklist } from "@/components/dashboard/setup-checklist";
 import { SingleIssueCard } from "@/components/dashboard/single-issue-card";
@@ -61,7 +63,7 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
     ? requestedTab
     : searchParams.get("checkout")
       ? "plan"
-      : "issue";
+      : "overview";
   const selectTab = useCallback(
     (tab: TabId) => {
       const next = new URLSearchParams(searchParams.toString());
@@ -149,6 +151,15 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
                   glanced at another tab, and the credential list has to be
                   mounted to hear `issuedToken` when a batch settles. */}
               <div className="min-w-0 flex-1">
+                <TabPanel id="overview" active={activeTab}>
+                  <OverviewCard
+                    slug={slug}
+                    refreshToken={issuedToken}
+                    onViewCredentials={() => selectTab("credentials")}
+                    onViewPlan={() => selectTab("plan")}
+                  />
+                  <RecentCredentialsCard slug={slug} refreshToken={issuedToken} limit={5} />
+                </TabPanel>
                 <TabPanel id="issue" active={activeTab}>
                   <SingleIssueCard slug={slug} onIssued={handleIssued} />
                   <IssueWizard slug={slug} onIssued={handleIssued} />
@@ -178,6 +189,7 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
 }
 
 const TABS = [
+  { id: "overview", label: "Overview" },
   { id: "issue", label: "Issue" },
   { id: "credentials", label: "Credentials" },
   { id: "templates", label: "Templates" },
