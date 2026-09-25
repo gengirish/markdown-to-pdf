@@ -328,7 +328,9 @@ function DeliveryNote({ delivery }: { delivery: DeliveryState | undefined }) {
       <p className="mt-2 rounded-lg border border-warn-line bg-warn-wash px-3 py-2 text-sm text-warn-ink">
         The credential was issued, but the email did not send
         {delivery.error ? `: ${delivery.error}` : "."}
-        {delivery.may_retry ? " It will be retried automatically." : ""}
+        {/* Not "retried automatically": only the bulk worker queues a retry.
+            Nothing does for a single issuance, so the person has to. */}
+        {delivery.may_retry ? " Resend it from Credentials when the problem is fixed." : ""}
       </p>
     );
   }
