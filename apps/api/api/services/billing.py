@@ -381,3 +381,118 @@ def subscription_summary(org: Organization) -> Optional[dict]:
         "cancel_at_period_end": bool(org.cancel_at_period_end),
         "manageable": bool(org.dodo_customer_id),
     }
+
+
+# ── Recovering a subscription whose webhook never arrived ──────────────────
+
+
+def fetch_subscription(subscription_id: str) -> dict:
+    """A subscription as Dodo holds it now, shaped as a subscription webhook's
+    `data` — the same object, which is what lets `reconcile_subscription`
+    apply it unchanged.
+
+    For a delivery that never happened (no endpoint in that mode, a key that
+    did not match). Dodo can only resend a delivery it attempted, so without
+    this a paid org waits for next month's renewal event to be upgraded.
+    """
+    client = _client()
+    try:
+        subscription = client.subscriptions.retrieve(subscription_id)
+    except _provider_errors() as exc:
+        raise BillingProviderError(str(exc)) from exc
+    # JSON mode, so timestamps arrive as the ISO strings a webhook carries.
+    return subscription.to_dict(mode="json")
+
+
+# ── The join between Dodo and this API ─────────────────────────────────────
+
+#: Where Dodo must deliver. The API host, never the dashboard's: that one
+#: reaches Fly directly, so no Vercel rewrite sits between Dodo and the handler.
+WEBHOOK_PATH = "/api/v1/webhooks/dodo"
+
+#: The subscription events the handler reconciles, as
+#: `scripts/provision_dodo_webhook.py` registers them. An endpoint filtered to
+#: fewer misses the transitions it leaves out — a cancellation that never
+#: arrives keeps a lapsed org on a paid plan.
+REQUIRED_WEBHOOK_EVENTS = (
+    "subscription.active",
+    "subscription.renewed",
+    "subscription.on_hold",
+    "subscription.paused",
+    "subscription.unpaused",
+    "subscription.past_due",
+    "subscription.cancelled",
+    "subscription.failed",
+    "subscription.expired",
+    "subscription.plan_changed",
+)
+
+
+def webhook_url() -> str:
+    return f"{config.CERTFORGE_API_URL}{WEBHOOK_PATH}"
+
+
+def webhook_readiness() -> list[str]:
+    """Whatever stands between a payment and a tier change, or [] if nothing.
+
+    Checks the join, not either half: an endpoint in *the API key's mode*
+    pointing at this host, enabled, subscribed to every event the handler
+    reconciles, and signing with the key this process verifies against.
+    Each half was correct on its own when a live payment succeeded and the
+    org stayed on Community — the endpoint existed in test mode only, so the
+    live payment notified nobody, and nothing had checked the two together.
+
+    Raises BillingUnavailable or BillingProviderError when it cannot ask.
+    Never includes a secret in what it returns.
+    """
+    mode = config.DODO_PAYMENTS_ENVIRONMENT
+    url = webhook_url()
+    fix = "Run scripts/provision_dodo_webhook.py --apply" + (" --live" if mode == "live_mode" else "")
+
+    client = _client()
+    try:
+        endpoints = [
+            endpoint for endpoint in client.webhooks.list()
+            if (endpoint.url or "").rstrip("/") == url
+        ]
+    except _provider_errors() as exc:
+        raise BillingProviderError(str(exc)) from exc
+
+    if not endpoints:
+        return [
+            f"No {mode} webhook endpoint in Dodo delivers to {url}. Payments will "
+            f"succeed and no tier will ever change. {fix}."
+        ]
+    enabled = [endpoint for endpoint in endpoints if not endpoint.disabled]
+    if not enabled:
+        return [f"The {mode} webhook endpoint for {url} is disabled in Dodo. Re-enable it."]
+
+    problems = []
+    # An empty filter is Dodo's "every event".
+    if not any(
+        not endpoint.filter_types or set(REQUIRED_WEBHOOK_EVENTS) <= set(endpoint.filter_types)
+        for endpoint in enabled
+    ):
+        missing = sorted(set(REQUIRED_WEBHOOK_EVENTS) - set(enabled[0].filter_types or []))
+        problems.append(
+            f"The {mode} webhook endpoint for {url} does not subscribe to "
+            f"{', '.join(missing)}. Those transitions will never reach the handler."
+        )
+
+    if not config.DODO_PAYMENTS_WEBHOOK_KEY:
+        problems.append("DODO_PAYMENTS_WEBHOOK_KEY is not set, so every delivery is refused 503.")
+    else:
+        try:
+            secrets = [
+                getattr(client.webhooks.retrieve_secret(endpoint.id), "secret", None)
+                for endpoint in enabled
+            ]
+        except _provider_errors() as exc:
+            raise BillingProviderError(str(exc)) from exc
+        if config.DODO_PAYMENTS_WEBHOOK_KEY not in secrets:
+            problems.append(
+                f"DODO_PAYMENTS_WEBHOOK_KEY is not the signing secret of the {mode} "
+                f"endpoint for {url}, so every delivery is refused 401. {fix} and set "
+                f"the key it prints."
+            )
+    return problems

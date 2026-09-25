@@ -569,6 +569,17 @@ Pro 5, Scale unlimited. Things that follow:
   hosted checkout, and only the signed webhook moves a tier. D4 — an in-app
   plan change — is still missing, so a *downgrade* is done by hand, which now
   means `PUT /api/v1/operator/orgs/{slug}/tier` rather than SQL (see below).
+- **A release refuses to ship a broken webhook join.** The first live payment
+  succeeded and the org stayed on Community: the webhook endpoint existed in
+  *test* mode only, and a live payment notifies live endpoints only.
+  `billing.webhook_readiness()` checks the join — an endpoint in the API key's
+  mode, for this host, enabled, subscribed to every reconciled event, signing
+  with the key Fly holds — and `api.release` fails the deploy on a known
+  problem (`DODO_WEBHOOK_CHECK=warn` overrides; Dodo being unreachable only
+  warns). An org a missed delivery already cost is repaired with
+  `python -m api.reconcile_subscription sub_… [--apply]` on the Fly machine,
+  which runs the webhook's own reconcile — never a hand-set tier, which would
+  leave the subscription unlinked and its cancellation ignored.
 
 **Two plans are sold, and a third is not.** Community (free, 50 a month) and
 Pro (₹1,999, 1,000 a month) are what `tier_catalog()` publishes; Scale is a
