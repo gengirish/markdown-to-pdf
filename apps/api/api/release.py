@@ -54,7 +54,52 @@ async def _apply_queue_schema() -> None:
     logger.info("Procrastinate schema applied.")
 
 
+def _dodo_webhook_ready() -> bool:
+    """False when payments would succeed without ever changing a tier.
+
+    The first live payment did exactly that: the webhook endpoint existed in
+    test mode only, so the live payment notified nobody, and the org stayed on
+    Community with nothing anywhere reporting a fault. Failing the release is
+    the loudest place this process has — it runs on every deploy, with the
+    production secrets, before any traffic reaches the new version.
+
+    Only a *known* problem fails the release. If Dodo cannot be asked (an
+    outage, a network fault, a bug in the check itself) the deploy goes ahead
+    with a warning; a payment provider's bad minute must not block shipping
+    a fix. DODO_WEBHOOK_CHECK=warn downgrades a known problem to a warning,
+    for the deploy that has to go out before the endpoint can be fixed.
+    """
+    from api.core import config
+
+    if not config.DODO_PAYMENTS_API_KEY:
+        logger.info("Dodo is not configured — skipping the webhook check.")
+        return True
+
+    from api.services import billing
+
+    try:
+        problems = billing.webhook_readiness()
+    except Exception as exc:  # noqa: BLE001 — see the docstring: unknown is not a failure
+        logger.warning("Could not check the Dodo webhook (%s). Continuing.", exc)
+        return True
+
+    if not problems:
+        logger.info("Dodo webhook: %s endpoint delivers to %s with the configured key.",
+                    config.DODO_PAYMENTS_ENVIRONMENT, billing.webhook_url())
+        return True
+    for problem in problems:
+        logger.error("Dodo webhook: %s", problem)
+    if os.environ.get("DODO_WEBHOOK_CHECK") == "warn":
+        logger.warning("DODO_WEBHOOK_CHECK=warn — releasing anyway. Paid tiers will not apply.")
+        return True
+    logger.error("Refusing to release. Fix the above, or set DODO_WEBHOOK_CHECK=warn to override.")
+    return False
+
+
 def main() -> int:
+    # First, so a refused release has not already migrated the database.
+    if not _dodo_webhook_ready():
+        return 1
     if not os.environ.get("DATABASE_URL"):
         logger.warning("DATABASE_URL not set — skipping release step.")
         return 0
