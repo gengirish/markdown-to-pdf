@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { buildSteps, nextStep, orderSteps, progressSegments } from "./setup-steps.ts";
+import {
+  buildSteps,
+  checklistMode,
+  nextStep,
+  orderSteps,
+  progressSegments,
+  stepsLeftLabel,
+} from "./setup-steps.ts";
 
 type Branding = Parameters<typeof buildSteps>[0];
 
@@ -46,4 +53,21 @@ test("every 1-done combination fills the first segment only", () => {
     assert.deepEqual(progressSegments(steps), [true, false, false]);
     assert.equal(steps[0].done, true);
   }
+});
+
+test("mode: full card until a credential is issued, however much else is done", () => {
+  assert.equal(checklistMode(checklist(unbranded, 0, 0)), "card");
+  assert.equal(checklistMode(checklist(branded, 0, 0)), "card");
+  assert.equal(checklistMode(checklist(branded, 3, 0)), "card");
+});
+
+test("mode: one-line banner once anything is issued, complete when all done", () => {
+  assert.equal(checklistMode(checklist(unbranded, 0, 1)), "banner");
+  assert.equal(checklistMode(checklist(branded, 0, 1)), "banner");
+  assert.equal(checklistMode(checklist(branded, 1, 1)), "complete");
+});
+
+test("banner label counts the pending steps", () => {
+  assert.equal(stepsLeftLabel(checklist(unbranded, 0, 1)), "2 steps left");
+  assert.equal(stepsLeftLabel(checklist(branded, 0, 1)), "1 step left");
 });

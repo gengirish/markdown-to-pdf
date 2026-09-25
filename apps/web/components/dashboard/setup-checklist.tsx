@@ -5,9 +5,11 @@ import { useEffect, useState } from "react";
 import { type OrgProfile } from "@/lib/api";
 import {
   buildSteps,
+  checklistMode,
   nextStep,
   orderSteps,
   progressSegments,
+  stepsLeftLabel,
   type Counts,
   type Step,
   type StepTab,
@@ -26,6 +28,10 @@ import { buttonClass, Eyebrow } from "./ui";
  *  an org can issue on step one; the other two make the result look like it
  *  came from them. Gating the valuable step behind the cosmetic ones would put
  *  the least important work in front of the only moment that matters.
+ *
+ *  It sits above every tab, so it shrinks once it has done its job: the full
+ *  card only until the first credential is out, then a one-line banner (see
+ *  `checklistMode`), then nothing once every step is done.
  */
 
 export function SetupChecklist({
@@ -69,6 +75,15 @@ export function SetupChecklist({
     return () => controller.abort();
   }, [api, slug, refreshKey]);
 
+  // Every step done retires the checklist for this org in this browser, the
+  // same way dismissing it does — deleting a template later should not bring
+  // a setup card back to an org that finished setting up.
+  const complete =
+    org !== null && counts !== null && checklistMode(buildSteps(org, counts)) === "complete";
+  useEffect(() => {
+    if (complete) writeHidden(slug);
+  }, [complete, slug]);
+
   if (!org || !counts || hidden) return null;
 
   return (
@@ -98,8 +113,12 @@ export function SetupChecklistView({
   onHide: () => void;
 }) {
   const steps = orderSteps(buildSteps(org, counts));
+  const mode = checklistMode(steps);
+  if (mode === "complete") return null;
+  if (mode === "banner") {
+    return <SetupBanner steps={steps} onSelectTab={onSelectTab} onHide={onHide} />;
+  }
   const doneCount = steps.filter((step) => step.done).length;
-  if (doneCount === steps.length) return null;
 
   const nextId = nextStep(steps)?.id;
   const returning = doneCount > 0;
@@ -188,15 +207,62 @@ export function SetupChecklistView({
   );
 }
 
-/** The line under the heading. It has to agree with the steps: telling an org
- *  that has already issued that it "can issue right now" reads as if the
- *  dashboard has not noticed. */
+/** The collapsed checklist: what is left, as links, on one line.
+ *
+ *  Real `?tab=` links, so a step can be opened in a new tab; a plain click
+ *  goes through `onSelectTab`, which keeps the dashboard's other params the
+ *  way the section nav does. */
+function SetupBanner({
+  steps,
+  onSelectTab,
+  onHide,
+}: {
+  steps: Step[];
+  onSelectTab: (tab: StepTab) => void;
+  onHide: () => void;
+}) {
+  const pending = steps.filter((step) => !step.done);
+  return (
+    <section
+      aria-label="Finish setting up"
+      className="mb-8 flex min-h-12 items-center gap-3 rounded-xl border border-hair bg-surface py-2 pl-4 pr-2 shadow-[var(--cf-shadow-card)]"
+    >
+      <p className="min-w-0 flex-1 text-sm text-muted">
+        <span className="font-medium text-ink">{stepsLeftLabel(steps)}:</span>{" "}
+        {pending.map((step, index) => (
+          <span key={step.id}>
+            {index > 0 ? <span aria-hidden className="text-faint"> · </span> : null}
+            <a
+              href={`?tab=${step.id}`}
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+                event.preventDefault();
+                onSelectTab(step.id);
+              }}
+              className="font-medium text-accent underline-offset-2 hover:underline"
+            >
+              {step.cta}
+            </a>
+          </span>
+        ))}
+      </p>
+      <button
+        type="button"
+        onClick={onHide}
+        aria-label="Dismiss setup reminder"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-lg leading-none text-muted transition-colors hover:bg-well hover:text-ink"
+      >
+        <span aria-hidden>×</span>
+      </button>
+    </section>
+  );
+}
+
+/** The line under the heading. It has to agree with the steps. Only the full
+ *  card has one, and the full card only shows before anything is issued — an
+ *  org that has issued gets the banner instead. */
 function summary(steps: Step[], orgName: string): string {
-  const issued = steps.find((step) => step.id === "issue")?.done;
   const lookDone = steps.filter((step) => step.id !== "issue").every((step) => step.done);
-  if (issued) {
-    return `Your first credentials are out. What is left makes the next ones look like they came from ${orgName}.`;
-  }
   if (lookDone) {
     return "Your design is ready. Issue a credential to see it on a real document.";
   }

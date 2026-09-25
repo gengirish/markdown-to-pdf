@@ -85,3 +85,27 @@ export function progressSegments(steps: Step[]): boolean[] {
 export function nextStep(steps: Step[]): Step | undefined {
   return steps.find((step) => !step.done);
 }
+
+/** How much room the checklist takes.
+ *
+ *  - `card`: nothing issued yet. The full checklist, because the org has not
+ *    done the one thing the product is for, and it is the only guidance on
+ *    screen.
+ *  - `banner`: at least one credential out. One line, so every tab's own
+ *    content starts near the top instead of below a 450px card.
+ *  - `complete`: every step done. Nothing renders, and the checklist is
+ *    retired for good — undoing a step later does not bring it back.
+ */
+export type ChecklistMode = "card" | "banner" | "complete";
+
+export function checklistMode(steps: Step[]): ChecklistMode {
+  if (steps.every((step) => step.done)) return "complete";
+  const issued = steps.find((step) => step.id === "issue")?.done ?? false;
+  return issued ? "banner" : "card";
+}
+
+/** "2 steps left", for the banner. */
+export function stepsLeftLabel(steps: Step[]): string {
+  const left = steps.filter((step) => !step.done).length;
+  return `${left} step${left === 1 ? "" : "s"} left`;
+}
