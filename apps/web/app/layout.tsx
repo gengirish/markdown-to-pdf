@@ -45,7 +45,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
+    // Explicit rather than Clerk's default: the dashboard's Sign out now lives
+    // in UserButton's menu, which follows this, where the labelled button
+    // passed its own redirectUrl.
+    <ClerkProvider afterSignOutUrl="/">
       <html
         lang="en"
         suppressHydrationWarning

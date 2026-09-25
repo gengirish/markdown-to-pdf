@@ -6,7 +6,6 @@ import { useSearchParams } from "next/navigation";
 import { SignInButton, useAuth } from "@clerk/nextjs";
 
 import { publicApi, toApiError, type OrgProfile } from "@/lib/api";
-import { ApiStatusBadge } from "@/components/dashboard/api-status-badge";
 import { HeaderAccount } from "@/components/header-account";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandingCard } from "@/components/dashboard/branding-card";
@@ -14,6 +13,7 @@ import { IssueWizard } from "@/components/dashboard/issue-wizard";
 import { DeveloperCard } from "@/components/dashboard/developer-card";
 import { OverviewCard } from "@/components/dashboard/overview-card";
 import { PlanCard } from "@/components/dashboard/plan-card";
+import { RenamePrompt } from "@/components/dashboard/rename-prompt";
 import { RecentCredentialsCard } from "@/components/dashboard/recent-credentials-card";
 import { CredentialsCard } from "@/components/dashboard/credentials-card";
 import { SetupChecklist } from "@/components/dashboard/setup-checklist";
@@ -101,6 +101,23 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
               <>
                 {org.name}
                 <span className="ml-2 text-faint">· {org.tier} plan</span>
+                {org.tier === "community" ? (
+                  <>
+                    <span className="text-faint"> · </span>
+                    <a
+                      href="?tab=plan"
+                      onClick={(event) => {
+                        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+                        event.preventDefault();
+                        selectTab("plan");
+                      }}
+                      className="font-medium text-accent underline-offset-2 hover:underline"
+                    >
+                      Upgrade
+                    </a>
+                  </>
+                ) : null}
+                <RenamePrompt slug={slug} name={org.name} />
               </>
             ) : orgError ? null : (
               <>
@@ -114,9 +131,10 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <ApiStatusBadge />
+          {/* API health lives on the Developers tab now: it is a developer's
+              question, and the header had grown five controls wide. */}
           <ThemeToggle />
-          <HeaderAccount showStudioLink={false} />
+          <HeaderAccount showStudioLink={false} accountMenu />
         </div>
       </header>
 

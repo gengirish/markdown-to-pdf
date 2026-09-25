@@ -10,6 +10,7 @@ import {
   type WebhookSummary,
 } from "@/lib/api";
 import { useCertForge } from "@/lib/use-api";
+import { ApiStatusBadge } from "./api-status-badge";
 import { Card, EmptyNote, ErrorNote, Skeleton, formatDate } from "./ui";
 
 export function DeveloperCard({ slug }: { slug: string }) {
@@ -17,6 +18,7 @@ export function DeveloperCard({ slug }: { slug: string }) {
     <Card
       title="Developer settings"
       description="API keys and webhook endpoints for issuing programmatically."
+      action={<ApiStatusBadge />}
     >
       <div className="space-y-6">
         <ApiKeysPanel slug={slug} />
