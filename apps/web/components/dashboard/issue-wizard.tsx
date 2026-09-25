@@ -101,9 +101,9 @@ function describeProblem(problem: Problem): string {
  *  error naming a single row. Duplicate-email and malformed-email are not
  *  server rules; they are checked because the design this wizard is built
  *  from asked for them and both are honestly checkable from the file alone. */
-function checkRows(parsed: ParsedCsv, template: TemplateSummary | undefined): ParseResult {
+function findProblems(rows: Row[]): Problem[][] {
   const seenEmails = new Map<string, number>();
-  const checked: CheckedRow[] = parsed.rows.map((row, index) => {
+  return rows.map((row, index) => {
     const problems: Problem[] = [];
     const name = (row.name ?? "").trim();
     const title = (row.title ?? "").trim();
@@ -122,8 +122,17 @@ function checkRows(parsed: ParsedCsv, template: TemplateSummary | undefined): Pa
       }
     }
 
-    return { n: index + 1, row, problems };
+    return problems;
   });
+}
+
+function checkRows(parsed: ParsedCsv, template: TemplateSummary | undefined): ParseResult {
+  const found = findProblems(parsed.rows);
+  const checked: CheckedRow[] = parsed.rows.map((row, index) => ({
+    n: index + 1,
+    row,
+    problems: found[index],
+  }));
 
   const missingColumns: string[] = [];
   const caseMismatches: { needed: string; found: string }[] = [];
@@ -285,7 +294,27 @@ export function IssueWizard({ slug, onIssued }: { slug: string; onIssued: () => 
     [edits],
   );
 
-  const includedCount = (result?.checked.length ?? 0) - excluded.size;
+  // Problems are re-checked against the edited rows, not frozen at upload:
+  // a row fixed inline is issuable, and a row still wrong is held back. The
+  // flagged list itself stays as uploaded, so a row does not vanish from the
+  // table mid-edit. A row that still has a problem is never sent — a blank
+  // name or title fails the whole upload server-side, not just that row.
+  const liveProblems = useMemo(() => {
+    const map = new Map<number, Problem[]>();
+    if (!result) return map;
+    const current = findProblems(result.checked.map((r) => edits.get(r.n) ?? r.row));
+    result.checked.forEach((r, i) => map.set(r.n, current[i]));
+    return map;
+  }, [result, edits]);
+
+  const isIssuable = useCallback(
+    (checked: CheckedRow) =>
+      !excluded.has(checked.n) && (liveProblems.get(checked.n)?.length ?? 0) === 0,
+    [excluded, liveProblems],
+  );
+
+  const includedCount = result?.checked.filter(isIssuable).length ?? 0;
+  const heldBackCount = flagged.filter((r) => !isIssuable(r)).length;
 
   // Batch processing is asynchronous server-side; poll until it settles
   // rather than claiming a result the worker has not produced.
@@ -316,9 +345,7 @@ export function IssueWizard({ slug, onIssued }: { slug: string; onIssued: () => 
 
   const startIssuance = useCallback(async () => {
     if (!result || !templateId) return;
-    const rows = result.checked
-      .filter((r) => !excluded.has(r.n))
-      .map((r) => effectiveRow(r));
+    const rows = result.checked.filter(isIssuable).map((r) => effectiveRow(r));
     if (rows.length === 0) return;
 
     const csv = buildCsv(result.parsed.header, rows);
@@ -350,7 +377,7 @@ export function IssueWizard({ slug, onIssued }: { slug: string; onIssued: () => 
     } finally {
       setIssuing(false);
     }
-  }, [api, slug, templateId, result, excluded, effectiveRow, file, advance]);
+  }, [api, slug, templateId, result, isIssuable, effectiveRow, file, advance]);
 
   const startOver = useCallback(() => {
     setFile(null);
@@ -397,6 +424,8 @@ export function IssueWizard({ slug, onIssued }: { slug: string; onIssued: () => 
       {step === 2 && result ? (
         <StepReview
           flagged={flagged}
+          liveProblems={liveProblems}
+          heldBackCount={heldBackCount}
           excluded={excluded}
           effectiveRow={effectiveRow}
           onExclude={(n, value) =>
@@ -439,7 +468,7 @@ export function IssueWizard({ slug, onIssued }: { slug: string; onIssued: () => 
           issueError={issueError}
           startedAt={batchStartedAt}
           hadAnyEmail={Boolean(
-            result?.checked.some((r) => effectiveRow(r).email?.trim() && !excluded.has(r.n)),
+            result?.checked.some((r) => effectiveRow(r).email?.trim() && isIssuable(r)),
           )}
           onSkipToReport={() => batch && TERMINAL_STATUSES.has(batch.status) && advance(4)}
           onBackToReview={() => goTo(2)}
@@ -449,7 +478,7 @@ export function IssueWizard({ slug, onIssued }: { slug: string; onIssued: () => 
       {step === 4 && batch ? (
         <StepReport
           batch={batch}
-          excludedCount={excluded.size}
+          heldBackCount={heldBackCount}
           flaggedTotal={flagged.length}
           onResolveFlagged={() => goTo(2)}
           onStartOver={startOver}
@@ -596,10 +625,11 @@ function StepUpload({
             {result.missingColumns.length > 0 ? (
               <ErrorNote>
                 This template needs{" "}
-                {result.missingColumns.map((c) => (
-                  <Mono key={c} className="text-danger">
-                    {c}
-                  </Mono>
+                {result.missingColumns.map((c, i) => (
+                  <span key={c}>
+                    {i > 0 ? ", " : null}
+                    <Mono className="text-danger">{c}</Mono>
+                  </span>
                 ))}{" "}
                 — {result.missingColumns.length === 1 ? "a column this" : "columns this"} file
                 doesn&apos;t have.
@@ -648,7 +678,7 @@ function StepUpload({
             <Row2 label="Name" value={template.name} />
             <Row2 label="Form" value={template.is_guided ? "Guided" : "Custom HTML"} />
             <Row2
-              label="Extra columns"
+              label="Extra CSV columns"
               value={template.variables.length > 0 ? template.variables.join(", ") : "None"}
             />
           </div>
@@ -659,7 +689,8 @@ function StepUpload({
         <p className="mt-4 text-xs leading-relaxed text-faint">
           Every row needs <Mono>name</Mono> and <Mono>title</Mono> columns, exact lowercase.{" "}
           <Mono>email</Mono> is optional — a row with no address is issued without an attempt to
-          send it anywhere.
+          send it anywhere. The date, credential ID, QR code and issuer name are filled in for
+          you.
         </p>
         {template ? (
           <button
@@ -706,6 +737,8 @@ function Row2({ label, value }: { label: string; value: string }) {
 
 function StepReview({
   flagged,
+  liveProblems,
+  heldBackCount,
   excluded,
   effectiveRow,
   onExclude,
@@ -719,6 +752,8 @@ function StepReview({
   issuing,
 }: {
   flagged: CheckedRow[];
+  liveProblems: Map<number, Problem[]>;
+  heldBackCount: number;
   excluded: Set<number>;
   effectiveRow: (row: CheckedRow) => Row;
   onExclude: (n: number, value: boolean) => void;
@@ -784,6 +819,7 @@ function StepReview({
             <tr className="border-b border-hair-soft bg-sunken text-left text-xs uppercase tracking-[0.06em] text-faint">
               <th className="w-12 px-3 py-2.5 font-medium">Row</th>
               <th className="px-3 py-2.5 font-medium">Name</th>
+              <th className="px-3 py-2.5 font-medium">Title</th>
               <th className="px-3 py-2.5 font-medium">Email</th>
               <th className="px-3 py-2.5 font-medium">Problem</th>
               <th className="w-24 px-3 py-2.5 font-medium">Exclude</th>
@@ -793,6 +829,7 @@ function StepReview({
             {flagged.map((r) => {
               const row = effectiveRow(r);
               const isOut = excluded.has(r.n);
+              const problems = liveProblems.get(r.n) ?? [];
               return (
                 <tr
                   key={r.n}
@@ -809,14 +846,24 @@ function StepReview({
                   </td>
                   <td className="px-3 py-2">
                     <input
+                      value={row.title ?? ""}
+                      disabled={isOut}
+                      onChange={(e) => onEdit(r.n, { title: e.target.value })}
+                      className="w-full rounded border border-hair bg-surface px-2 py-1 text-xs text-ink focus:border-accent focus:outline-none"
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <input
                       value={row.email ?? ""}
                       disabled={isOut}
                       onChange={(e) => onEdit(r.n, { email: e.target.value })}
                       className="w-full rounded border border-hair bg-surface px-2 py-1 font-mono text-xs text-ink focus:border-accent focus:outline-none"
                     />
                   </td>
-                  <td className="px-3 py-2 text-xs text-warn-ink">
-                    {r.problems.map(describeProblem).join("; ")}
+                  <td
+                    className={`px-3 py-2 text-xs ${problems.length > 0 ? "text-warn-ink" : "text-accent"}`}
+                  >
+                    {problems.length > 0 ? problems.map(describeProblem).join("; ") : "Fixed"}
                   </td>
                   <td className="px-3 py-2 text-center">
                     <input
@@ -838,6 +885,9 @@ function StepReview({
           <span className="font-medium text-ink">{includedCount}</span> row
           {includedCount === 1 ? "" : "s"} will be issued against{" "}
           <span className="font-medium text-ink">{templateName || "this template"}</span>.
+          {heldBackCount > 0
+            ? ` ${heldBackCount} flagged row${heldBackCount === 1 ? " is" : "s are"} held back until fixed or excluded.`
+            : ""}
         </div>
         <div className="flex gap-3">
           <button type="button" onClick={onBack} className={buttonClass("quiet")}>
@@ -984,13 +1034,13 @@ function ChecklistItem({ done, children }: { done: boolean; children: React.Reac
 
 function StepReport({
   batch,
-  excludedCount,
+  heldBackCount,
   flaggedTotal,
   onResolveFlagged,
   onStartOver,
 }: {
   batch: BatchStatus;
-  excludedCount: number;
+  heldBackCount: number;
   flaggedTotal: number;
   onResolveFlagged: () => void;
   onStartOver: () => void;
@@ -1058,11 +1108,11 @@ function StepReport({
         </div>
       </div>
 
-      {excludedCount > 0 ? (
+      {heldBackCount > 0 ? (
         <div className="mt-4 flex items-center justify-between rounded-lg border border-warn-line bg-warn-wash px-5 py-4">
           <p className="text-sm text-warn-ink">
-            {excludedCount} of {flaggedTotal} flagged row{flaggedTotal === 1 ? "" : "s"} were held
-            back and not issued.
+            {heldBackCount} of {flaggedTotal} flagged row{flaggedTotal === 1 ? "" : "s"}{" "}
+            {heldBackCount === 1 ? "was" : "were"} held back and not issued.
           </p>
           <button
             type="button"

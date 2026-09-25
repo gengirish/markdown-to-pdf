@@ -291,6 +291,7 @@ def seed():
     from api.models import get_db, init_db
     from api.models.organization import Organization, OrgMember
     from api.models.template import Template
+    from api.services.templates import custom_placeholders
 
     logger.info("Initializing database tables...")
     init_db()
@@ -316,7 +317,9 @@ def seed():
                     org_id=None,
                     name=tpl_data["name"],
                     html_source=tpl_data["html_source"],
-                    variables=tpl_data["variables"],
+                    # Only what a CSV must supply, the rule every other
+                    # writer uses. The lists above name builtins too.
+                    variables=sorted(custom_placeholders(tpl_data["html_source"])),
                     is_default=True,
                 )
                 session.add(tpl)

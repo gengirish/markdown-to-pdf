@@ -476,6 +476,21 @@ def issuer_profile(slug: str, request: Request):
     """)
 
 
+def _failure_page(heading: str, message: str, status_code: int) -> HTMLResponse:
+    """A verification failure as a whole document. It used to be a bare
+    fragment, so the tab showed the raw URL — for a page someone reaches by
+    scanning a QR code, the title is most of what they read."""
+    safe_heading = html.escape(heading)
+    return HTMLResponse(
+        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<meta name="robots" content="noindex">'
+        f"<title>{safe_heading} · CertForge</title></head>"
+        f"<body><h1>{safe_heading}</h1><p>{html.escape(message)}</p></body></html>",
+        status_code=status_code,
+    )
+
+
 @public_router.get("/verify/{credential_id}", response_class=HTMLResponse)
 async def verify_page(credential_id: str, request: Request):
     """HTML public viewer for a credential."""
@@ -484,15 +499,12 @@ async def verify_page(credential_id: str, request: Request):
     except SignatureMismatch:
         # A person is reading this one, so it answers in HTML — and says which
         # of the two failures happened, rather than the generic 404 below.
-        return HTMLResponse(
-            "<h1>Credential Could Not Be Verified</h1>"
-            f"<p>{html.escape(SIGNATURE_MISMATCH_MESSAGE)}</p>",
-            status_code=409,
+        return _failure_page(
+            "Credential Could Not Be Verified", SIGNATURE_MISMATCH_MESSAGE, 409
         )
     if not data:
-        return HTMLResponse(
-            "<h1>Invalid or Revoked Credential</h1><p>This credential could not be verified.</p>",
-            status_code=404,
+        return _failure_page(
+            "Invalid or Revoked Credential", "This credential could not be verified.", 404
         )
 
     # Legacy tokens already have a full viewer at /certificate/{token} — QR

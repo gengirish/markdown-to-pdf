@@ -297,6 +297,32 @@ def test_declared_variables_track_the_source(client, db_session):
     assert r.json()["data"]["variables"] == ["grade"]
 
 
+def test_a_listed_template_asks_only_for_columns_a_csv_must_supply(client, db_session):
+    """The seeded defaults stored builtins in `variables`, and the cohort
+    wizard asked for `date`, `credential_id`, `qr` and `issuer_name` as CSV
+    columns on every one of them. The listing derives the field from the
+    source, so a stale column cannot reach the wizard."""
+    db_session.add(Template(
+        org_id=None,
+        name="Seeded Style",
+        html_source="<p>{{name}} {{title}} {{date}} {{qr}} {{credential_id}} {{cohort}}</p>",
+        variables=["name", "title", "date", "qr", "credential_id", "cohort"],
+        is_default=True,
+    ))
+    db_session.commit()
+
+    listed = client.get("/api/v1/templates").json()["data"]
+    [seeded] = [t for t in listed if t["name"] == "Seeded Style"]
+    assert seeded["variables"] == ["cohort"]
+
+
+def test_the_built_in_templates_need_no_extra_csv_columns():
+    from api.seed import DEFAULT_TEMPLATES
+
+    for tpl in DEFAULT_TEMPLATES:
+        assert custom_placeholders(tpl["html_source"]) == set(), tpl["name"]
+
+
 # -- default, import, delete ---------------------------------------------------
 
 def test_setting_a_default_clears_the_previous_one(client, db_session):

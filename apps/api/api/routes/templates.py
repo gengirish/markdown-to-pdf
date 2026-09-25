@@ -144,7 +144,12 @@ def _summary(t: Template) -> dict:
     return {
         "id": str(t.id),
         "name": t.name,
-        "variables": t.variables,
+        # Derived from the source, not read from the column. The seeded
+        # defaults stored every placeholder there, builtins included, so the
+        # cohort wizard asked for `date`, `qr` and `credential_id` as CSV
+        # columns on every built-in template. What a CSV must supply is
+        # exactly custom_placeholders(), the same rule create/update write.
+        "variables": sorted(custom_placeholders(t.html_source or "")),
         "is_default": t.is_default,
         # Whether the guided form can reopen this one. The UI needs to know
         # before offering an editor that would overwrite hand-written HTML.

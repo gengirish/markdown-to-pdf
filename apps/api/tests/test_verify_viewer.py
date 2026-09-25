@@ -470,3 +470,12 @@ def test_an_unparseable_issue_date_does_not_break_the_page():
     assert format_issued_date(None) == ""
     assert format_issued_date("2026-09-03T08:13:00.145119+00:00") == "September 03, 2026"
     assert format_issued_date("2026-09-03T08:13:00Z") == "September 03, 2026"
+
+
+def test_an_unknown_credential_page_has_a_title(client):
+    """The failure page used to be a bare fragment, so the tab showed the raw
+    URL. Parsed, not substring-checked: an empty <title></title> must fail."""
+    res = client.get("/verify/CF-2026-ZZZZZZZZ")
+    assert res.status_code == 404
+    m = re.search(r"<title>([^<]*)</title>", res.text)
+    assert m and "Invalid or Revoked Credential" in m.group(1)
