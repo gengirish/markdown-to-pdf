@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { type OrgProfile } from "@/lib/api";
 import {
@@ -49,14 +49,21 @@ export function SetupChecklist({
 }) {
   const api = useCertForge();
   const [counts, setCounts] = useState<Counts | null>(null);
-  const [hidden, setHidden] = useState(false);
-
-  // Read after mount, never in a lazy initializer: the server has no storage,
-  // and a first render that differs between the two passes is a hydration
-  // mismatch (see apps/web/CLAUDE.md, "Theme").
-  useEffect(() => {
-    setHidden(readHidden(slug));
-  }, [slug]);
+  const [failed, setFailed] = useState(false);
+  // Storage through useSyncExternalStore, never a lazy initializer: the
+  // server has no storage, and a first render that differs between the two
+  // passes is a hydration mismatch (see apps/web/CLAUDE.md, "Theme"). The
+  // server snapshot is null — "not read yet" — and React swaps in the real
+  // value before the first paint, so a dismissed checklist never flashes its
+  // placeholder. Nothing else writes the key, so there is nothing to subscribe
+  // to; a dismissal in this tab goes through `dismissed`.
+  const stored = useSyncExternalStore(
+    noSubscription,
+    () => readHidden(slug),
+    () => null,
+  );
+  const [dismissed, setDismissed] = useState(false);
+  const hidden = dismissed || stored;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -64,13 +71,16 @@ export function SetupChecklist({
       api.listOrgTemplates(slug, controller.signal),
       api.listOrgCredentials(slug, { limit: 1 }, controller.signal),
     ])
-      .then(([templates, credentials]) =>
-        setCounts({ templates: templates.length, credentials: credentials.total }),
-      )
+      .then(([templates, credentials]) => {
+        setCounts({ templates: templates.length, credentials: credentials.total });
+        setFailed(false);
+      })
       // Guidance, not data: a failed load hides the checklist rather than
       // guessing at progress. The cards below report their own errors.
       .catch(() => {
-        if (!controller.signal.aborted) setCounts(null);
+        if (controller.signal.aborted) return;
+        setCounts(null);
+        setFailed(true);
       });
     return () => controller.abort();
   }, [api, slug, refreshKey]);
@@ -84,7 +94,13 @@ export function SetupChecklist({
     if (complete) writeHidden(slug);
   }, [complete, slug]);
 
-  if (!org || !counts || hidden) return null;
+  if (hidden !== false || failed) return null;
+  // Hold the banner's height while progress loads, so the tab below does not
+  // jump when it arrives. The banner is the likelier outcome for anyone
+  // coming back; a brand-new org, which gets the full card, grows from here.
+  if (!org || !counts) {
+    return <div aria-hidden className="mb-8 h-12 animate-pulse rounded-xl bg-well" />;
+  }
 
   return (
     <SetupChecklistView
@@ -93,7 +109,7 @@ export function SetupChecklist({
       onSelectTab={onSelectTab}
       onHide={() => {
         writeHidden(slug);
-        setHidden(true);
+        setDismissed(true);
       }}
     />
   );
@@ -272,6 +288,8 @@ function summary(steps: Step[], orgName: string): string {
 // Per org and per browser: hiding is a viewing preference, not org state, so
 // it does not belong in the API. Storage can throw (private mode, blocked
 // site data); the checklist then simply shows, which is the safe default.
+const noSubscription = () => () => {};
+
 const hiddenKey = (slug: string) => `certforge:setup-checklist-hidden:${slug}`;
 
 function readHidden(slug: string): boolean {

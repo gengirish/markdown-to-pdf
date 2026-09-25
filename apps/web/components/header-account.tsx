@@ -49,7 +49,12 @@ export function HeaderAccount({ showStudioLink = true }: { showStudioLink?: bool
           Open {organization.name} Studio
         </Link>
       ) : null}
-      <UserButton />
+      {/* UserButton renders nothing until Clerk's UI bundle arrives, then a
+          28px avatar. The fixed slot keeps Sign out from sliding left when
+          it does; the avatar paints over the placeholder circle. */}
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-well">
+        <UserButton />
+      </span>
       <SignOutButton redirectUrl="/">
         <button className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-well hover:text-ink">
           Sign out

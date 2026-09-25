@@ -42,7 +42,9 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
         if (controller.signal.aborted) return;
         const error = toApiError(err);
         setOrgError(
-          error.isNotFound ? `No organization with the slug “${slug}”.` : error.message,
+          error.isNotFound
+            ? "This organization does not exist, or its address has changed."
+            : error.message,
         );
       });
     return () => controller.abort();
@@ -89,9 +91,24 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
           <h1 className="mb-2 text-3xl font-semibold tracking-tight text-ink">
             Credential Studio
           </h1>
-          <p className="text-muted">
-            {org ? org.name : slug}
-            {org ? <span className="ml-2 text-faint">· {org.tier} plan</span> : null}
+          {/* Never the slug: it is an address, often an auto-generated one
+              like `acme-s-organization-1790…`, not a name. A placeholder bar
+              holds the line until the real name arrives. */}
+          <p className="min-h-6 text-muted">
+            {org ? (
+              <>
+                {org.name}
+                <span className="ml-2 text-faint">· {org.tier} plan</span>
+              </>
+            ) : orgError ? null : (
+              <>
+                <span
+                  aria-hidden
+                  className="inline-block h-4 w-56 animate-pulse rounded bg-well align-middle"
+                />
+                <span className="sr-only">Loading organization</span>
+              </>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -109,18 +126,21 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
         ) : null}
 
         {!isSignedIn ? (
-          <SignInPrompt slug={slug} />
+          <SignInPrompt orgName={org?.name ?? null} />
         ) : (
           <>
             {/* Refetches on a settled batch and on every tab change — the
                 templates card has no callback, and leaving its tab is the
                 moment a new template can have appeared. */}
-            <SetupChecklist
-              slug={slug}
-              org={org}
-              refreshKey={`${issuedToken}:${activeTab}`}
-              onSelectTab={selectTab}
-            />
+            {orgError ? null : (
+              <SetupChecklist
+                key={slug}
+                slug={slug}
+                org={org}
+                refreshKey={`${issuedToken}:${activeTab}`}
+                onSelectTab={selectTab}
+              />
+            )}
             <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
               <SectionNav active={activeTab} onSelect={selectTab} />
 
@@ -212,12 +232,13 @@ function TabPanel({ id, active, children }: { id: TabId; active: TabId; children
   );
 }
 
-function SignInPrompt({ slug }: { slug: string }) {
+function SignInPrompt({ orgName }: { orgName: string | null }) {
   return (
     <div className="mx-auto max-w-md rounded-2xl border border-hair bg-surface p-8 text-center">
       <h2 className="text-xl font-medium text-ink">Sign in to continue</h2>
       <p className="mt-2 text-sm text-muted">
-        The Credential Studio for {slug} is only visible to members of the organization.
+        The Credential Studio for {orgName ?? "this organization"} is only visible to members
+        of the organization.
       </p>
       <div className="mt-6 flex flex-col gap-3">
         <SignInButton mode="modal">
