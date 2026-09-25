@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  resolveApiBaseUrl,
   toApiError,
   type ApiKeySummary,
   type CreatedApiKey,
@@ -11,7 +12,7 @@ import {
 } from "@/lib/api";
 import { useCertForge } from "@/lib/use-api";
 import { ApiStatusBadge } from "./api-status-badge";
-import { Card, EmptyNote, ErrorNote, Skeleton, formatDate } from "./ui";
+import { Card, EmptyNote, ErrorNote, Skeleton, buttonClass, formatDate } from "./ui";
 
 export function DeveloperCard({ slug }: { slug: string }) {
   return (
@@ -112,9 +113,10 @@ function ApiKeysPanel({ slug }: { slug: string }) {
       title="API keys"
       action={
         <button
+          type="button"
           onClick={generate}
           disabled={busy}
-          className="rounded-md bg-accent px-3 py-1.5 text-sm text-ground transition-colors hover:bg-accent-hover disabled:opacity-50"
+          className={buttonClass("primary", "sm")}
         >
           Generate new key
         </button>
@@ -139,10 +141,17 @@ function ApiKeysPanel({ slug }: { slug: string }) {
 
       {error ? <ErrorNote>{error}</ErrorNote> : null}
 
+      {created ? <Quickstart slug={slug} apiKey={created.raw_key} /> : null}
+
       {keys === null ? (
         <Skeleton rows={2} />
       ) : keys.length === 0 ? (
-        !error ? <EmptyNote>No active API keys.</EmptyNote> : null
+        !error ? (
+          <>
+            <EmptyNote>No active API keys. Generate one to issue from your own code.</EmptyNote>
+            {created ? null : <Quickstart slug={slug} />}
+          </>
+        ) : null
       ) : (
         keys.map((key) => (
           <div key={key.id} className="flex items-center justify-between gap-4 text-sm">
@@ -236,8 +245,10 @@ function WebhooksPanel({ slug }: { slug: string }) {
       title="Webhook endpoints"
       action={
         <button
+          type="button"
           onClick={() => setAdding((current) => !current)}
-          className="rounded-md bg-well px-3 py-1.5 text-sm text-ink transition-colors hover:bg-well"
+          aria-expanded={adding}
+          className={`${buttonClass("secondary", "sm")} bg-surface`}
         >
           {adding ? "Cancel" : "Add endpoint"}
         </button>
@@ -283,7 +294,16 @@ function WebhooksPanel({ slug }: { slug: string }) {
       {webhooks === null ? (
         <Skeleton rows={1} />
       ) : webhooks.length === 0 ? (
-        !error ? <EmptyNote>No webhook endpoints registered.</EmptyNote> : null
+        !error ? (
+          <div className="space-y-2">
+            <EmptyNote>
+              No webhook endpoints registered. Add one to be told when a credential is issued.
+            </EmptyNote>
+            <p className="text-sm text-muted">
+              Registering and removing endpoints over the API is in the <DocsLink />.
+            </p>
+          </div>
+        ) : null
       ) : (
         webhooks.map((webhook) => (
           <div key={webhook.id} className="flex items-center justify-between gap-4 text-sm">
@@ -304,5 +324,66 @@ function WebhooksPanel({ slug }: { slug: string }) {
         ))
       )}
     </Panel>
+  );
+}
+
+/** The API reference: FastAPI's interactive docs on the API host, which are
+ *  generated from the routes themselves and so cannot describe an endpoint
+ *  that does not exist. */
+function DocsLink() {
+  return (
+    <a
+      href={`${resolveApiBaseUrl()}/docs`}
+      target="_blank"
+      rel="noreferrer"
+      className="font-medium text-accent underline-offset-2 hover:underline"
+    >
+      API reference
+    </a>
+  );
+}
+
+/** A request that works as pasted: this org's slug, the real API host and,
+ *  straight after a key is generated, that key. Before then the key is a
+ *  visible placeholder rather than anything that looks like a real value. */
+function Quickstart({ slug, apiKey }: { slug: string; apiKey?: string }) {
+  const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
+  const command = [
+    `curl -X POST ${resolveApiBaseUrl()}/api/v1/orgs/${slug}/credentials \\`,
+    `  -H "Authorization: Bearer ${apiKey ?? "cf_live_YOUR_KEY"}" \\`,
+    `  -H "Content-Type: application/json" \\`,
+    `  -d '{"recipient_name": "Ada Lovelace", "title": "Analytical Engines", "recipient_email": "ada@example.com", "send_email": true}'`,
+  ].join("\n");
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied("copied");
+    } catch {
+      setCopied("failed");
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-hair">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hair px-3 py-2">
+        <p className="text-sm font-medium text-ink">Issue a credential with one request</p>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted" aria-live="polite">
+            {copied === "copied" ? "Copied" : copied === "failed" ? "Copy blocked by the browser" : ""}
+          </span>
+          <button type="button" onClick={copy} className={buttonClass("secondary", "sm")}>
+            Copy
+          </button>
+        </div>
+      </div>
+      <pre className="overflow-x-auto px-3 py-3 font-mono text-xs leading-relaxed text-ink">
+        <code>{command}</code>
+      </pre>
+      <p className="border-t border-hair px-3 py-2 text-xs text-muted">
+        Use a <span className="font-mono">cf_test_</span> key to try it without emailing anyone.
+        Every field is in the <DocsLink />.
+      </p>
+    </div>
   );
 }
