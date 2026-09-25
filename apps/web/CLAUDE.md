@@ -107,6 +107,13 @@ file alone**.
 - Header case is preserved exactly, because `DictReader` keys on the literal text.
 - Excluding or editing a row **rebuilds the CSV client-side** before it is sent,
   since the server has no per-row skip.
+- Problems are **re-checked on the edited rows**, and a row that still has one is
+  held back — never sent. The "Sign and issue N" count is the rows that will
+  actually go; it used to count every non-excluded row, flagged ones included,
+  and a blank title fails the whole upload server-side.
+- The required-columns check reads `template.variables`, which the API derives
+  from the HTML minus builtins. The seeded defaults stored builtins in that
+  column, and the wizard demanded `date`/`qr`/`credential_id` as CSV columns.
 - **A fabricated problem is worse than a missed one.** Two checks the source design
   asked for are deliberately absent — "domain has no MX record" (no DNS capability
   exists here) and "already issued" (no email-search endpoint exists). What is

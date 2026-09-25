@@ -47,6 +47,11 @@ export function SingleIssueCard({ slug, onIssued }: { slug: string; onIssued: ()
     };
   }, [api, slug]);
 
+  // The box means nothing without an address to send to, so it is disabled
+  // until there is one and ignored if the address is cleared after ticking it.
+  const hasEmail = recipientEmail.trim() !== "";
+  const willSend = sendEmail && hasEmail;
+
   const issue = useCallback(async () => {
     if (!recipientName || !title) return;
     setSubmitting(true);
@@ -57,7 +62,7 @@ export function SingleIssueCard({ slug, onIssued }: { slug: string; onIssued: ()
         title,
         recipientEmail: recipientEmail || undefined,
         templateId: templateId || undefined,
-        sendEmail,
+        sendEmail: willSend,
       });
       setResult(issued);
       setRecipientName("");
@@ -69,9 +74,10 @@ export function SingleIssueCard({ slug, onIssued }: { slug: string; onIssued: ()
     } finally {
       setSubmitting(false);
     }
-  }, [api, slug, recipientName, title, recipientEmail, templateId, sendEmail, onIssued]);
+  }, [api, slug, recipientName, title, recipientEmail, templateId, willSend, onIssued]);
 
-  const disabled = !recipientName || !title || submitting;
+  const missing = [!recipientName && "a recipient name", !title && "a title"].filter(Boolean);
+  const disabled = missing.length > 0 || submitting;
 
   return (
     <Card
@@ -131,17 +137,24 @@ export function SingleIssueCard({ slug, onIssued }: { slug: string; onIssued: ()
         ) : null}
       </div>
 
-      <label className="mt-4 flex items-center gap-2 text-sm text-ink">
+      <label
+        className={`mt-4 flex items-center gap-2 text-sm ${hasEmail ? "text-ink" : "text-faint"}`}
+      >
         <input
           type="checkbox"
-          checked={sendEmail}
+          checked={willSend}
+          disabled={!hasEmail}
           onChange={(event) => setSendEmail(event.target.checked)}
           className="h-4 w-4 rounded border-hair-strong bg-surface text-accent focus:ring-accent"
         />
         Send email to recipient
+        {hasEmail ? null : <span className="text-xs">— add an email address first</span>}
       </label>
 
-      <div className="mt-6 flex justify-end">
+      <div className="mt-6 flex items-center justify-end gap-4">
+        {missing.length > 0 && !submitting ? (
+          <p className="text-xs text-faint">Add {missing.join(" and ")} to issue.</p>
+        ) : null}
         <button
           onClick={issue}
           disabled={disabled}

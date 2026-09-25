@@ -1,8 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { type OrgProfile } from "@/lib/api";
+import {
+  buildSteps,
+  checklistMode,
+  nextStep,
+  orderSteps,
+  progressSegments,
+  stepsLeftLabel,
+  type Counts,
+  type Step,
+  type StepTab,
+} from "@/lib/setup-steps";
 import { useCertForge } from "@/lib/use-api";
 import { buttonClass, Eyebrow } from "./ui";
 
@@ -17,23 +28,11 @@ import { buttonClass, Eyebrow } from "./ui";
  *  an org can issue on step one; the other two make the result look like it
  *  came from them. Gating the valuable step behind the cosmetic ones would put
  *  the least important work in front of the only moment that matters.
+ *
+ *  It sits above every tab, so it shrinks once it has done its job: the full
+ *  card only until the first credential is out, then a one-line banner (see
+ *  `checklistMode`), then nothing once every step is done.
  */
-
-type StepTab = "branding" | "templates" | "issue";
-
-interface Step {
-  id: StepTab;
-  label: string;
-  body: string;
-  done: boolean;
-  detail: string | null;
-  cta: string;
-}
-
-export interface Counts {
-  templates: number;
-  credentials: number;
-}
 
 export function SetupChecklist({
   slug,
@@ -50,14 +49,21 @@ export function SetupChecklist({
 }) {
   const api = useCertForge();
   const [counts, setCounts] = useState<Counts | null>(null);
-  const [hidden, setHidden] = useState(false);
-
-  // Read after mount, never in a lazy initializer: the server has no storage,
-  // and a first render that differs between the two passes is a hydration
-  // mismatch (see apps/web/CLAUDE.md, "Theme").
-  useEffect(() => {
-    setHidden(readHidden(slug));
-  }, [slug]);
+  const [failed, setFailed] = useState(false);
+  // Storage through useSyncExternalStore, never a lazy initializer: the
+  // server has no storage, and a first render that differs between the two
+  // passes is a hydration mismatch (see apps/web/CLAUDE.md, "Theme"). The
+  // server snapshot is null — "not read yet" — and React swaps in the real
+  // value before the first paint, so a dismissed checklist never flashes its
+  // placeholder. Nothing else writes the key, so there is nothing to subscribe
+  // to; a dismissal in this tab goes through `dismissed`.
+  const stored = useSyncExternalStore(
+    noSubscription,
+    () => readHidden(slug),
+    () => null,
+  );
+  const [dismissed, setDismissed] = useState(false);
+  const hidden = dismissed || stored;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -65,18 +71,36 @@ export function SetupChecklist({
       api.listOrgTemplates(slug, controller.signal),
       api.listOrgCredentials(slug, { limit: 1 }, controller.signal),
     ])
-      .then(([templates, credentials]) =>
-        setCounts({ templates: templates.length, credentials: credentials.total }),
-      )
+      .then(([templates, credentials]) => {
+        setCounts({ templates: templates.length, credentials: credentials.total });
+        setFailed(false);
+      })
       // Guidance, not data: a failed load hides the checklist rather than
       // guessing at progress. The cards below report their own errors.
       .catch(() => {
-        if (!controller.signal.aborted) setCounts(null);
+        if (controller.signal.aborted) return;
+        setCounts(null);
+        setFailed(true);
       });
     return () => controller.abort();
   }, [api, slug, refreshKey]);
 
-  if (!org || !counts || hidden) return null;
+  // Every step done retires the checklist for this org in this browser, the
+  // same way dismissing it does — deleting a template later should not bring
+  // a setup card back to an org that finished setting up.
+  const complete =
+    org !== null && counts !== null && checklistMode(buildSteps(org, counts)) === "complete";
+  useEffect(() => {
+    if (complete) writeHidden(slug);
+  }, [complete, slug]);
+
+  if (hidden !== false || failed) return null;
+  // Hold the banner's height while progress loads, so the tab below does not
+  // jump when it arrives. The banner is the likelier outcome for anyone
+  // coming back; a brand-new org, which gets the full card, grows from here.
+  if (!org || !counts) {
+    return <div aria-hidden className="mb-8 h-12 animate-pulse rounded-xl bg-well" />;
+  }
 
   return (
     <SetupChecklistView
@@ -85,7 +109,7 @@ export function SetupChecklist({
       onSelectTab={onSelectTab}
       onHide={() => {
         writeHidden(slug);
-        setHidden(true);
+        setDismissed(true);
       }}
     />
   );
@@ -104,11 +128,15 @@ export function SetupChecklistView({
   onSelectTab: (tab: StepTab) => void;
   onHide: () => void;
 }) {
-  const steps = buildSteps(org, counts);
+  const steps = orderSteps(buildSteps(org, counts));
+  const mode = checklistMode(steps);
+  if (mode === "complete") return null;
+  if (mode === "banner") {
+    return <SetupBanner steps={steps} onSelectTab={onSelectTab} onHide={onHide} />;
+  }
   const doneCount = steps.filter((step) => step.done).length;
-  if (doneCount === steps.length) return null;
 
-  const nextId = steps.find((step) => !step.done)?.id;
+  const nextId = nextStep(steps)?.id;
   const returning = doneCount > 0;
 
   return (
@@ -140,12 +168,10 @@ export function SetupChecklistView({
 
       {/* Progress as a shape, not only a sentence. */}
       <div className="mt-6 flex gap-1.5" aria-hidden>
-        {steps.map((step) => (
+        {progressSegments(steps).map((filled, index) => (
           <div
-            key={step.id}
-            className={`h-1.5 flex-1 rounded-full ${
-              step.done ? "bg-accent" : step.id === nextId ? "bg-accent-line" : "bg-well"
-            }`}
+            key={index}
+            className={`h-1.5 flex-1 rounded-full ${filled ? "bg-accent" : "bg-well"}`}
           />
         ))}
       </div>
@@ -197,52 +223,62 @@ export function SetupChecklistView({
   );
 }
 
-export function buildSteps(org: OrgProfile, counts: Counts): Step[] {
-  // Only what reaches the certificate counts as branding. `logo_url` is an
-  // external address the PDF renderer refuses to fetch, so an org that set
-  // only that has changed its public page, not its documents.
-  const branded = Boolean(
-    org.logo_asset_id || org.primary_color || org.accent_color || org.footer_text,
+/** The collapsed checklist: what is left, as links, on one line.
+ *
+ *  Real `?tab=` links, so a step can be opened in a new tab; a plain click
+ *  goes through `onSelectTab`, which keeps the dashboard's other params the
+ *  way the section nav does. */
+function SetupBanner({
+  steps,
+  onSelectTab,
+  onHide,
+}: {
+  steps: Step[];
+  onSelectTab: (tab: StepTab) => void;
+  onHide: () => void;
+}) {
+  const pending = steps.filter((step) => !step.done);
+  return (
+    <section
+      aria-label="Finish setting up"
+      className="mb-8 flex min-h-12 items-center gap-3 rounded-xl border border-hair bg-surface py-2 pl-4 pr-2 shadow-[var(--cf-shadow-card)]"
+    >
+      <p className="min-w-0 flex-1 text-sm text-muted">
+        <span className="font-medium text-ink">{stepsLeftLabel(steps)}:</span>{" "}
+        {pending.map((step, index) => (
+          <span key={step.id}>
+            {index > 0 ? <span aria-hidden className="text-faint"> · </span> : null}
+            <a
+              href={`?tab=${step.id}`}
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+                event.preventDefault();
+                onSelectTab(step.id);
+              }}
+              className="font-medium text-accent underline-offset-2 hover:underline"
+            >
+              {step.cta}
+            </a>
+          </span>
+        ))}
+      </p>
+      <button
+        type="button"
+        onClick={onHide}
+        aria-label="Dismiss setup reminder"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-lg leading-none text-muted transition-colors hover:bg-well hover:text-ink"
+      >
+        <span aria-hidden>×</span>
+      </button>
+    </section>
   );
-  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-
-  return [
-    {
-      id: "branding",
-      label: "Add your logo and colours",
-      body: "Upload a logo and set your colours. They print on every certificate and show on the public verify page.",
-      done: branded,
-      detail: org.logo_asset_id ? "Logo uploaded." : "Colours set. A logo would print on every certificate too.",
-      cta: branded ? "Edit branding" : "Add branding",
-    },
-    {
-      id: "templates",
-      label: "Choose a certificate design",
-      body: "Start from a ready-made design, build one with the guided form, or upload your own artwork and place the fields on it.",
-      done: counts.templates > 0,
-      detail: `${plural(counts.templates, "template")} in your library.`,
-      cta: counts.templates > 0 ? "View templates" : "Choose a design",
-    },
-    {
-      id: "issue",
-      label: "Issue your first credential",
-      body: "Issue one to a single person, or upload a CSV for a whole cohort. Each gets a verify link, a PDF and an Open Badge.",
-      done: counts.credentials > 0,
-      detail: `${plural(counts.credentials, "credential")} issued.`,
-      cta: counts.credentials > 0 ? "Issue more" : "Issue a credential",
-    },
-  ];
 }
 
-/** The line under the heading. It has to agree with the steps: telling an org
- *  that has already issued that it "can issue right now" reads as if the
- *  dashboard has not noticed. */
+/** The line under the heading. It has to agree with the steps. Only the full
+ *  card has one, and the full card only shows before anything is issued — an
+ *  org that has issued gets the banner instead. */
 function summary(steps: Step[], orgName: string): string {
-  const issued = steps.find((step) => step.id === "issue")?.done;
   const lookDone = steps.filter((step) => step.id !== "issue").every((step) => step.done);
-  if (issued) {
-    return `Your first credentials are out. What is left makes the next ones look like they came from ${orgName}.`;
-  }
   if (lookDone) {
     return "Your design is ready. Issue a credential to see it on a real document.";
   }
@@ -252,6 +288,8 @@ function summary(steps: Step[], orgName: string): string {
 // Per org and per browser: hiding is a viewing preference, not org state, so
 // it does not belong in the API. Storage can throw (private mode, blocked
 // site data); the checklist then simply shows, which is the safe default.
+const noSubscription = () => () => {};
+
 const hiddenKey = (slug: string) => `certforge:setup-checklist-hidden:${slug}`;
 
 function readHidden(slug: string): boolean {
