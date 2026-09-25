@@ -6,14 +6,25 @@ import { useSearchParams } from "next/navigation";
 import { SignInButton, useAuth } from "@clerk/nextjs";
 
 import { publicApi, toApiError, type OrgProfile } from "@/lib/api";
-import { ApiStatusBadge } from "@/components/dashboard/api-status-badge";
 import { HeaderAccount } from "@/components/header-account";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandingCard } from "@/components/dashboard/branding-card";
 import { IssueWizard } from "@/components/dashboard/issue-wizard";
 import { DeveloperCard } from "@/components/dashboard/developer-card";
+import { OverviewCard } from "@/components/dashboard/overview-card";
+import {
+  BrandingIcon,
+  CredentialsIcon,
+  DevelopersIcon,
+  IssueIcon,
+  OverviewIcon,
+  PlanIcon,
+  TemplatesIcon,
+} from "@/components/dashboard/icons";
 import { PlanCard } from "@/components/dashboard/plan-card";
+import { RenamePrompt } from "@/components/dashboard/rename-prompt";
 import { RecentCredentialsCard } from "@/components/dashboard/recent-credentials-card";
+import { CredentialsCard } from "@/components/dashboard/credentials-card";
 import { SetupChecklist } from "@/components/dashboard/setup-checklist";
 import { SingleIssueCard } from "@/components/dashboard/single-issue-card";
 import { TemplatesCard } from "@/components/dashboard/templates-card";
@@ -61,7 +72,7 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
     ? requestedTab
     : searchParams.get("checkout")
       ? "plan"
-      : "issue";
+      : "overview";
   const selectTab = useCallback(
     (tab: TabId) => {
       const next = new URLSearchParams(searchParams.toString());
@@ -99,6 +110,23 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
               <>
                 {org.name}
                 <span className="ml-2 text-faint">· {org.tier} plan</span>
+                {org.tier === "community" ? (
+                  <>
+                    <span className="text-faint"> · </span>
+                    <a
+                      href="?tab=plan"
+                      onClick={(event) => {
+                        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+                        event.preventDefault();
+                        selectTab("plan");
+                      }}
+                      className="font-medium text-accent underline-offset-2 hover:underline"
+                    >
+                      Upgrade
+                    </a>
+                  </>
+                ) : null}
+                <RenamePrompt slug={slug} name={org.name} />
               </>
             ) : orgError ? null : (
               <>
@@ -112,9 +140,10 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <ApiStatusBadge />
+          {/* API health lives on the Developers tab now: it is a developer's
+              question, and the header had grown five controls wide. */}
           <ThemeToggle />
-          <HeaderAccount showStudioLink={false} />
+          <HeaderAccount showStudioLink={false} accountMenu />
         </div>
       </header>
 
@@ -149,12 +178,21 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
                   glanced at another tab, and the credential list has to be
                   mounted to hear `issuedToken` when a batch settles. */}
               <div className="min-w-0 flex-1">
+                <TabPanel id="overview" active={activeTab}>
+                  <OverviewCard
+                    slug={slug}
+                    refreshToken={issuedToken}
+                    onViewCredentials={() => selectTab("credentials")}
+                    onViewPlan={() => selectTab("plan")}
+                  />
+                  <RecentCredentialsCard slug={slug} refreshToken={issuedToken} limit={5} />
+                </TabPanel>
                 <TabPanel id="issue" active={activeTab}>
                   <SingleIssueCard slug={slug} onIssued={handleIssued} />
                   <IssueWizard slug={slug} onIssued={handleIssued} />
                 </TabPanel>
                 <TabPanel id="credentials" active={activeTab}>
-                  <RecentCredentialsCard slug={slug} refreshToken={issuedToken} />
+                  <CredentialsCard slug={slug} refreshToken={issuedToken} />
                 </TabPanel>
                 <TabPanel id="templates" active={activeTab}>
                   <TemplatesCard slug={slug} />
@@ -177,49 +215,85 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
   );
 }
 
-const TABS = [
-  { id: "issue", label: "Issue" },
-  { id: "credentials", label: "Credentials" },
-  { id: "templates", label: "Templates" },
-  { id: "branding", label: "Branding" },
-  { id: "developers", label: "Developers" },
-  { id: "plan", label: "Plan & usage" },
+// Grouped by what a visit is for: the work itself, then the settings that
+// shape it. The order within each group is the order of a first visit.
+const TAB_GROUPS = [
+  {
+    label: "Work",
+    tabs: [
+      { id: "overview", label: "Overview", icon: OverviewIcon },
+      { id: "issue", label: "Issue", icon: IssueIcon },
+      { id: "credentials", label: "Credentials", icon: CredentialsIcon },
+      { id: "templates", label: "Templates", icon: TemplatesIcon },
+    ],
+  },
+  {
+    label: "Settings",
+    tabs: [
+      { id: "branding", label: "Branding", icon: BrandingIcon },
+      { id: "developers", label: "Developers", icon: DevelopersIcon },
+      { id: "plan", label: "Plan & usage", icon: PlanIcon },
+    ],
+  },
 ] as const;
 
-type TabId = (typeof TABS)[number]["id"];
+type Tab = (typeof TAB_GROUPS)[number]["tabs"][number];
+type TabId = Tab["id"];
+
+const TABS: readonly Tab[] = TAB_GROUPS.flatMap((group): readonly Tab[] => group.tabs);
 
 function isTabId(value: string | null): value is TabId {
   return TABS.some((tab) => tab.id === value);
 }
 
-/** Sidebar on wide screens, a horizontally scrolling strip on narrow ones. */
+/** A sticky sidebar on wide screens; below `lg`, one horizontally scrolling
+ *  strip, where the group headings give way to a thin divider so the strip
+ *  stays a single row of tabs a thumb can swipe. */
 function SectionNav({ active, onSelect }: { active: TabId; onSelect: (tab: TabId) => void }) {
   return (
     <nav
       aria-label="Credential Studio sections"
       className="-mx-6 overflow-x-auto px-6 sm:-mx-8 sm:px-8 lg:sticky lg:top-8 lg:mx-0 lg:w-52 lg:shrink-0 lg:overflow-visible lg:px-0"
     >
-      <ul className="flex gap-1 lg:flex-col">
-        {TABS.map((tab) => {
-          const current = tab.id === active;
-          return (
-            <li key={tab.id} className="shrink-0">
-              <button
-                type="button"
-                onClick={() => onSelect(tab.id)}
-                aria-current={current ? "page" : undefined}
-                className={`w-full whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                  current
-                    ? "bg-surface font-medium text-ink shadow-[var(--cf-shadow-card)] ring-1 ring-hair"
-                    : "text-muted hover:bg-surface hover:text-ink"
-                }`}
-              >
-                {tab.label}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+      <div className="flex items-stretch gap-1 lg:flex-col lg:gap-6">
+        {TAB_GROUPS.map((group, groupIndex) => (
+          <div
+            key={group.label}
+            className={`flex shrink-0 items-stretch gap-1 lg:block ${
+              groupIndex > 0 ? "border-l border-hair pl-1 lg:border-l-0 lg:pl-0" : ""
+            }`}
+          >
+            <h2 className="hidden px-3 pb-2 font-mono text-[10px] uppercase leading-none tracking-[0.14em] text-muted lg:block">
+              {group.label}
+            </h2>
+            <ul className="flex gap-1 lg:flex-col" aria-label={group.label}>
+              {group.tabs.map((tab) => {
+                const current = tab.id === active;
+                const Icon = tab.icon;
+                return (
+                  <li key={tab.id} className="shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => onSelect(tab.id)}
+                      aria-current={current ? "page" : undefined}
+                      className={`flex w-full items-center gap-2.5 whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                        current
+                          ? "bg-surface font-medium text-ink shadow-[var(--cf-shadow-card)] ring-1 ring-hair"
+                          : "text-muted hover:bg-surface hover:text-ink"
+                      }`}
+                    >
+                      <span className={current ? "text-accent" : undefined}>
+                        <Icon />
+                      </span>
+                      {tab.label}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
     </nav>
   );
 }

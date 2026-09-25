@@ -30,6 +30,7 @@ from api.models.organization import Organization
 from api.models.template import Template
 from api.models.usage import UsageLedger
 from api.services.delivery import (
+    MAX_DELIVERY_ATTEMPTS,
     deliver_credential_email,
     delivery_state,
     mark_not_requested,
@@ -423,3 +424,57 @@ def revoke_credential(org_slug: str, public_id: str) -> dict[str, Any]:
             "already_revoked": False,
             "revoked_at": credential.revoked_at.isoformat(),
         }
+
+
+def is_test_credential(credential: Credential) -> bool:
+    """Whether a cf_test_ key issued this row — the marker `issue_credential`
+    writes into metadata, which outlives the key itself."""
+    return bool((credential.metadata_ or {}).get("_test"))
+
+
+def resend_credential(org_slug: str, public_id: str) -> dict[str, Any]:
+    """Send a credential's email again, now, and report the outcome.
+
+    A person asked for this, from the dashboard or the API, which is what
+    separates it from the automatic retry in the worker: that one only ever
+    re-attempts a *failed* send, because retrying anything else would mail
+    someone who may have been served already. Here the org is choosing to mail
+    the recipient again, so a `sent` or `unknown` row may be resent too.
+
+    What stays refused:
+
+    - a revoked credential — the email would advertise a verify link that
+      answers "revoked";
+    - a test credential — a cf_test_ key never emails, and a resend is not a
+      way around that;
+    - no address — there is nobody to send to;
+    - `MAX_DELIVERY_ATTEMPTS` reached. Every send counts against it, the first
+      included, so a credential can be emailed at most that many times in all.
+      Without a ceiling this endpoint mails one person on a loop.
+    """
+    with get_db() as session:
+        org = session.query(Organization).filter_by(slug=org_slug).first()
+        if org is None:
+            raise IssuanceError("Organization not found", code=404)
+
+        credential = (
+            session.query(Credential)
+            .filter_by(public_id=public_id, org_id=org.id)
+            .first()
+        )
+        if credential is None:
+            raise IssuanceError("Credential not found", code=404)
+        if credential.status == "revoked":
+            raise IssuanceError("A revoked credential cannot be resent", code=409)
+        if is_test_credential(credential):
+            raise IssuanceError("Test credentials never send email", code=409)
+        if not (credential.recipient_email or "").strip():
+            raise IssuanceError("This credential has no recipient email", code=409)
+        if (credential.delivery_attempts or 0) >= MAX_DELIVERY_ATTEMPTS:
+            raise IssuanceError(
+                f"This credential has already been emailed {MAX_DELIVERY_ATTEMPTS} times",
+                code=409,
+            )
+
+        sent = deliver_credential_email(credential, org=org)
+        return {"id": public_id, "sent": sent, "delivery": delivery_state(credential)}

@@ -11,15 +11,17 @@ import {
 import { useCertForge } from "@/lib/use-api";
 import { EmptyNote, ErrorNote, Skeleton, formatDate } from "./ui";
 
-const PAGE_SIZE = 6;
-
+/** The newest few credentials, read-only. The Overview tab's list; the
+ *  Credentials tab has the full, searchable one (`credentials-card.tsx`). */
 export function RecentCredentialsCard({
   slug,
   refreshToken,
+  limit = 5,
 }: {
   slug: string;
   /** Bumped by the issuance card so a finished batch shows up here. */
   refreshToken: number;
+  limit?: number;
 }) {
   const api = useCertForge();
   const [page, setPage] = useState<CredentialPage | null>(null);
@@ -28,7 +30,7 @@ export function RecentCredentialsCard({
   useEffect(() => {
     const controller = new AbortController();
     api
-      .listOrgCredentials(slug, { limit: PAGE_SIZE }, controller.signal)
+      .listOrgCredentials(slug, { limit }, controller.signal)
       .then((result) => {
         setPage(result);
         setError(null);
@@ -39,7 +41,7 @@ export function RecentCredentialsCard({
         setError(toApiError(err).message);
       });
     return () => controller.abort();
-  }, [api, slug, refreshToken]);
+  }, [api, slug, refreshToken, limit]);
 
   return (
     <section className="rounded-2xl border border-hair bg-surface p-6">

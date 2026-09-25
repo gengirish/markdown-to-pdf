@@ -1,7 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { SignInButton, SignOutButton, UserButton, useAuth, useOrganization } from "@clerk/nextjs";
+import {
+  SignInButton,
+  SignOutButton,
+  UserButton,
+  useAuth,
+  useClerk,
+  useOrganization,
+} from "@clerk/nextjs";
+
+import { SettingsIcon } from "@/components/dashboard/icons";
 
 /**
  * The account controls at the right of a header: where the signed-in user
@@ -15,10 +24,23 @@ import { SignInButton, SignOutButton, UserButton, useAuth, useOrganization } fro
  * the page already on screen. Everywhere else, signing in goes to
  * `/dashboard`; on a Studio page it stays put, since that org is the one the
  * visitor came for.
+ *
+ * `accountMenu` is the dashboard's variant (CF-07): no labelled Sign out
+ * beside the avatar, because the Studio header had grown five controls wide.
+ * Sign out, the account profile and the organization's settings all live in
+ * the avatar's menu instead. Public pages keep the labelled button, for the
+ * reason above — a visitor there is likelier to be looking for the way out.
  */
-export function HeaderAccount({ showStudioLink = true }: { showStudioLink?: boolean }) {
+export function HeaderAccount({
+  showStudioLink = true,
+  accountMenu = false,
+}: {
+  showStudioLink?: boolean;
+  accountMenu?: boolean;
+}) {
   const { isLoaded, isSignedIn } = useAuth();
   const { organization } = useOrganization();
+  const clerk = useClerk();
   const afterSignIn = showStudioLink ? "/dashboard" : undefined;
 
   if (!isLoaded) {
@@ -50,16 +72,34 @@ export function HeaderAccount({ showStudioLink = true }: { showStudioLink?: bool
         </Link>
       ) : null}
       {/* UserButton renders nothing until Clerk's UI bundle arrives, then a
-          28px avatar. The fixed slot keeps Sign out from sliding left when
-          it does; the avatar paints over the placeholder circle. */}
+          28px avatar. The fixed slot keeps the row from shifting when it
+          does; the avatar paints over the placeholder circle. */}
       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-well">
-        <UserButton />
+        {accountMenu ? (
+          <UserButton>
+            <UserButton.MenuItems>
+              <UserButton.Action label="manageAccount" />
+              {organization ? (
+                <UserButton.Action
+                  label="Organization settings"
+                  labelIcon={<SettingsIcon />}
+                  onClick={() => clerk.openOrganizationProfile()}
+                />
+              ) : null}
+              <UserButton.Action label="signOut" />
+            </UserButton.MenuItems>
+          </UserButton>
+        ) : (
+          <UserButton />
+        )}
       </span>
-      <SignOutButton redirectUrl="/">
-        <button className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-well hover:text-ink">
-          Sign out
-        </button>
-      </SignOutButton>
+      {accountMenu ? null : (
+        <SignOutButton redirectUrl="/">
+          <button className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-well hover:text-ink">
+            Sign out
+          </button>
+        </SignOutButton>
+      )}
     </div>
   );
 }

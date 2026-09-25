@@ -31,7 +31,9 @@
    * clears on both the surface and the ground it sits on (4.73 / 4.54). The
    * only deliberate deviation from the design's light palette. */
   --cf-faint: #777369;
-  --cf-placeholder: #a8a49c;
+  /* Placeholder was #a8a49c, 2.48:1 on the surface. It is text a person has
+   * to read to know what a field wants, so it takes faint's value (4.73). */
+  --cf-placeholder: #777369;
 
   /* Rules. hair is the default border; soft divides inside a card; strong is
    * for a control that must read as interactive when it is not filled. */
@@ -92,7 +94,7 @@
   --cf-ink: #f4f2ef;
   --cf-muted: #a8a49c;
   --cf-faint: #8a857a;
-  --cf-placeholder: #6b6862;
+  --cf-placeholder: #8a857a;
 
   --cf-hair: #2c2c33;
   --cf-hair-soft: #26262c;
@@ -129,7 +131,7 @@
     --cf-ink: #f4f2ef;
     --cf-muted: #a8a49c;
     --cf-faint: #8a857a;
-    --cf-placeholder: #6b6862;
+    --cf-placeholder: #8a857a;
 
     --cf-hair: #2c2c33;
     --cf-hair-soft: #26262c;

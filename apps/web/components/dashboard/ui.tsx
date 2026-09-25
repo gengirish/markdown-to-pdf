@@ -90,16 +90,21 @@ export function buttonClass(
   variant: "primary" | "secondary" | "quiet" = "primary",
   size: "md" | "sm" = "md",
 ) {
+  // Disabled is a solid state, not half-opacity: opacity-50 took the primary
+  // label to 2.23:1. Muted on well measures 4.71 light, 6.06 dark, and the
+  // flat grey still reads as "not available" next to an enabled button.
   const base =
-    "inline-flex items-center justify-center rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+    "inline-flex items-center justify-center rounded-lg font-medium transition-colors disabled:cursor-not-allowed";
   const sizing = size === "sm" ? "px-3 py-1.5 text-sm" : "px-5 py-2.5 text-sm";
   const skin = {
     // text-ground, never text-ink: the accent lightens in dark mode, where
     // white on it measures 2.42:1. The ground token inverts with the theme, so
     // one value passes on both (6.17 light, 7.66 dark).
-    primary: "bg-accent text-ground hover:bg-accent-hover",
-    secondary: "border border-hair-strong text-ink hover:border-accent hover:text-accent",
-    quiet: "text-muted hover:text-ink",
+    primary:
+      "bg-accent text-ground hover:bg-accent-hover disabled:bg-well disabled:text-muted disabled:hover:bg-well",
+    secondary:
+      "border border-hair-strong text-ink hover:border-accent hover:text-accent disabled:border-hair disabled:text-muted disabled:hover:border-hair disabled:hover:text-muted",
+    quiet: "text-muted hover:text-ink disabled:text-faint disabled:hover:text-faint",
   }[variant];
   return `${base} ${sizing} ${skin}`;
 }

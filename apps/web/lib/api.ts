@@ -323,14 +323,48 @@ export interface CredentialSummary {
   status: string;
   issued_at: string;
   batch_id: string | null;
+  template_id: string | null;
+  /** Issued with a cf_test_ key: never emailed, and not a real award. */
+  is_test: boolean;
   delivery_status: DeliveryStatus;
 }
 
 export interface CredentialPage {
   items: CredentialSummary[];
+  /** The count matching the filters, not the org's all-time total. */
   total: number;
   limit: number;
   offset: number;
+  has_more: boolean;
+  /** Pass back as `cursor` for the next page; null on the last one. */
+  next_cursor: string | null;
+}
+
+export interface CredentialListQuery {
+  limit?: number;
+  offset?: number;
+  cursor?: string;
+  status?: "issued" | "revoked" | "pending" | "claimed";
+  /** Case-insensitive substring of name, email or title. */
+  q?: string;
+  deliveryStatus?: DeliveryStatus;
+  templateId?: string;
+  batchId?: string;
+  test?: "only" | "exclude";
+}
+
+export interface RevokeResult {
+  id: string;
+  status: "revoked";
+  already_revoked: boolean;
+  revoked_at?: string;
+}
+
+export interface ResendResult {
+  id: string;
+  /** False when the provider refused it; `delivery.error` says why. */
+  sent: boolean;
+  delivery: DeliveryState;
 }
 
 export interface IssuedCredential {
@@ -740,13 +774,41 @@ export class CertForgeClient {
   // --- credentials ---
   listOrgCredentials(
     slug: string,
-    page: { limit?: number; offset?: number } = {},
+    page: CredentialListQuery = {},
     signal?: AbortSignal,
   ): Promise<CredentialPage> {
     return this.request<CredentialPage>(`/api/v1/orgs/${encodeURIComponent(slug)}/credentials`, {
-      query: { limit: page.limit, offset: page.offset },
+      query: {
+        limit: page.limit,
+        offset: page.offset,
+        cursor: page.cursor,
+        status: page.status,
+        q: page.q || undefined,
+        delivery_status: page.deliveryStatus,
+        template_id: page.templateId,
+        batch_id: page.batchId,
+        test: page.test,
+      },
       signal,
     });
+  }
+
+  /** Owner or admin only; an issuer gets a 403. Terminal — there is no un-revoke. */
+  revokeCredential(slug: string, credentialId: string, signal?: AbortSignal): Promise<RevokeResult> {
+    return this.request<RevokeResult>(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/credentials/${encodeURIComponent(credentialId)}/revoke`,
+      { method: "POST", signal },
+    );
+  }
+
+  /** Emails the credential again, inline. Refused (409) for a revoked or test
+   *  credential, one with no address, or one already emailed the maximum
+   *  number of times. */
+  resendCredential(slug: string, credentialId: string, signal?: AbortSignal): Promise<ResendResult> {
+    return this.request<ResendResult>(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/credentials/${encodeURIComponent(credentialId)}/resend`,
+      { method: "POST", signal },
+    );
   }
 
   bulkIssueFromCsv(

@@ -11,6 +11,7 @@ import {
   type TemplateSummary,
 } from "@/lib/api";
 import { useCertForge } from "@/lib/use-api";
+import { useIssuableTemplates, type IssuableTemplates } from "@/lib/use-templates";
 import {
   Card,
   EmptyNote,
@@ -187,9 +188,16 @@ type Step = 1 | 2 | 3 | 4;
 export function IssueWizard({ slug, onIssued }: { slug: string; onIssued: () => void }) {
   const api = useCertForge();
 
-  const [templates, setTemplates] = useState<TemplateSummary[] | null>(null);
-  const [templatesError, setTemplatesError] = useState<string | null>(null);
-  const [templateId, setTemplateId] = useState("");
+  const loaded = useIssuableTemplates(slug);
+  const templates = loaded.status === "ready" ? loaded.templates : null;
+  // Derived rather than set when the list arrives: an explicit choice wins,
+  // otherwise the same default the API resolves with no template sent.
+  const [chosenTemplateId, setTemplateId] = useState("");
+  const templateId =
+    chosenTemplateId ||
+    (loaded.status === "ready"
+      ? (loaded.defaultTemplate?.id ?? loaded.templates[0]?.id ?? "")
+      : "");
 
   const [step, setStep] = useState<Step>(1);
   const [furthest, setFurthest] = useState<Step>(1);
@@ -222,35 +230,6 @@ export function IssueWizard({ slug, onIssued }: { slug: string; onIssued: () => 
     setStep(target);
     setFurthest((current) => (target > current ? target : current));
   }, []);
-
-  // Same template-loading shape as the single-issue card: org templates need
-  // a role the viewer may not have, and that failure must not hide the global
-  // list, which every member can always see.
-  useEffect(() => {
-    const controller = new AbortController();
-    let cancelled = false;
-
-    Promise.allSettled([
-      api.listGlobalTemplates(controller.signal),
-      api.listOrgTemplates(slug, controller.signal),
-    ]).then((results) => {
-      if (cancelled) return;
-      const available = results.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
-      if (results.every((r) => r.status === "rejected")) {
-        const reason = results[0].status === "rejected" ? results[0].reason : null;
-        setTemplatesError(toApiError(reason).message);
-        setTemplates([]);
-        return;
-      }
-      setTemplates(available);
-      setTemplateId((current) => current || available[0]?.id || "");
-    });
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [api, slug]);
 
   const template = templates?.find((t) => t.id === templateId);
 
@@ -404,8 +383,8 @@ export function IssueWizard({ slug, onIssued }: { slug: string; onIssued: () => 
 
       {step === 1 ? (
         <StepUpload
+          loaded={loaded}
           templates={templates}
-          templatesError={templatesError}
           noTemplates={noTemplates}
           template={template}
           templateId={templateId}
@@ -540,8 +519,8 @@ function StepBar({
 // ── Step 1 — Upload ─────────────────────────────────────────────────────────
 
 function StepUpload({
+  loaded,
   templates,
-  templatesError,
   noTemplates,
   template,
   templateId,
@@ -555,8 +534,8 @@ function StepUpload({
   onContinue,
   canContinue,
 }: {
+  loaded: IssuableTemplates & { retry: () => void };
   templates: TemplateSummary[] | null;
-  templatesError: string | null;
   noTemplates: boolean;
   template: TemplateSummary | undefined;
   templateId: string;
@@ -573,10 +552,19 @@ function StepUpload({
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
       <div>
-        {templates === null ? (
-          <Skeleton rows={1} />
-        ) : templatesError ? (
-          <ErrorNote>Could not load templates: {templatesError}</ErrorNote>
+        {loaded.status === "error" ? (
+          <div className="space-y-3">
+            <ErrorNote>Could not load templates: {loaded.message}</ErrorNote>
+            <button type="button" onClick={loaded.retry} className={buttonClass("secondary", "sm")}>
+              Retry
+            </button>
+          </div>
+        ) : templates === null ? (
+          <div aria-busy="true">
+            <span className="mb-2 block text-sm font-medium text-ink">Template</span>
+            <Skeleton rows={1} />
+            <span className="sr-only">Loading templates</span>
+          </div>
         ) : noTemplates ? (
           <EmptyNote>
             No templates are available to this organization yet, so credentials cannot be issued.
@@ -1020,7 +1008,7 @@ function ChecklistItem({ done, children }: { done: boolean; children: React.Reac
     <li className="flex items-center gap-2.5">
       <span
         className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] ${
-          done ? "bg-accent text-ground" : "bg-well text-faint"
+          done ? "bg-accent text-ground" : "bg-well text-muted"
         }`}
       >
         {done ? "✓" : "·"}
