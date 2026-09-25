@@ -13,7 +13,7 @@ import { BrandingCard } from "@/components/dashboard/branding-card";
 import { IssueWizard } from "@/components/dashboard/issue-wizard";
 import { DeveloperCard } from "@/components/dashboard/developer-card";
 import { PlanCard } from "@/components/dashboard/plan-card";
-import { RecentCredentialsCard } from "@/components/dashboard/recent-credentials-card";
+import { CredentialsCard } from "@/components/dashboard/credentials-card";
 import { SetupChecklist } from "@/components/dashboard/setup-checklist";
 import { SingleIssueCard } from "@/components/dashboard/single-issue-card";
 import { TemplatesCard } from "@/components/dashboard/templates-card";
@@ -154,7 +154,7 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
                   <IssueWizard slug={slug} onIssued={handleIssued} />
                 </TabPanel>
                 <TabPanel id="credentials" active={activeTab}>
-                  <RecentCredentialsCard slug={slug} refreshToken={issuedToken} />
+                  <CredentialsCard slug={slug} refreshToken={issuedToken} />
                 </TabPanel>
                 <TabPanel id="templates" active={activeTab}>
                   <TemplatesCard slug={slug} />

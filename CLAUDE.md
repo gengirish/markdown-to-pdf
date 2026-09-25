@@ -318,6 +318,14 @@ the bulk CSV path (`studio.py`) calls it too, so they cannot drift apart. It res
 which `Template` a credential renders with (`resolve_template_id`), and every issuance
 response carries `verify_url`, `badge_url`, and `pdf_url`.
 
+The list takes `q` (name/email/title, LIKE wildcards escaped), `status`,
+`delivery_status`, `template_id`, `batch_id` and `test=only|exclude`, and every one
+narrows `total`. A test credential is the `metadata._test` marker a `cf_test_` key
+writes, reported per row as `is_test`. `POST .../{public_id}/resend` is the
+person-initiated send (`resend_credential()`): unlike the worker's automatic retry it
+may resend a `sent` or `unknown` row, but never a revoked or test one, and every send
+counts toward `MAX_DELIVERY_ATTEMPTS`, the first included.
+
 `routes/verify.py` also exports a `public_router` mounted at the site root, for the
 URLs that go inside QR codes: `GET /verify/{credential_id}` (HTML),
 `GET /credentials/{public_id}/badge.json` (Open Badges 3.0), and

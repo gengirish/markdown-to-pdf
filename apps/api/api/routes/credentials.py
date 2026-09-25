@@ -17,6 +17,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import or_
 
 from api.core.credential_signature import signature_state
 from api.core.envelope import ApiResponse
@@ -30,8 +31,10 @@ from api.services.issuance import (
     UNLIMITED,
     IssuanceError,
     IssueRequest,
+    is_test_credential,
     issue_credential,
     quota_state,
+    resend_credential,
     revoke_credential,
 )
 
@@ -146,6 +149,21 @@ def list_credentials(
         None, ge=0, description="Deprecated. Prefer cursor; see below."
     ),
     status: Optional[str] = Query(None, pattern="^(issued|revoked|pending|claimed)$"),
+    q: Optional[str] = Query(
+        None,
+        max_length=200,
+        description="Case-insensitive substring of recipient name, email or title.",
+    ),
+    delivery_status: Optional[str] = Query(
+        None, pattern="^(not_requested|pending|sent|failed|unknown)$"
+    ),
+    template_id: Optional[str] = Query(None),
+    batch_id: Optional[str] = Query(None),
+    test: Optional[str] = Query(
+        None,
+        pattern="^(only|exclude)$",
+        description="Credentials issued with a cf_test_ key: only those, or none of them.",
+    ),
 ):
     """List credentials, newest first.
 
@@ -154,13 +172,43 @@ def list_credentials(
     mid-listing, and a caller cannot detect that it happened. `offset` exists
     because the dashboard already ships against it, and breaking a deployed
     client to tidy an interface is the wrong trade. Cursor wins if both arrive.
+
+    Every filter narrows `total` too, so "N total" always describes the list
+    the caller is looking at.
     """
     org_id = _authorise(slug, principal)
+    template_uuid = _parse_uuid(template_id, "template_id")
+    batch_uuid = _parse_uuid(batch_id, "batch_id")
 
     with get_db() as session:
         base = session.query(Credential).filter_by(org_id=org_id)
         if status:
             base = base.filter(Credential.status == status)
+        if delivery_status:
+            base = base.filter(Credential.delivery_status == delivery_status)
+        if template_uuid:
+            base = base.filter(Credential.template_id == template_uuid)
+        if batch_uuid:
+            base = base.filter(Credential.batch_id == batch_uuid)
+        needle = (q or "").strip()
+        if needle:
+            # LIKE's own wildcards are escaped, so a search for "50%" means
+            # the text, not "starts with 50".
+            pattern = _like_contains(needle)
+            base = base.filter(
+                or_(
+                    Credential.recipient_name.ilike(pattern, escape=LIKE_ESCAPE),
+                    Credential.recipient_email.ilike(pattern, escape=LIKE_ESCAPE),
+                    Credential.title.ilike(pattern, escape=LIKE_ESCAPE),
+                )
+            )
+        if test:
+            # The marker issue_credential writes for a cf_test_ key. Missing
+            # reads as NULL, which is a live credential.
+            flag = Credential.metadata_["_test"].as_boolean()
+            base = base.filter(
+                flag.is_(True) if test == "only" else or_(flag.is_(None), flag.is_(False))
+            )
 
         total = base.count()
         query = base.order_by(Credential.issued_at.desc(), Credential.public_id.desc())
@@ -190,6 +238,8 @@ def list_credentials(
                 "status": c.status,
                 "issued_at": c.issued_at.isoformat(),
                 "batch_id": str(c.batch_id) if c.batch_id else None,
+                "template_id": str(c.template_id) if c.template_id else None,
+                "is_test": is_test_credential(c),
                 # The status only, not the full delivery object: a list wants to
                 # flag which rows need attention, and the detail route carries
                 # the error text and attempt count for when one does.
@@ -277,3 +327,52 @@ def revoke(
         return ApiResponse.ok(revoke_credential(slug, public_id))
     except IssuanceError as exc:
         raise HTTPException(status_code=exc.code, detail=exc.message)
+
+
+@router.post(
+    "/{public_id}/resend",
+    response_model=ApiResponse[dict],
+    # Every call sends an email to a third party, so it is bounded per minute
+    # as well as by the per-credential attempt ceiling in the service.
+    dependencies=[Depends(rate_limit())],
+)
+def resend(
+    slug: str,
+    public_id: str,
+    principal: Principal = Depends(resolve_principal),
+):
+    """Email a credential to its recipient again.
+
+    Inline, like single issuance, so the answer says whether it was sent.
+    `data.sent` is false when the provider refused it; `data.delivery`
+    carries the provider's words. Refusals the org can act on (revoked, test,
+    no address, attempt ceiling reached) are 409s.
+    """
+    _authorise(slug, principal)
+
+    try:
+        return ApiResponse.ok(resend_credential(slug, public_id))
+    except IssuanceError as exc:
+        raise HTTPException(status_code=exc.code, detail=exc.message)
+
+
+def _parse_uuid(value: Optional[str], name: str) -> Optional[uuid.UUID]:
+    if not value:
+        return None
+    try:
+        return uuid.UUID(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid {name}")
+
+
+LIKE_ESCAPE = "\\"
+
+
+def _like_contains(text: str) -> str:
+    """A LIKE pattern matching `text` anywhere, with its own % and _ literal."""
+    escaped = (
+        text.replace(LIKE_ESCAPE, LIKE_ESCAPE * 2)
+        .replace("%", LIKE_ESCAPE + "%")
+        .replace("_", LIKE_ESCAPE + "_")
+    )
+    return f"%{escaped}%"
