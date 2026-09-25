@@ -3,6 +3,15 @@
 import { useEffect, useState } from "react";
 
 import { type OrgProfile } from "@/lib/api";
+import {
+  buildSteps,
+  nextStep,
+  orderSteps,
+  progressSegments,
+  type Counts,
+  type Step,
+  type StepTab,
+} from "@/lib/setup-steps";
 import { useCertForge } from "@/lib/use-api";
 import { buttonClass, Eyebrow } from "./ui";
 
@@ -18,22 +27,6 @@ import { buttonClass, Eyebrow } from "./ui";
  *  came from them. Gating the valuable step behind the cosmetic ones would put
  *  the least important work in front of the only moment that matters.
  */
-
-type StepTab = "branding" | "templates" | "issue";
-
-interface Step {
-  id: StepTab;
-  label: string;
-  body: string;
-  done: boolean;
-  detail: string | null;
-  cta: string;
-}
-
-export interface Counts {
-  templates: number;
-  credentials: number;
-}
 
 export function SetupChecklist({
   slug,
@@ -104,11 +97,11 @@ export function SetupChecklistView({
   onSelectTab: (tab: StepTab) => void;
   onHide: () => void;
 }) {
-  const steps = buildSteps(org, counts);
+  const steps = orderSteps(buildSteps(org, counts));
   const doneCount = steps.filter((step) => step.done).length;
   if (doneCount === steps.length) return null;
 
-  const nextId = steps.find((step) => !step.done)?.id;
+  const nextId = nextStep(steps)?.id;
   const returning = doneCount > 0;
 
   return (
@@ -140,12 +133,10 @@ export function SetupChecklistView({
 
       {/* Progress as a shape, not only a sentence. */}
       <div className="mt-6 flex gap-1.5" aria-hidden>
-        {steps.map((step) => (
+        {progressSegments(steps).map((filled, index) => (
           <div
-            key={step.id}
-            className={`h-1.5 flex-1 rounded-full ${
-              step.done ? "bg-accent" : step.id === nextId ? "bg-accent-line" : "bg-well"
-            }`}
+            key={index}
+            className={`h-1.5 flex-1 rounded-full ${filled ? "bg-accent" : "bg-well"}`}
           />
         ))}
       </div>
@@ -195,43 +186,6 @@ export function SetupChecklistView({
       </ol>
     </section>
   );
-}
-
-export function buildSteps(org: OrgProfile, counts: Counts): Step[] {
-  // Only what reaches the certificate counts as branding. `logo_url` is an
-  // external address the PDF renderer refuses to fetch, so an org that set
-  // only that has changed its public page, not its documents.
-  const branded = Boolean(
-    org.logo_asset_id || org.primary_color || org.accent_color || org.footer_text,
-  );
-  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-
-  return [
-    {
-      id: "branding",
-      label: "Add your logo and colours",
-      body: "Upload a logo and set your colours. They print on every certificate and show on the public verify page.",
-      done: branded,
-      detail: org.logo_asset_id ? "Logo uploaded." : "Colours set. A logo would print on every certificate too.",
-      cta: branded ? "Edit branding" : "Add branding",
-    },
-    {
-      id: "templates",
-      label: "Choose a certificate design",
-      body: "Start from a ready-made design, build one with the guided form, or upload your own artwork and place the fields on it.",
-      done: counts.templates > 0,
-      detail: `${plural(counts.templates, "template")} in your library.`,
-      cta: counts.templates > 0 ? "View templates" : "Choose a design",
-    },
-    {
-      id: "issue",
-      label: "Issue your first credential",
-      body: "Issue one to a single person, or upload a CSV for a whole cohort. Each gets a verify link, a PDF and an Open Badge.",
-      done: counts.credentials > 0,
-      detail: `${plural(counts.credentials, "credential")} issued.`,
-      cta: counts.credentials > 0 ? "Issue more" : "Issue a credential",
-    },
-  ];
 }
 
 /** The line under the heading. It has to agree with the steps: telling an org
