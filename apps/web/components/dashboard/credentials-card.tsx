@@ -194,7 +194,13 @@ export function CredentialsCard({
   return (
     <section className="rounded-2xl border border-hair bg-surface p-6">
       <div className="mb-4 flex items-baseline justify-between gap-4">
-        <h3 className="text-sm font-medium uppercase tracking-wider text-muted">Credentials</h3>
+        <div>
+          <h3 className="text-sm font-medium uppercase tracking-wider text-muted">Credentials</h3>
+          <p className="mt-1 text-xs text-faint">
+            Every certificate you have issued, one per person. Each has a PDF, a verify link
+            anyone can check, and a digital badge.
+          </p>
+        </div>
         {items ? (
           <span className="text-sm text-faint">
             {total} {filtered ? "matching" : "total"}

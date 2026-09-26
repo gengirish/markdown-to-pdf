@@ -4,12 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   toApiError,
+  type OrgProfile,
   type TemplateConfig,
   type TemplateDetail,
   type TemplateSummary,
   type TracedConfig,
 } from "@/lib/api";
 import { useCertForge } from "@/lib/use-api";
+import { LAYOUT_WORDING, switchLayout } from "@/lib/template-presets";
+import { CertificateSketch, type SketchPart } from "./certificate-sketch";
 import { TemplateCanvas } from "./template-canvas";
 import { Card, EmptyNote, ErrorNote, Skeleton } from "./ui";
 
@@ -29,9 +32,7 @@ const STARTER_HTML = `<html>
 
 const DEFAULT_CONFIG: TemplateConfig = {
   layout: "participation",
-  heading: "CERTIFICATE OF PARTICIPATION",
-  body: "This is to certify that",
-  closing: "has successfully participated in",
+  ...LAYOUT_WORDING.participation,
   signature_name: "",
   signature_title: "",
   show_qr: true,
@@ -81,8 +82,22 @@ type Editor =
       assetId: string;
     };
 
-export function TemplatesCard({ slug }: { slug: string }) {
+export function TemplatesCard({
+  slug,
+  org,
+  onChanged,
+}: {
+  slug: string;
+  org: OrgProfile | null;
+  /** Called after the list reloads, so the setup checklist can tick "Choose a
+   *  design" the moment one exists rather than on the next tab change. */
+  onChanged?: () => void;
+}) {
   const api = useCertForge();
+  const onChangedRef = useRef(onChanged);
+  useEffect(() => {
+    onChangedRef.current = onChanged;
+  }, [onChanged]);
 
   const [templates, setTemplates] = useState<TemplateSummary[] | null>(null);
   const [globals, setGlobals] = useState<TemplateSummary[]>([]);
@@ -104,6 +119,7 @@ export function TemplatesCard({ slug }: { slug: string }) {
       setTemplates(mine);
       setGlobals(global);
       setListError(null);
+      onChangedRef.current?.();
     } catch (err) {
       setTemplates(null);
       setListError(toApiError(err).message);
@@ -383,6 +399,7 @@ export function TemplatesCard({ slug }: { slug: string }) {
       ) : (
         <TemplateEditor
           slug={slug}
+          org={org}
           editor={editor}
           busy={busy}
           reading={reading}
@@ -459,6 +476,7 @@ function TemplateRow({
 
 function TemplateEditor({
   slug,
+  org,
   editor,
   busy,
   reading,
@@ -469,6 +487,7 @@ function TemplateEditor({
   onCancel,
 }: {
   slug: string;
+  org: OrgProfile | null;
   editor: Exclude<Editor, { mode: "closed" }>;
   busy: boolean;
   reading: string | null;
@@ -492,6 +511,8 @@ function TemplateEditor({
 
       {editor.mode === "guided" ? (
         <GuidedFields
+          slug={slug}
+          org={org}
           config={editor.config}
           onChange={(config) => onChange({ ...editor, config })}
         />
@@ -595,104 +616,156 @@ function TemplateEditor({
 }
 
 function GuidedFields({
+  slug,
+  org,
   config,
   onChange,
 }: {
+  slug: string;
+  org: OrgProfile | null;
   config: TemplateConfig;
   onChange: (next: TemplateConfig) => void;
 }) {
+  const api = useCertForge();
   const set = <K extends keyof TemplateConfig>(key: K, value: TemplateConfig[K]) =>
     onChange({ ...config, [key]: value });
+  /** The field with focus, outlined on the sketch. */
+  const [focused, setFocused] = useState<SketchPart | null>(null);
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+      <div
+        className="space-y-4"
+        onFocus={(event) => {
+          const part = (event.target as HTMLElement).closest<HTMLElement>("[data-sketch]")?.dataset.sketch;
+          setFocused((part as SketchPart | undefined) ?? null);
+        }}
+        onBlur={() => setFocused(null)}
+      >
         <label className="block">
           <span className="mb-2 block text-sm font-medium text-ink">Base layout</span>
           <select
             value={config.layout}
-            onChange={(e) => set("layout", e.target.value as TemplateConfig["layout"])}
+            // A layout carries its own wording. Only stock text is replaced, so
+            // a heading someone wrote survives a change of layout.
+            onChange={(e) => onChange(switchLayout(config, e.target.value as TemplateConfig["layout"]))}
             className={INPUT}
           >
             <option value="participation">Participation</option>
             <option value="internship">Internship (adds USN and duration)</option>
             <option value="appreciation">Appreciation</option>
           </select>
+          <span className="mt-1.5 block text-xs text-faint">
+            Sets the heading and wording below. Anything you have typed yourself is kept.
+          </span>
         </label>
 
-        <TextField
-          label="Heading"
-          value={config.heading}
-          onChange={(v) => set("heading", v)}
-        />
-        <TextField label="Opening line" value={config.body} onChange={(v) => set("body", v)} />
-        <TextField
-          label="Line before the title"
-          value={config.closing}
-          onChange={(v) => set("closing", v)}
-        />
-        <TextField
-          label="Signature name"
-          value={config.signature_name}
-          onChange={(v) => set("signature_name", v)}
-        />
-        <TextField
-          label="Signature title"
-          value={config.signature_title}
-          onChange={(v) => set("signature_title", v)}
-        />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <TextField
+            label="Heading"
+            sketch="heading"
+            value={config.heading}
+            onChange={(v) => set("heading", v)}
+          />
+          <TextField
+            label="Opening line"
+            sketch="body"
+            value={config.body}
+            onChange={(v) => set("body", v)}
+          />
+          <TextField
+            label="Line before the title"
+            sketch="closing"
+            value={config.closing}
+            onChange={(v) => set("closing", v)}
+          />
+          <TextField
+            label="Signature name"
+            sketch="signature"
+            value={config.signature_name}
+            onChange={(v) => set("signature_name", v)}
+            hint="Leave empty for no signature block."
+          />
+          <TextField
+            label="Signature title"
+            sketch="signature"
+            value={config.signature_title}
+            onChange={(v) => set("signature_title", v)}
+          />
+        </div>
+
+        <div className="flex flex-wrap gap-5">
+          <Toggle label="QR code" sketch="qr" checked={config.show_qr} onChange={(v) => set("show_qr", v)} />
+          <Toggle
+            label="Organization logo"
+            sketch="logo"
+            checked={config.show_logo}
+            onChange={(v) => set("show_logo", v)}
+          />
+          <Toggle
+            label="Footer line"
+            sketch="footer"
+            checked={config.show_footer}
+            onChange={(v) => set("show_footer", v)}
+          />
+        </div>
+
+        <p className="text-xs text-faint">
+          The recipient name, title and date come from each credential; colours, logo and
+          footer text come from Branding. The sketch shows a sample person.
+        </p>
       </div>
 
-      <div className="flex flex-wrap gap-5">
-        <Toggle label="QR code" checked={config.show_qr} onChange={(v) => set("show_qr", v)} />
-        <Toggle
-          label="Organization logo"
-          checked={config.show_logo}
-          onChange={(v) => set("show_logo", v)}
-        />
-        <Toggle
-          label="Footer line"
-          checked={config.show_footer}
-          onChange={(v) => set("show_footer", v)}
+      <div className="xl:sticky xl:top-8 xl:self-start">
+        <CertificateSketch
+          issuerName={org?.name ?? ""}
+          primaryColor={org?.primary_color ?? ""}
+          accentColor={org?.accent_color ?? ""}
+          footerText={org?.footer_text ?? ""}
+          logoSrc={org?.logo_asset_id ? `${api.orgLogoUrl(slug)}?v=${org.logo_asset_id}` : null}
+          config={config}
+          highlight={focused}
         />
       </div>
-
-      <p className="text-xs text-faint">
-        The recipient name, credential title, date and colours come from the credential and
-        your branding — they are not set here.
-      </p>
     </div>
   );
 }
 
 function TextField({
   label,
+  sketch,
+  hint,
   value,
   onChange,
 }: {
   label: string;
+  sketch?: SketchPart;
+  hint?: string;
   value: string;
   onChange: (next: string) => void;
 }) {
   return (
-    <label className="block">
+    <label className="block" data-sketch={sketch}>
       <span className="mb-2 block text-sm font-medium text-ink">{label}</span>
       <input type="text" value={value} onChange={(e) => onChange(e.target.value)} className={INPUT} />
+      {hint ? <span className="mt-1.5 block text-xs text-faint">{hint}</span> : null}
     </label>
   );
 }
 
 function Toggle({
   label,
+  sketch,
   checked,
   onChange,
 }: {
   label: string;
+  sketch?: SketchPart;
   checked: boolean;
   onChange: (next: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-2 text-sm text-ink">
+    <label className="flex items-center gap-2 text-sm text-ink" data-sketch={sketch}>
       <input
         type="checkbox"
         checked={checked}

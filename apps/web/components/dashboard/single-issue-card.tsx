@@ -122,7 +122,7 @@ export function SingleIssueCard({ slug, onIssued }: { slug: string; onIssued: ()
   return (
     <Card
       title="Issue a single credential"
-      description="Issue one credential immediately, without a CSV."
+      description="A credential is one person's certificate — a PDF, a verify link with a QR code, and a digital badge. Issue one now, without a CSV."
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="block">

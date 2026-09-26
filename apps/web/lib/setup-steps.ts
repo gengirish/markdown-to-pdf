@@ -56,7 +56,9 @@ export function buildSteps(
     {
       id: "issue",
       label: "Issue your first credential",
-      body: "Issue one to a single person, or upload a CSV for a whole cohort. Each gets a verify link, a PDF and an Open Badge.",
+      // "Credential" is the product's word and nobody arrives knowing it, so
+      // the first step that uses it says what one is.
+      body: "A credential is one person's certificate: a PDF, a permanent verify link with a QR code, and a digital badge. Issue one to a single person, or upload a CSV for a whole cohort.",
       done: counts.credentials > 0,
       detail: `${plural(counts.credentials, "credential")} issued.`,
       cta: counts.credentials > 0 ? "Issue more" : "Issue a credential",
