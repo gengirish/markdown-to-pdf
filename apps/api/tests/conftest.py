@@ -3,7 +3,7 @@ import pytest
 import contextlib
 from unittest.mock import patch
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 # Overridable so several suites can run at once against the same checkout
@@ -21,6 +21,17 @@ async def mock_lifespan(app):
 app.router.lifespan_context = mock_lifespan
 
 test_engine = create_engine(f"sqlite:///{TEST_DB_PATH}", connect_args={"check_same_thread": False})
+
+
+# SQLite ignores foreign keys unless each connection asks for them. Postgres
+# never ignores them, so without this the suite passed a logo upload whose
+# flush wrote organizations.logo_asset_id before the template_assets row it
+# names — a ForeignKeyViolation on every first logo upload in production.
+@event.listens_for(test_engine, "connect")
+def _enforce_foreign_keys(dbapi_connection, _record):
+    dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
 @contextlib.contextmanager
@@ -73,7 +84,13 @@ def setup_db():
     for p in patchers:
         p.stop()
         
-    Base.metadata.drop_all(bind=test_engine)
+    # organizations and template_assets reference each other, so no drop
+    # order satisfies an enforced foreign key. Teardown only, and off only on
+    # this one connection.
+    with test_engine.connect() as conn:
+        conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        Base.metadata.drop_all(bind=conn)
+        conn.commit()
     
     if os.path.exists(TEST_DB_PATH):
         try:

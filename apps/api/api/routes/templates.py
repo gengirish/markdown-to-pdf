@@ -1273,7 +1273,13 @@ async def upload_org_logo(
                 else f"api_key:{principal.api_key_id}"
             ),
         )
+        # Two flushes, in this order. organizations and template_assets point
+        # at each other, and one flush orders by table — organizations first,
+        # since template_assets.org_id depends on it — so it would write
+        # logo_asset_id before the row it names exists. Postgres refuses that
+        # (fk_organizations_logo_asset); every first logo upload was a 500.
         session.add(asset)
+        session.flush()
         org.logo_asset_id = asset_id
         session.flush()
         payload = _asset_json(asset)
