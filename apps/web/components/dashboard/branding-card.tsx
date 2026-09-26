@@ -1,15 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { toApiError, type OrgProfile } from "@/lib/api";
+import { fieldsFromOrg, followOrg, isDirty, type BrandingFields } from "@/lib/branding-form";
 import { useCertForge } from "@/lib/use-api";
+import { CertificateSketch, type SketchPart } from "./certificate-sketch";
 import { Card, ErrorNote } from "./ui";
 
 /** A colour the API will accept back. The server stores whatever it is given,
  *  so the check is here: a malformed value would reach a PDF template and
  *  render as a broken style rather than an error anyone sees. */
 const HEX = /^#[0-9a-fA-F]{6}$/;
+
+const EMPTY_FIELDS: BrandingFields = { primaryColor: "", accentColor: "", footerText: "", logoUrl: "" };
 
 /** Only what the credential PDF actually uses. `name` is edited through Clerk,
  *  which owns the organization record, so it is deliberately not here — two
@@ -25,25 +29,35 @@ export function BrandingCard({
 }) {
   const api = useCertForge();
 
-  const [primaryColor, setPrimaryColor] = useState("");
-  const [accentColor, setAccentColor] = useState("");
-  const [footerText, setFooterText] = useState("");
-  const [logoUrl, setLogoUrl] = useState("");
+  const [fields, setFields] = useState<BrandingFields>(EMPTY_FIELDS);
+  // What the org held the last time the form followed it. A field still equal
+  // to this is untouched; anything else is an edit (see lib/branding-form.ts).
+  const [baseline, setBaseline] = useState<BrandingFields | null>(null);
+  const { primaryColor, accentColor, footerText, logoUrl } = fields;
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  /** The field with focus, outlined on the sketch so its place is obvious. */
+  const [focused, setFocused] = useState<SketchPart | null>(null);
 
-  // Prefilled from the org once it loads. Empty string rather than the API's
-  // null, because a controlled input cannot hold null without React warning
-  // about switching between controlled and uncontrolled.
-  useEffect(() => {
-    if (!org) return;
-    setPrimaryColor(org.primary_color ?? "");
-    setAccentColor(org.accent_color ?? "");
-    setFooterText(org.footer_text ?? "");
-    setLogoUrl(org.logo_url ?? "");
-  }, [org]);
+  const setField = (key: keyof BrandingFields) => (value: string) => {
+    setFields((current) => ({ ...current, [key]: value }));
+    setSaved(false);
+  };
+
+  // Follow the org as it loads and changes, but never over an edit. Uploading
+  // a logo refetches the org, and re-prefilling every field from it is what
+  // used to reset colours that had been picked and not yet saved. Adjusted
+  // during render rather than in an effect, so no frame shows stale values.
+  const [seenOrg, setSeenOrg] = useState<OrgProfile | null>(null);
+  if (org && org !== seenOrg) {
+    const incoming = fieldsFromOrg(org);
+    setSeenOrg(org);
+    setFields(followOrg(fields, baseline, incoming));
+    setBaseline(incoming);
+  }
+  const dirty = isDirty(fields, baseline);
 
   const invalidPrimary = primaryColor !== "" && !HEX.test(primaryColor);
   const invalidAccent = accentColor !== "" && !HEX.test(accentColor);
@@ -80,30 +94,44 @@ export function BrandingCard({
       {org === null ? (
         <ErrorNote>Branding cannot load until the organization does.</ErrorNote>
       ) : (
-        <>
+        <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+        <div
+          onFocus={(event) => {
+            const part = (event.target as HTMLElement).closest<HTMLElement>("[data-sketch]")?.dataset.sketch;
+            setFocused((part as SketchPart | undefined) ?? null);
+          }}
+          onBlur={() => setFocused(null)}
+        >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <ColorField
               label="Primary colour"
+              hint="The band behind your name at the top."
+              sketch="issuer"
               value={primaryColor}
-              onChange={setPrimaryColor}
+              onChange={setField("primaryColor")}
               invalid={invalidPrimary}
             />
             <ColorField
               label="Accent colour"
+              hint="The heading and its border."
+              sketch="heading"
               value={accentColor}
-              onChange={setAccentColor}
+              onChange={setField("accentColor")}
               invalid={invalidAccent}
             />
 
-            <label className="block sm:col-span-2">
+            <label className="block sm:col-span-2" data-sketch="footer">
               <span className="mb-2 block text-sm font-medium text-ink">Footer line</span>
               <input
                 type="text"
                 value={footerText}
-                placeholder="Printed at the foot of every certificate"
-                onChange={(event) => setFooterText(event.target.value)}
+                placeholder="e.g. Acme Academy · Bengaluru · acme.edu"
+                onChange={(event) => setField("footerText")(event.target.value)}
                 className="w-full rounded-lg border border-hair bg-surface px-4 py-2.5 text-sm text-ink focus:border-accent focus:outline-none"
               />
+              <span className="mt-1.5 block text-xs text-faint">
+                One small line in the grey band along the bottom edge of every certificate.
+              </span>
             </label>
           </div>
 
@@ -111,10 +139,18 @@ export function BrandingCard({
             Leave a field empty to fall back to the default branding.
           </p>
 
-          <LogoField slug={slug} org={org} onChanged={onSaved} legacyUrl={logoUrl} />
+          <div data-sketch="logo">
+            <LogoField slug={slug} org={org} onChanged={onSaved} legacyUrl={logoUrl} />
+          </div>
 
-          <div className="mt-6 flex items-center justify-end gap-4">
-            {saved ? <span className="text-sm text-accent">Saved</span> : null}
+          <div className="mt-6 flex flex-wrap items-center justify-end gap-4">
+            {dirty ? (
+              <span className="text-sm text-warn-ink">
+                Unsaved colour or footer changes
+              </span>
+            ) : saved ? (
+              <span className="text-sm text-accent">Saved</span>
+            ) : null}
             <button
               onClick={save}
               disabled={blocked}
@@ -129,7 +165,22 @@ export function BrandingCard({
               <ErrorNote>{error}</ErrorNote>
             </div>
           ) : null}
-        </>
+        </div>
+
+        {/* Beside the form on wide screens so it answers "where does this go?"
+            while the field is still being typed; above-the-fold order on a
+            phone would bury the form, so there it follows it. */}
+        <div className="xl:sticky xl:top-8 xl:self-start">
+          <CertificateSketch
+            issuerName={org.name}
+            primaryColor={primaryColor}
+            accentColor={accentColor}
+            footerText={footerText}
+            logoSrc={org.logo_asset_id ? `${api.orgLogoUrl(slug)}?v=${org.logo_asset_id}` : null}
+            highlight={focused}
+          />
+        </div>
+        </div>
       )}
     </Card>
   );
@@ -137,17 +188,21 @@ export function BrandingCard({
 
 function ColorField({
   label,
+  hint,
+  sketch,
   value,
   onChange,
   invalid,
 }: {
   label: string;
+  hint: string;
+  sketch: SketchPart;
   value: string;
   onChange: (next: string) => void;
   invalid: boolean;
 }) {
   return (
-    <label className="block">
+    <label className="block" data-sketch={sketch}>
       <span className="mb-2 block text-sm font-medium text-ink">{label}</span>
       <div className="flex items-center gap-3">
         {/* A native swatch alongside the text field, so a colour can be picked
@@ -178,7 +233,9 @@ function ColorField({
         <span className="mt-1.5 block text-xs text-warn-ink">
           Use a six-digit hex colour, like #4f46e5.
         </span>
-      ) : null}
+      ) : (
+        <span className="mt-1.5 block text-xs text-faint">{hint}</span>
+      )}
     </label>
   );
 }

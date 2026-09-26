@@ -168,6 +168,17 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
                 org={org}
                 refreshKey={`${issuedToken}:${activeTab}`}
                 onSelectTab={selectTab}
+                // The same cards the tabs hold, opened in place under the
+                // step, so there is one implementation of each form.
+                renderStep={(step, refresh) =>
+                  step === "branding" ? (
+                    <BrandingCard slug={slug} org={org} onSaved={setOrg} />
+                  ) : step === "templates" ? (
+                    <TemplatesCard slug={slug} org={org} onChanged={refresh} />
+                  ) : (
+                    <SingleIssueCard slug={slug} onIssued={handleIssued} />
+                  )
+                }
               />
             )}
             <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
@@ -195,7 +206,7 @@ export default function OrgDashboard({ params }: { params: Promise<{ slug: strin
                   <CredentialsCard slug={slug} refreshToken={issuedToken} />
                 </TabPanel>
                 <TabPanel id="templates" active={activeTab}>
-                  <TemplatesCard slug={slug} />
+                  <TemplatesCard slug={slug} org={org} />
                 </TabPanel>
                 <TabPanel id="branding" active={activeTab}>
                   <BrandingCard slug={slug} org={org} onSaved={setOrg} />

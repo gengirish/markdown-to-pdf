@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { type OrgProfile } from "@/lib/api";
 import {
@@ -32,13 +32,24 @@ import { buttonClass, Eyebrow } from "./ui";
  *  It sits above every tab, so it shrinks once it has done its job: the full
  *  card only until the first credential is out, then a one-line banner (see
  *  `checklistMode`), then nothing once every step is done.
+ *
+ *  A step's button opens that step's real form directly beneath it. It used
+ *  to switch tabs instead, which put the form *below* this card, and a first
+ *  visitor had to scroll past all three steps to find what they had just
+ *  asked for. "Open the full tab" is still there for anyone who wants it.
  */
+
+/** What a step opens into: the page supplies the real card, so there is one
+ *  implementation of each form, not a checklist-sized copy. `refresh`
+ *  re-reads progress, for a card that has no other way to report it. */
+export type StepPanelRenderer = (step: StepTab, refresh: () => void) => ReactNode;
 
 export function SetupChecklist({
   slug,
   org,
   refreshKey,
   onSelectTab,
+  renderStep,
 }: {
   slug: string;
   org: OrgProfile | null;
@@ -46,6 +57,7 @@ export function SetupChecklist({
    *  a credential issued, or a tab left after editing templates. */
   refreshKey: string;
   onSelectTab: (tab: StepTab) => void;
+  renderStep: StepPanelRenderer;
 }) {
   const api = useCertForge();
   const [counts, setCounts] = useState<Counts | null>(null);
@@ -64,6 +76,8 @@ export function SetupChecklist({
   );
   const [dismissed, setDismissed] = useState(false);
   const hidden = dismissed || stored;
+  const [localRefresh, setLocalRefresh] = useState(0);
+  const refresh = useCallback(() => setLocalRefresh((n) => n + 1), []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -83,7 +97,7 @@ export function SetupChecklist({
         setFailed(true);
       });
     return () => controller.abort();
-  }, [api, slug, refreshKey]);
+  }, [api, slug, refreshKey, localRefresh]);
 
   // Every step done retires the checklist for this org in this browser, the
   // same way dismissing it does — deleting a template later should not bring
@@ -107,6 +121,7 @@ export function SetupChecklist({
       org={org}
       counts={counts}
       onSelectTab={onSelectTab}
+      renderStep={(step) => renderStep(step, refresh)}
       onHide={() => {
         writeHidden(slug);
         setDismissed(true);
@@ -121,18 +136,27 @@ export function SetupChecklistView({
   org,
   counts,
   onSelectTab,
+  renderStep,
   onHide,
 }: {
   org: OrgProfile;
   counts: Counts;
   onSelectTab: (tab: StepTab) => void;
+  renderStep?: (step: StepTab) => ReactNode;
   onHide: () => void;
 }) {
+  /** The one step whose form is open beneath it, if any. */
+  const [openStep, setOpenStep] = useState<StepTab | null>(null);
   const steps = orderSteps(buildSteps(org, counts));
   const mode = checklistMode(steps);
-  if (mode === "complete") return null;
-  if (mode === "banner") {
-    return <SetupBanner steps={steps} onSelectTab={onSelectTab} onHide={onHide} />;
+  // An open step holds the full card. Issuing from it is what moves the
+  // checklist to "banner", and collapsing then would take the new
+  // credential's verify link away mid-read.
+  if (openStep === null) {
+    if (mode === "complete") return null;
+    if (mode === "banner") {
+      return <SetupBanner steps={steps} onSelectTab={onSelectTab} onHide={onHide} />;
+    }
   }
   const doneCount = steps.filter((step) => step.done).length;
 
@@ -151,7 +175,11 @@ export function SetupChecklistView({
             id="setup-checklist-title"
             className="mt-3 font-display text-xl font-semibold tracking-[-0.02em] text-ink"
           >
-            {returning ? `${doneCount} of ${steps.length} steps done.` : "Make CertForge yours."}
+            {doneCount === steps.length
+              ? "All set."
+              : returning
+                ? `${doneCount} of ${steps.length} steps done.`
+                : "Make CertForge yours."}
           </h2>
           <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-muted">
             {summary(steps, org.name)}
@@ -179,6 +207,8 @@ export function SetupChecklistView({
       <ol className="mt-6 space-y-3">
         {steps.map((step, index) => {
           const isNext = step.id === nextId;
+          const isOpen = step.id === openStep;
+          const panelId = `setup-step-${step.id}`;
           return (
             <li
               key={step.id}
@@ -207,14 +237,37 @@ export function SetupChecklistView({
               </div>
               <button
                 type="button"
-                onClick={() => onSelectTab(step.id)}
+                onClick={() =>
+                  renderStep
+                    ? setOpenStep(isOpen ? null : step.id)
+                    : onSelectTab(step.id)
+                }
+                aria-expanded={renderStep ? isOpen : undefined}
+                aria-controls={renderStep && isOpen ? panelId : undefined}
                 className={`col-start-2 justify-self-start self-start sm:col-start-3 ${buttonClass(
-                  isNext ? "primary" : "secondary",
+                  isOpen ? "quiet" : isNext ? "primary" : "secondary",
                   "sm",
                 )}`}
               >
-                {step.cta}
+                {isOpen ? "Close" : step.cta}
               </button>
+              {renderStep && isOpen ? (
+                <div id={panelId} className="col-span-full min-w-0 pt-1">
+                  {renderStep(step.id)}
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpenStep(null);
+                        onSelectTab(step.id);
+                      }}
+                      className="text-xs text-muted underline underline-offset-2 hover:text-ink"
+                    >
+                      Open the full {TAB_NAMES[step.id]} tab
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </li>
           );
         })}
@@ -222,6 +275,12 @@ export function SetupChecklistView({
     </section>
   );
 }
+
+const TAB_NAMES: Record<StepTab, string> = {
+  branding: "Branding",
+  templates: "Templates",
+  issue: "Issue",
+};
 
 /** The collapsed checklist: what is left, as links, on one line.
  *
