@@ -25,9 +25,14 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 // That would have put an Open Badges issuer.id behind auth.protect(), so a
 // badge consumer dereferencing it would be redirected to a sign-in page rather
 // than served a Profile. Anchoring the slash keeps the two namespaces apart.
+//
+// /operator is CertForge staff. Protecting it here only saves a signed-out
+// visitor a page of 401s; the real check is require_operator on the API.
 const isProtectedRoute = createRouteMatcher([
   "/org",
   "/org/(.*)",
+  "/operator",
+  "/operator/(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, request) => {

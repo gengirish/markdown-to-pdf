@@ -135,6 +135,14 @@ export interface UsageMeter {
   remaining: number | null;
 }
 
+/** The credential meter also says where its limit came from: the plan, or an
+ *  operator's override for this one org. */
+export interface CredentialMeter extends UsageMeter {
+  source: CredentialQuotaSource;
+}
+
+export type CredentialQuotaSource = "tier" | "override";
+
 export interface UsageSummary {
   /** YYYY-MM, the period the counters below are for. */
   period: string;
@@ -147,7 +155,7 @@ export interface UsageSummary {
   tier_name: string;
   /** False when `tier` is a value the API's plan table does not know. */
   tier_known: boolean;
-  credentials: UsageMeter;
+  credentials: CredentialMeter;
   /** Templates the org holds, against its plan's allowance. A stock, not a
    *  monthly flow: deleting a template frees the slot. */
   templates: UsageMeter;
@@ -490,6 +498,69 @@ export interface VerifiedCredential {
   pdf_url?: string;
 }
 
+// --- operator (CertForge staff only; the API checks an allowlist) ----------
+
+/** An operator override has three states, so it travels as an object:
+ *  `null` is no override, `{ limit: null }` is an unlimited one. */
+export interface QuotaOverride {
+  limit: number | null;
+}
+
+/** One org's credential quota, as `routes/operator.py` `_org_row` serves it.
+ *  Every limit is `null` for unlimited. */
+export interface OperatorOrg {
+  slug: string;
+  name: string;
+  tier: string;
+  tier_name: string;
+  tier_known: boolean;
+  tier_quota: number | null;
+  source: CredentialQuotaSource;
+  override: QuotaOverride | null;
+  /** What issuance enforces: the override if there is one, else the tier's. */
+  effective: number | null;
+  /** Credentials issued this calendar month. */
+  used: number;
+}
+
+export interface OperatorOrgPage {
+  orgs: OperatorOrg[];
+  /** Pass back as `cursor` for the next page; `null` on the last one. */
+  next_cursor: string | null;
+}
+
+export interface CredentialQuotaChange {
+  previous_override: QuotaOverride | null;
+  new_override: QuotaOverride | null;
+  effective_before: number | null;
+  effective_after: number | null;
+  reason: string;
+  /** An operator's Clerk user id, or a system actor such as `razorpay-webhook`. */
+  actor: string;
+  created_at: string;
+}
+
+export interface OperatorQuotaDetail extends OperatorOrg {
+  /** Newest first. */
+  history: CredentialQuotaChange[];
+}
+
+export interface OperatorQuotaResult extends OperatorOrg {
+  /** False when the request asked for what was already in force. */
+  changed: boolean;
+  /** Set when the override equals the tier's quota, which freezes it there. */
+  note?: string;
+  /** Set when the new limit is below what the org already issued this month. */
+  over_by?: number;
+}
+
+export interface OperatorTierResult extends OperatorOrg {
+  previous_tier: string;
+  changed: boolean;
+  /** A real plan change removes any credential override. */
+  override_cleared: boolean;
+}
+
 export interface HealthStatus {
   status: string;
   service: string;
@@ -510,7 +581,7 @@ export interface CertForgeClientOptions {
 type QueryValue = string | number | boolean | undefined | null;
 
 interface RequestOptions {
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   json?: unknown;
   form?: FormData;
   query?: Record<string, QueryValue>;
@@ -1102,6 +1173,58 @@ export class CertForgeClient {
     return this.request<{ status: string }>(
       `/api/v1/orgs/${encodeURIComponent(slug)}/webhooks/${encodeURIComponent(webhookId)}`,
       { method: "DELETE", signal },
+    );
+  }
+
+  // --- operator ---
+  // 403 for anyone not on CERTFORGE_OPERATOR_USER_IDS, API keys included.
+
+  listOperatorOrgs(
+    query: { q?: string; limit?: number; cursor?: string | null } = {},
+    signal?: AbortSignal,
+  ): Promise<OperatorOrgPage> {
+    return this.request<OperatorOrgPage>("/api/v1/operator/orgs", {
+      query: { q: query.q || undefined, limit: query.limit, cursor: query.cursor },
+      signal,
+    });
+  }
+
+  getCredentialQuota(slug: string, signal?: AbortSignal): Promise<OperatorQuotaDetail> {
+    return this.request<OperatorQuotaDetail>(
+      `/api/v1/operator/orgs/${encodeURIComponent(slug)}/credential-quota`,
+      { signal },
+    );
+  }
+
+  /** `limit: null` is an unlimited override, not "remove" — that is
+   *  {@link clearCredentialQuota}. */
+  setCredentialQuota(
+    slug: string,
+    input: { limit: number | null; reason: string },
+    signal?: AbortSignal,
+  ): Promise<OperatorQuotaResult> {
+    return this.request<OperatorQuotaResult>(
+      `/api/v1/operator/orgs/${encodeURIComponent(slug)}/credential-quota`,
+      { method: "PUT", json: { limit: input.limit, reason: input.reason }, signal },
+    );
+  }
+
+  clearCredentialQuota(slug: string, reason: string, signal?: AbortSignal): Promise<OperatorQuotaResult> {
+    return this.request<OperatorQuotaResult>(
+      `/api/v1/operator/orgs/${encodeURIComponent(slug)}/credential-quota`,
+      { method: "DELETE", json: { reason }, signal },
+    );
+  }
+
+  /** Move an org to another plan without payment. Clears any override. */
+  setOrgTier(
+    slug: string,
+    input: { tier: string; reason: string },
+    signal?: AbortSignal,
+  ): Promise<OperatorTierResult> {
+    return this.request<OperatorTierResult>(
+      `/api/v1/operator/orgs/${encodeURIComponent(slug)}/tier`,
+      { method: "PUT", json: { tier: input.tier, reason: input.reason }, signal },
     );
   }
 

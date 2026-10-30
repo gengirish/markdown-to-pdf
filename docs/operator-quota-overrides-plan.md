@@ -1,7 +1,8 @@
 # Plan: let an operator change one organization's credential quota
 
-Status: **W1 and W2 in review (#11), 2026-09-22.** W3 (the page) and W4 (drop
-`monthly_quota`) not started. The one open question was decided on 2026-09-22:
+Status: **W1 and W2 in review (#11), 2026-09-22. W3 (the page) built
+2026-10-30**, including the manual plan change and the plan card's "Custom
+limit". W4 (drop `monthly_quota`) not started. The one open question was decided on 2026-09-22:
 a plan change clears the override (Decision 4).
 
 #11 also adds `PUT /operator/orgs/{slug}/tier`, the manual plan change Decision

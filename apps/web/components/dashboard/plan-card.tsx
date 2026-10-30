@@ -187,7 +187,13 @@ export function PlanCard({ slug }: { slug: string }) {
           <Skeleton rows={2} />
         ) : usage ? (
           <div className="space-y-4">
-            <MeterRow label="Credentials this month" meter={usage.credentials} />
+            {/* An override is set by CertForge staff for this org alone, so
+                the number can disagree with the pricing page; say so. */}
+            <MeterRow
+              label="Credentials this month"
+              meter={usage.credentials}
+              tag={usage.credentials.source === "override" ? "Custom limit" : undefined}
+            />
             {/* A stock, not a monthly flow — no "this month". It is the same
                 count the API gates template creation on, so the bar filling up
                 is the only warning before a 402. */}
@@ -323,7 +329,7 @@ function CheckoutReturnNote({
   );
 }
 
-function MeterRow({ label, meter }: { label: string; meter: UsageMeter }) {
+function MeterRow({ label, meter, tag }: { label: string; meter: UsageMeter; tag?: string }) {
   const limit = meter.limit;
   const unlimited = limit === null;
   const fraction = unlimited ? 0 : limit === 0 ? 1 : Math.min(1, meter.used / limit);
@@ -332,7 +338,10 @@ function MeterRow({ label, meter }: { label: string; meter: UsageMeter }) {
   return (
     <div>
       <div className="flex items-baseline justify-between gap-2 text-sm">
-        <span className="text-muted">{label}</span>
+        <span className="text-muted">
+          {label}
+          {tag ? <span className="ml-2 font-mono text-[10px] uppercase tracking-[0.08em] text-accent">{tag}</span> : null}
+        </span>
         <span className="font-mono text-ink">
           {meter.used}
           {unlimited ? "" : ` / ${meter.limit}`}
