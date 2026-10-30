@@ -545,6 +545,18 @@ export interface OperatorQuotaDetail extends OperatorOrg {
   history: CredentialQuotaChange[];
 }
 
+/** One member of an org, with what Clerk holds for them. Read from Clerk on
+ *  every request; nothing here is stored by CertForge. */
+export interface OperatorContact {
+  clerk_user_id: string;
+  role: string;
+  /** False when Clerk has no user with this id; the fields below are then null. */
+  found: boolean;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+}
+
 export interface OperatorQuotaResult extends OperatorOrg {
   /** False when the request asked for what was already in force. */
   changed: boolean;
@@ -1194,6 +1206,15 @@ export class CertForgeClient {
       `/api/v1/operator/orgs/${encodeURIComponent(slug)}/credential-quota`,
       { signal },
     );
+  }
+
+  /** Owners first. Rejects 503 `contacts_unavailable` when Clerk cannot be
+   *  asked; the quota calls do not depend on this one. */
+  getOrgContacts(slug: string, signal?: AbortSignal): Promise<OperatorContact[]> {
+    return this.request<{ contacts: OperatorContact[] }>(
+      `/api/v1/operator/orgs/${encodeURIComponent(slug)}/contacts`,
+      { signal },
+    ).then((data) => data.contacts);
   }
 
   /** `limit: null` is an unlimited override, not "remove" — that is

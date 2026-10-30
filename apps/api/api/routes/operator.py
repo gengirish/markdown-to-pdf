@@ -8,7 +8,8 @@ read `monthly_quota`.
 
 Every route depends on `require_operator` — an allowlist of verified Clerk
 user ids, never an org role and never an API key. Every write goes through
-`services/plans.py`, which logs it in the same transaction.
+`services/plans.py`, which logs it in the same transaction. Contact details
+are read from Clerk on request (`services/clerk_users.py`) and never stored.
 
 Not public, so deliberately absent from `_build_llms_txt` / `_build_sitemap_xml`.
 """
@@ -25,9 +26,10 @@ from api.core.config import BILLING_TIERS, DEFAULT_TIER, canonical_tier, get_tie
 from api.core.envelope import ApiException, ApiResponse
 from api.core.principal import Principal, require_operator
 from api.models import get_db
-from api.models.organization import Organization
+from api.models.organization import Organization, OrgMember
 from api.models.quota_change import CredentialQuotaChange
 from api.models.usage import UsageLedger
+from api.services.clerk_users import ContactsUnavailable, fetch_contacts
 from api.services.issuance import (
     UNLIMITED,
     credential_quota_source,
@@ -180,6 +182,45 @@ def get_credential_quota(slug: str, principal: Principal = Depends(require_opera
     with get_db() as session:
         org = _get_org(session, slug)
         return ApiResponse.ok({**_state(session, org), "history": _history(session, org)})
+
+
+_ROLE_ORDER = {"owner": 0, "admin": 1, "issuer": 2}
+
+
+@router.get("/orgs/{slug}/contacts", response_model=ApiResponse[dict])
+def get_contacts(slug: str, principal: Principal = Depends(require_operator)):
+    """Who to reach at an org: its members, owners first, with the email and
+    phone Clerk holds for each.
+
+    Separate from the quota read on purpose. Contact details come from Clerk's
+    Backend API, and a Clerk failure answers 503 here without taking the
+    quota controls down with it. `null` means Clerk has no such value; a member
+    Clerk does not know at all is still listed, with `found: false`.
+    """
+    with get_db() as session:
+        org = _get_org(session, slug)
+        members = [
+            (m.clerk_user_id, m.role)
+            for m in session.query(OrgMember).filter_by(org_id=org.id)
+        ]
+
+    members.sort(key=lambda m: (_ROLE_ORDER.get(m[1], len(_ROLE_ORDER)), m[0]))
+    try:
+        found = fetch_contacts([uid for uid, _ in members])
+    except ContactsUnavailable as exc:
+        raise ApiException(503, str(exc), error_type="contacts_unavailable")
+
+    return ApiResponse.ok({
+        "contacts": [
+            {
+                "clerk_user_id": uid,
+                "role": role,
+                "found": uid in found,
+                **found.get(uid, {"name": None, "email": None, "phone": None}),
+            }
+            for uid, role in members
+        ],
+    })
 
 
 @router.put("/orgs/{slug}/credential-quota", response_model=ApiResponse[dict])
