@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import {
   toApiError,
+  type OperatorContact,
   type OperatorOrg,
   type OperatorQuotaDetail,
   type QuotaOverride,
@@ -75,6 +76,22 @@ export function QuotaPanel({
       });
     return () => controller.abort();
   }, [api, slug, reloadToken]);
+
+  // Its own request: contacts come from Clerk, and a Clerk failure should
+  // cost this section only, not the quota controls.
+  const [contacts, setContacts] = useState<OperatorContact[] | null>(null);
+  const [contactsError, setContactsError] = useState<string | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    api
+      .getOrgContacts(slug, controller.signal)
+      .then(setContacts)
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        setContactsError(toApiError(err).message);
+      });
+    return () => controller.abort();
+  }, [api, slug]);
 
   const trimmedReason = reason.trim();
   const reasonOk = trimmedReason.length >= MIN_REASON_LENGTH;
@@ -168,6 +185,52 @@ export function QuotaPanel({
             <Fact label="Enforced" value={formatLimit(detail.effective)} strong />
             <Fact label="Used this month" value={detail.used.toLocaleString("en-US")} />
           </dl>
+
+          <section>
+            <Eyebrow tone="muted">Contacts</Eyebrow>
+            {contactsError ? (
+              <p className="mt-3 text-sm text-danger">Contacts unavailable: {contactsError}</p>
+            ) : contacts === null ? (
+              <div className="mt-3">
+                <Skeleton rows={1} />
+              </div>
+            ) : contacts.length === 0 ? (
+              <p className="mt-3 text-sm text-faint">This org has no members.</p>
+            ) : (
+              <ul className="mt-3 space-y-3">
+                {contacts.map((contact) => (
+                  <li key={contact.clerk_user_id} className="text-sm">
+                    <div className="text-ink">
+                      {contact.name ?? <span className="text-faint">No name</span>}
+                      <span className="ml-2 text-faint">· {contact.role}</span>
+                    </div>
+                    {contact.found ? (
+                      <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5">
+                        {contact.email ? (
+                          <a href={`mailto:${contact.email}`} className="text-accent underline-offset-2 hover:underline">
+                            {contact.email}
+                          </a>
+                        ) : (
+                          <span className="text-faint">No email on file</span>
+                        )}
+                        {contact.phone ? (
+                          <a href={`tel:${contact.phone}`} className="font-mono text-accent underline-offset-2 hover:underline">
+                            {contact.phone}
+                          </a>
+                        ) : (
+                          <span className="text-faint">No phone on file</span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-0.5 text-faint">
+                        Not found in Clerk · <Mono>{contact.clerk_user_id}</Mono>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium text-ink">Reason</span>

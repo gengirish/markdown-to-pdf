@@ -375,3 +375,84 @@ def test_list_searches_and_pages_by_slug(client, operator, db_session):
     assert rest["next_cursor"] is None
     assert rest["orgs"][1]["override"] == {"limit": 1000}
     assert rest["orgs"][1]["source"] == "override"
+
+
+# -- contacts: read from Clerk, never stored -----------------------------------
+
+def _clerk_transport(users, status=200, seen=None):
+    import httpx
+
+    def handler(request):
+        if seen is not None:
+            seen.append(request)
+        return httpx.Response(status, json=users)
+
+    real_client = httpx.Client
+    return lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw)
+
+
+def _contacts(client, slug):
+    return client.get(f"/api/v1/operator/orgs/{slug}/contacts")
+
+
+def _with_members(db_session, slug, members):
+    org = make_org(db_session, slug)
+    for uid, role in members:
+        db_session.add(OrgMember(org_id=org.id, clerk_user_id=uid, role=role))
+    db_session.commit()
+    return org
+
+
+def test_contacts_are_operator_only(client, monkeypatch, mock_clerk, db_session):
+    monkeypatch.setattr(config, "OPERATOR_USER_IDS", frozenset({"user_someone_else"}))
+    make_org(db_session, "contacts-forbidden")
+    assert _contacts(client, "contacts-forbidden").status_code == 403
+
+
+def test_contacts_without_a_clerk_key_say_so(client, operator, monkeypatch, db_session):
+    monkeypatch.setattr(config, "CLERK_SECRET_KEY", "")
+    _with_members(db_session, "contacts-nokey", [("user_a", "owner")])
+    r = _contacts(client, "contacts-nokey")
+    assert r.status_code == 503
+    assert r.json()["error"]["type"] == "contacts_unavailable"
+
+
+def test_contacts_come_from_clerk_owners_first(client, operator, monkeypatch, db_session):
+    monkeypatch.setattr(config, "CLERK_SECRET_KEY", "sk_test_x")
+    _with_members(db_session, "contacts-ok", [("user_issuer", "issuer"), ("user_owner", "owner"), ("user_gone", "admin")])
+    users = [
+        {
+            "id": "user_owner", "first_name": "Asha", "last_name": "Rao",
+            "primary_email_address_id": "e2",
+            "email_addresses": [{"id": "e1", "email_address": "old@acme.test"},
+                                {"id": "e2", "email_address": "asha@acme.test"}],
+            "primary_phone_number_id": "p1",
+            "phone_numbers": [{"id": "p1", "phone_number": "+919800000000"}],
+        },
+        {"id": "user_issuer", "first_name": None, "last_name": None,
+         "primary_email_address_id": None, "email_addresses": [], "phone_numbers": []},
+    ]
+    seen = []
+    with patch("api.services.clerk_users.httpx.Client", _clerk_transport(users, seen=seen)):
+        r = _contacts(client, "contacts-ok")
+
+    assert r.status_code == 200, r.text
+    contacts = r.json()["data"]["contacts"]
+    assert [c["clerk_user_id"] for c in contacts] == ["user_owner", "user_gone", "user_issuer"]
+    owner, gone, issuer = contacts
+    assert owner == {"clerk_user_id": "user_owner", "role": "owner", "found": True,
+                     "name": "Asha Rao", "email": "asha@acme.test", "phone": "+919800000000"}
+    # Clerk has no such user: listed, flagged, and nothing invented.
+    assert gone["found"] is False and gone["email"] is None
+    assert issuer["found"] is True and issuer["email"] is None and issuer["phone"] is None
+    assert seen[0].headers["authorization"] == "Bearer sk_test_x"
+    assert sorted(seen[0].url.params.get_list("user_id")) == ["user_gone", "user_issuer", "user_owner"]
+
+
+def test_a_clerk_failure_is_a_503_not_empty_contacts(client, operator, monkeypatch, db_session):
+    monkeypatch.setattr(config, "CLERK_SECRET_KEY", "sk_test_x")
+    _with_members(db_session, "contacts-down", [("user_a", "owner")])
+    with patch("api.services.clerk_users.httpx.Client", _clerk_transport({"errors": []}, status=500)):
+        r = _contacts(client, "contacts-down")
+    assert r.status_code == 503
+    assert r.json()["error"]["type"] == "contacts_unavailable"
