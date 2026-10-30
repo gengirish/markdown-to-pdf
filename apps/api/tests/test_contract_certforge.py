@@ -235,6 +235,25 @@ def test_the_public_issuer_namespace_is_not_the_protected_dashboard_one():
         )
 
 
+def test_the_operator_page_is_behind_the_auth_middleware():
+    """`/operator` signs a visitor in before rendering a page of 401s.
+
+    The real check is `require_operator` on the API; this only keeps the page
+    from rendering signed out. It must also not have widened onto the public
+    namespaces.
+    """
+    proxy = WEB_PROXY_TS.read_text(encoding="utf-8")
+    block = proxy.split("createRouteMatcher([")[1].split("]);")[0]
+    matchers = re.findall(r'"([^"]+)"', block)
+    assert "/operator" in matchers and "/operator/(.*)" in matchers, (
+        "proxy.ts does not protect /operator"
+    )
+    for m in matchers:
+        pattern = _source_to_regex(m.replace("(.*)", ":path*"))
+        for public in ("/verify/x", "/credentials/x", "/orgs/x"):
+            assert not pattern.match(public), f"proxy.ts matcher {m!r} captures {public}"
+
+
 def test_the_public_credential_paths_skip_the_auth_middleware_entirely():
     """A printed QR code must not depend on Clerk being configured.
 
