@@ -82,6 +82,7 @@ const STATUS = [
       "Your own artwork as a template",
       "Credential email, with per-recipient delivery status",
       "Usage and quota reporting",
+      "Self-serve plan upgrades and billing portal",
     ],
   },
   {
@@ -94,7 +95,8 @@ const STATUS = [
   {
     label: "Not yet",
     tone: "neutral" as const,
-    items: ["Self-serve billing and plan upgrades", "Webhook delivery retries"],
+    // Webhooks are live; a failed `batch.completed` POST is logged and dropped.
+    items: ["Webhook delivery retries"],
   },
 ];
 
@@ -248,7 +250,7 @@ export default function Home() {
                 </p>
               </div>
               <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-faint">
-                Updated Sep 2026
+                Updated Oct 2026
               </span>
             </div>
 
