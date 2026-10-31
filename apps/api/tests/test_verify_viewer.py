@@ -1,5 +1,6 @@
 """Regression tests for the CertForge credential viewer and badge export."""
 
+import html
 import json
 import re
 import uuid
@@ -322,10 +323,81 @@ def test_viewer_offers_a_linkedin_share_link(client, db_session):
     body = client.get("/verify/CF-2026-SHARE001").text
 
     assert "Share on LinkedIn" in body
-    href = re.search(r'href="(https://www\.linkedin\.com/sharing[^"]*)"', body)
+    href = re.search(r'class="btn-share btn-linkedin" href="([^"]*)"', body)
     assert href, "no LinkedIn share link"
     # The share URL must carry this credential's page, not the bare host.
     assert "CF-2026-SHARE001" in href.group(1)
+
+
+def _linkedin_post(body: str) -> str:
+    """The post text the LinkedIn button prefills, decoded from its href."""
+    from urllib.parse import parse_qs, urlparse
+
+    m = re.search(r'class="btn-share btn-linkedin" href="([^"]*)"', body)
+    assert m, "no LinkedIn share link"
+    query = parse_qs(urlparse(html.unescape(m.group(1))).query)
+    assert query.get("shareActive") == ["true"]
+    return query["text"][0]
+
+
+def test_linkedin_share_prefills_a_post_not_just_a_link(client, db_session):
+    """`share-offsite/?url=` takes a URL and nothing else, so the button used
+    to open LinkedIn with an empty composer. The post has to arrive with it —
+    naming the credential, and carrying the verify URL, which is what makes
+    LinkedIn unfurl the certificate image under the post."""
+    _issue_credential(db_session, "CF-2026-SHAREPOS", slug="viewer-share-post-org")
+
+    body = client.get("/verify/CF-2026-SHAREPOS").text
+    post = _linkedin_post(body)
+
+    assert "Advanced Widgetry" in post
+    assert "Viewer Org" in post
+    assert f"{CERTFORGE_WEB_URL}/verify/CF-2026-SHAREPOS" in post
+    # The clipboard fallback copies the same text the link carries.
+    data_post = re.search(r'data-post="([^"]*)"', body)
+    assert data_post and html.unescape(data_post.group(1)) == post
+
+
+def test_linkedin_post_cannot_break_out_of_its_attribute(client, db_session):
+    """The post lands in a `data-post` attribute and the composer URL, and its
+    title comes from a customer CSV. A quote in it must not end the attribute."""
+    evil = '"><img src=x onerror=alert(1)>'
+    _issue_credential(db_session, "CF-2026-SHAREXSS", slug="viewer-share-xss-org", title=evil)
+
+    body = client.get("/verify/CF-2026-SHAREXSS").text
+
+    assert "<img src=x" not in body
+    assert evil in _linkedin_post(body)
+
+
+def test_viewer_offers_add_to_linkedin_profile(client, db_session):
+    """The documented certification link, prefilled from the credential."""
+    from urllib.parse import parse_qs, urlparse
+
+    _issue_credential(db_session, "CF-2026-PROFILE1", slug="viewer-profile-org")
+
+    body = client.get("/verify/CF-2026-PROFILE1").text
+    m = re.search(r'class="btn-share btn-li-profile" href="([^"]*)"', body)
+    assert m, "no Add to LinkedIn profile link"
+    url = urlparse(html.unescape(m.group(1)))
+    q = {k: v[0] for k, v in parse_qs(url.query).items()}
+
+    assert url.netloc == "www.linkedin.com" and url.path == "/profile/add"
+    assert q["startTask"] == "CERTIFICATION_NAME"
+    assert q["name"] == "Advanced Widgetry"
+    assert q["organizationName"] == "Viewer Org"
+    assert q["certId"] == "CF-2026-PROFILE1"
+    assert q["certUrl"] == f"{CERTFORGE_WEB_URL}/verify/CF-2026-PROFILE1"
+    assert q["issueYear"].isdigit() and 1 <= int(q["issueMonth"]) <= 12
+
+
+def test_add_to_profile_omits_a_date_it_cannot_read():
+    from api.viewer_templates import linkedin_add_to_profile_url
+
+    url = linkedin_add_to_profile_url(
+        title="T", issuer_name="O", issued_at="not a date", page_url="https://x/v", credential_id="C"
+    )
+    assert "issueYear" not in url and "issueMonth" not in url
 
 
 def test_viewer_shows_the_verification_qr(client, db_session):
