@@ -4,13 +4,18 @@ import re
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
 
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from api.core import config
 from api.models import get_db
 from api.models.credential import CLAIMABLE, CLAIMED, Credential
 from api.models.passport import Passport, PassportCredential
-from api.core.envelope import ApiResponse
+from api.core.envelope import ApiException, ApiResponse
 from api.core.principal import Principal, require_user, require_org_access
+from api.services.claims import claim_token_valid
 
 router = APIRouter(prefix="/passports", tags=["passports"])
 claims_router = APIRouter(prefix="/claims", tags=["claims"])
@@ -46,16 +51,24 @@ def _passport_identity(principal: Principal) -> tuple[str, str]:
     return f"{seed}-{uuid.uuid4().hex[:8]}", display_name
 
 
+class ClaimRequest(BaseModel):
+    #: From the `?t=` of the link in the delivery email (`services/claims.py`).
+    token: Optional[str] = None
+
+
 @claims_router.post("/{credential_id}", response_model=ApiResponse[dict])
 def claim_credential(
     credential_id: str,
+    body: Optional[ClaimRequest] = None,
     principal: Principal = Depends(require_user)
 ):
-    """Claim a credential using its public ID.
+    """Claim a credential with the token from its delivery email.
 
     Idempotent: re-claiming a credential you already hold returns the same
-    passport rather than creating a second one or a duplicate link.
+    passport rather than creating a second one or a duplicate link, and needs
+    no token — the holder should not have to find the email again.
     """
+    token = body.token if body else None
     with get_db() as session:
         cred = session.query(Credential).filter_by(public_id=credential_id).first()
         # Revoked counts as absent here, as it does in /verify — claiming one
@@ -66,6 +79,22 @@ def claim_credential(
         if cred.claimed_by_user_id and cred.claimed_by_user_id != principal.clerk_user_id:
             raise HTTPException(
                 status_code=403, detail="Credential already claimed by another user"
+            )
+
+        # The public ID is printed in the QR code, so on its own it proves
+        # nothing about who is claiming. Checked after the holder test above:
+        # the holder re-claims without one, and someone else gets the
+        # "already claimed" answer whatever they send.
+        if (
+            config.CLAIM_TOKEN_REQUIRED
+            and cred.claimed_by_user_id != principal.clerk_user_id
+            and not claim_token_valid(cred.public_id, token)
+        ):
+            raise ApiException(
+                403,
+                "This claim link is incomplete. Use the link from the credential's email, "
+                "or ask the issuer to resend it.",
+                error_type="claim_token_invalid",
             )
 
         # Ensure passport exists

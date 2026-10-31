@@ -43,6 +43,21 @@ if not CERT_SECRET:
     CERT_SECRET = "pdfcert-dev-secret-local-only"
     logger.warning("CERT_SECRET_KEY not set — using insecure dev default. Set it before deploying.")
 
+#: Signs the claim token in a credential's delivery email
+#: (`services/claims.py`). Its own secret, never CERT_SECRET: rotating this
+#: one invalidates only unclaimed claim links, which a resend repairs, while
+#: rotating CERT_SECRET invalidates every legacy certificate ever printed.
+CLAIM_SECRET = _env("CERTFORGE_CLAIM_SECRET")
+if not CLAIM_SECRET:
+    if IS_PROD:
+        raise RuntimeError("CERTFORGE_CLAIM_SECRET environment variable is required in production")
+    CLAIM_SECRET = "certforge-claim-dev-secret-local-only"
+
+#: Whether `POST /claims/{id}` refuses a claim without a valid token. Off
+#: until the web claim page that sends the token is deployed — turning it on
+#: first would 403 every claim made from the live page.
+CLAIM_TOKEN_REQUIRED = _env("CLAIM_TOKEN_REQUIRED").lower() in ("1", "true", "yes", "on")
+
 CERT_API_KEYS: set[str] = set()
 _raw_keys = _env("CERT_API_KEYS")
 if _raw_keys:

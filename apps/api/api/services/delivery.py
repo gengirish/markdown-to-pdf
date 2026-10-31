@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 
 from api.core.config import CERT_BRAND_NAME, CERTFORGE_WEB_URL
 from api.core.email import agentmail_deliver
+from api.services.claims import claim_url_for
 from api.models.credential import (
     DELIVERY_FAILED,
     DELIVERY_PENDING,
@@ -99,6 +100,7 @@ CREDENTIAL_EMAIL_HTML = """
     </table>
     <a href="{verify_url}" style="display:inline-block;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:14px 36px;border-radius:12px;font-size:16px;font-weight:600;text-decoration:none;margin-bottom:12px;">View Your Credential</a>
     <p style="font-size:12px;color:#a0aec0;margin:12px 0 0;">Or download the PDF directly: <a href="{pdf_url}" style="color:#667eea;text-decoration:none;font-weight:500;">Download PDF</a></p>
+    <p style="font-size:12px;color:#a0aec0;margin:8px 0 0;">Keep it with everything else you have earned: <a href="{claim_url}" style="color:#667eea;text-decoration:none;font-weight:500;">Add it to your CertForge passport</a></p>
   </div>
   <div style="background:#f8fafc;padding:16px 32px;text-align:center;border-radius:0 0 12px 12px;border-top:1px solid #edf2f7;">
     <p style="font-size:12px;color:#a0aec0;margin:0;">{footer}</p>
@@ -133,6 +135,7 @@ def build_credential_email(cred, verify_url: str, org=None) -> tuple[str, str, s
         f"Your credential for {cred.title} is ready.\n\n"
         f"View it here: {verify_url}\n"
         f"Download the PDF: {pdf_url_for(cred.public_id)}\n"
+        f"Add it to your CertForge passport: {claim_url_for(cred.public_id)}\n"
     )
 
     # Escaped: recipient names and credential titles arrive from customer CSVs,
@@ -147,6 +150,9 @@ def build_credential_email(cred, verify_url: str, org=None) -> tuple[str, str, s
         credential_id=_esc(cred.public_id),
         verify_url=_esc(verify_url),
         pdf_url=_esc(pdf_url_for(cred.public_id)),
+        # Rebuilt from the row like the other two, so a retry or a resend
+        # carries the same claim link as the first send.
+        claim_url=_esc(claim_url_for(cred.public_id)),
         footer=_esc(footer),
     )
     return subject, text, html

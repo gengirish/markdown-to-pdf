@@ -376,3 +376,26 @@ def test_recipient_names_are_escaped_into_the_email(db_session):
     _, _, html = build_credential_email(cred, "https://example.test/v/1", org)
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
+
+
+def test_the_email_carries_a_working_claim_link_on_the_certforge_host(db_session):
+    """Both bodies, on CERTFORGE_WEB_URL, and the same link when a retry
+    rebuilds the message from the row alone."""
+    from urllib.parse import parse_qs, urlparse
+
+    from api.core.config import CERTFORGE_WEB_URL
+    from api.services.claims import claim_token_valid
+    from api.services.delivery import build_credential_email
+
+    cred, org = _sample_credential(db_session)
+    _, text, html = build_credential_email(cred, "https://example.test/v/1", org)
+    _, retry_text, retry_html = build_credential_email(cred, "https://example.test/v/1", None)
+
+    prefix = f"{CERTFORGE_WEB_URL}/claim/{cred.public_id}?t="
+    line = next(part for part in text.split() if part.startswith(prefix))
+    assert prefix in html and line in html
+    assert line in retry_text and line in retry_html, "a retry must carry the same link"
+
+    token = parse_qs(urlparse(line).query)["t"][0]
+    assert claim_token_valid(cred.public_id, token)
+

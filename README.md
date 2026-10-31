@@ -121,7 +121,7 @@ ruff check apps/api/api/ sdk/pdfcert/
 | `POST` `GET` `DELETE` | `/api/v1/orgs/{slug}/api-keys` | Manage API keys |
 | `POST` `GET` `DELETE` | `/api/v1/orgs/{slug}/webhooks` | Manage webhook endpoints |
 | `GET` | `/api/v1/passports/{username}` | Public credential passport |
-| `POST` | `/api/v1/claims/{credential_id}` | Claim a credential into a passport |
+| `POST` | `/api/v1/claims/{credential_id}` | Claim a credential into a passport. Body `{"token": "…"}`, the `?t=` of the claim link in the delivery email; the holder may re-claim without it |
 | `POST` | `/api/v1/orgs/{slug}/checkout` | Start a billing checkout |
 | `GET` | `/api/v1/verify/{credential_id}` | Verify a credential (JSON) |
 
@@ -262,6 +262,8 @@ Copy [`.env.example`](.env.example) as a starting point.
 | `RATE_LIMIT_WINDOW_SECONDS` | No | Rate-limit window in seconds (default: `60`) |
 | `TRUSTED_PROXY_HOPS` | No | Reverse proxies in front of the app, used to pick the caller out of `X-Forwarded-For` (default: `2`, for browser → Vercel → Fly). Set to `0` to ignore forwarding headers |
 | `AGENTMAIL_API_KEY` | No | AgentMail API key for email delivery |
+| `CERTFORGE_CLAIM_SECRET` | **Yes in production** | Signs the claim token in each delivery email's claim link. The API refuses to boot in production without it. Its own secret, never `CERT_SECRET_KEY`: rotating it invalidates only unclaimed claim links, which a resend repairs |
+| `CLAIM_TOKEN_REQUIRED` | No | `true` makes `POST /api/v1/claims/{id}` refuse an unclaimed credential without a valid token (`403`, `claim_token_invalid`). Off by default until the claim page that sends the token is deployed |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | For template artwork | Cloudflare R2, where an uploaded certificate design is stored. All four (or `R2_ENDPOINT` in place of the account id) or none: unset means the upload endpoint answers 503. There is **no local-filesystem fallback** — a storage backend that differs between dev and production works everywhere it is tested and loses every image on a Fly machine that scales to zero. `GET /api/health?deep=storage` asks whether the bucket actually answers, which is a different claim from the variables being set |
 | `R2_ENDPOINT` | No | S3-compatible endpoint override, for a local MinIO. Otherwise derived from `R2_ACCOUNT_ID` |
 | `ANTHROPIC_API_KEY` | For design reading | Powers `POST /orgs/{slug}/templates/from-image`, which reads an uploaded certificate design and proposes where each field goes. Unset means that one endpoint answers 503; every other way of building a template still works |

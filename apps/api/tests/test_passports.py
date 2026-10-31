@@ -216,6 +216,119 @@ def test_revoked_credential_cannot_be_claimed(client: TestClient, db_session):
     assert res.status_code == 404
 
 
+# ── The claim token ───────────────────────────────────────────────────────
+#
+# The public ID is printed in the QR code, so a claim keyed on it alone let
+# whoever saw a certificate first claim it and lock the recipient out. With
+# CLAIM_TOKEN_REQUIRED on, only the token from the delivery email claims an
+# unclaimed credential.
+
+@pytest.fixture
+def tokens_required(monkeypatch):
+    from api.core import config
+
+    monkeypatch.setattr(config, "CLAIM_TOKEN_REQUIRED", True)
+
+
+def _claimed_by(db_session, public_id):
+    db_session.expire_all()
+    return db_session.query(Credential).filter_by(public_id=public_id).one().claimed_by_user_id
+
+
+@pytest.mark.parametrize(
+    "body",
+    [None, {}, {"token": ""}, {"token": "0" * 32}, "other-credential"],
+    ids=["no-body", "no-token", "empty", "wrong", "another-credentials-token"],
+)
+def test_an_unclaimed_credential_needs_its_own_token(
+    client: TestClient, db_session, tokens_required, body
+):
+    from api.services.claims import claim_token_for
+
+    public_id = f"CF-TOK-{uuid.uuid4().hex[:8]}"
+    _issue_credential(db_session, public_id)
+    if body == "other-credential":
+        body = {"token": claim_token_for(f"{public_id}-OTHER")}
+
+    with auth_as("user_2Bystander"):
+        res = client.post(f"/api/v1/claims/{public_id}", json=body)
+
+    assert res.status_code == 403
+    assert res.json()["error"]["type"] == "claim_token_invalid"
+    assert _claimed_by(db_session, public_id) is None
+
+
+def test_the_emailed_token_claims_and_the_holder_reclaims_without_it(
+    client: TestClient, db_session, tokens_required
+):
+    from api.services.claims import claim_token_for
+
+    _issue_credential(db_session, "CF-TOK-OK")
+
+    with auth_as("user_2Recipient"):
+        first = client.post(
+            "/api/v1/claims/CF-TOK-OK", json={"token": claim_token_for("CF-TOK-OK")}
+        )
+        again = client.post("/api/v1/claims/CF-TOK-OK")
+
+    assert first.status_code == 200
+    assert again.status_code == 200, "the holder should not need the email again"
+    assert again.json()["data"]["username"] == first.json()["data"]["username"]
+    assert _claimed_by(db_session, "CF-TOK-OK") == "user_2Recipient"
+
+
+def test_the_token_does_not_unlock_a_credential_someone_else_holds(
+    client: TestClient, db_session, tokens_required
+):
+    from api.services.claims import claim_token_for
+
+    _issue_credential(db_session, "CF-TOK-HELD")
+    token = {"token": claim_token_for("CF-TOK-HELD")}
+    with auth_as("user_2First"):
+        assert client.post("/api/v1/claims/CF-TOK-HELD", json=token).status_code == 200
+    with auth_as("user_2Second"):
+        res = client.post("/api/v1/claims/CF-TOK-HELD", json=token)
+
+    assert res.status_code == 403
+    assert _claimed_by(db_session, "CF-TOK-HELD") == "user_2First"
+
+
+def test_the_token_is_keyed_on_the_claim_secret_not_cert_secret(monkeypatch):
+    """Rotating CERT_SECRET_KEY would also invalidate every legacy
+    certificate; the claim token must not depend on it."""
+    from api.core import config
+    from api.services.claims import claim_token_for
+
+    before = claim_token_for("CF-KEYED-1")
+    monkeypatch.setattr(config, "CERT_SECRET", "a-different-cert-secret")
+    assert claim_token_for("CF-KEYED-1") == before
+    monkeypatch.setattr(config, "CLAIM_SECRET", "a-different-claim-secret")
+    assert claim_token_for("CF-KEYED-1") != before
+
+
+def test_production_refuses_to_boot_without_a_claim_secret(tmp_path):
+    """Fail closed, as CERT_SECRET_KEY does — a dev fallback in production
+    would make every claim token computable from this repository."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    api_root = Path(__file__).resolve().parents[1]
+    env = {k: v for k, v in os.environ.items() if k.upper() in ("PATH", "SYSTEMROOT")}
+    env.update(PYTHONPATH=str(api_root), ENV="production", CERT_SECRET_KEY="x" * 32)
+    probe = [sys.executable, "-c", "import api.core.config"]
+
+    # cwd=tmp_path, so config's load_dotenv(".env.vercel.local") finds nothing.
+    missing = subprocess.run(probe, cwd=tmp_path, env=env, capture_output=True, text=True)
+    assert missing.returncode != 0
+    assert "CERTFORGE_CLAIM_SECRET" in missing.stderr
+
+    env["CERTFORGE_CLAIM_SECRET"] = "y" * 32
+    present = subprocess.run(probe, cwd=tmp_path, env=env, capture_output=True, text=True)
+    assert present.returncode == 0, present.stderr
+
+
 # ── Public passport ───────────────────────────────────────────────────────
 
 def test_unknown_passport_returns_404_not_200(client: TestClient):

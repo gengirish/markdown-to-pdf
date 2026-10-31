@@ -380,6 +380,25 @@ hand, so `footer_text` previewed as the sample string and issued as the org's.
   QR code is an image too. The traced-preview guard compares a render with artwork
   against the same render without it.
 
+### Claiming needs the token from the email
+
+A credential's public ID is in its QR code, so it cannot be what proves a
+claimant is the recipient. `api/services/claims.py` is the only place the
+claim token is made or checked: an HMAC of the public ID under
+`CERTFORGE_CLAIM_SECRET` (required in production, deliberately never
+`CERT_SECRET_KEY`), carried as `?t=` in the claim link both email bodies
+include. It is stateless, so a retry or a resend rebuilds the same link.
+
+- `POST /api/v1/claims/{id}` refuses an unclaimed credential without it
+  (403 `claim_token_invalid`) **only while `CLAIM_TOKEN_REQUIRED` is on** —
+  it shipped off so the API could deploy ahead of the claim page that sends
+  it. The holder re-claims without a token; anyone else gets "already
+  claimed" whatever they send.
+- The claim page carries `?t=` through sign-in **and** sign-up
+  (`forceRedirectUrl` / `signUpForceRedirectUrl`). Most recipients are new
+  users, so dropping it on the sign-up path alone would break nearly every
+  first claim.
+
 ### What a credential's signature covers
 
 `api/core/credential_signature.py` is the only place a `Credential`'s
