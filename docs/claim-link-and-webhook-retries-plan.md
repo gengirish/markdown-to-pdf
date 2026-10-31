@@ -1,6 +1,13 @@
 # Plan: the claim link in the delivery email, and webhook delivery retries
 
-Status: **planned 2026-10-30, not started.** These are the two items the
+Status: **Part A built 2026-10-31** (A-API, A-email, A-web), shipping with
+`CLAIM_TOKEN_REQUIRED` off; turning it on and A-status are the remaining
+steps. One change from the plan below: with no `t`, the claim page warns
+rather than hiding the button, because the holder of an already-claimed
+credential may re-claim without a token and the page cannot tell who holds
+it. **Part B not started.**
+
+Originally: **planned 2026-10-30.** These are the two items the
 landing page's status section (`apps/web/app/page.tsx`, `STATUS`) lists as not
 live: "Claim link in the delivery email" (In build) and "Webhook delivery
 retries" (Not yet). Each part ships separately and can be rolled back

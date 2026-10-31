@@ -19,10 +19,23 @@ type ClaimState =
 
 export default function ClaimCredentialPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ credential_id: string }>;
+  searchParams: Promise<{ t?: string | string[] }>;
 }) {
   const { credential_id: credentialId } = use(params);
+  // The claim token from the delivery email's link. The public ID alone is in
+  // the QR code, so the API needs this to know the claimant was sent the
+  // email. Never log it: it is the whole of the proof.
+  const { t } = use(searchParams);
+  const token = typeof t === "string" && t ? t : null;
+  // Where sign-in and sign-up return to. Built from the parts rather than read
+  // from window, which this page does not have while it is server-rendered,
+  // and so `?t=` cannot be dropped between the click and the claim.
+  const returnPath = `/claim/${encodeURIComponent(credentialId)}${
+    token ? `?t=${encodeURIComponent(token)}` : ""
+  }`;
   const { isLoaded, isSignedIn } = useAuth();
   const api = useCertForge();
   const [state, setState] = useState<ClaimState>({ phase: "loading" });
@@ -55,7 +68,7 @@ export default function ClaimCredentialPage({
         : current,
     );
     try {
-      const result = await api.claimCredential(credentialId);
+      const result = await api.claimCredential(credentialId, token);
       setState((current) =>
         current.phase === "claiming"
           ? { phase: "claimed", credential: current.credential, username: result.username }
@@ -68,14 +81,17 @@ export default function ClaimCredentialPage({
           ? {
               phase: "failed",
               credential: current.credential,
-              message: error.isForbidden
-                ? "This credential has already been claimed by someone else."
-                : error.message,
+              message:
+                error.type === "claim_token_invalid"
+                  ? "This link is missing its claim code. Open the link in the email this credential came with, or ask the issuer to resend it."
+                  : error.isForbidden
+                    ? "This credential has already been claimed by someone else."
+                    : error.message,
             }
           : current,
       );
     }
-  }, [api, credentialId]);
+  }, [api, credentialId, token]);
 
   const step = state.phase === "claimed" ? 2 : 1;
 
@@ -190,6 +206,15 @@ export default function ClaimCredentialPage({
                   <Mono className="mt-1.5 block text-xs text-faint">{state.credential.id}</Mono>
                 </div>
 
+                {/* Not a refusal: the holder re-opens a claimed credential
+                    without a code. Anyone else is told plainly by the API. */}
+                {!token && state.phase !== "failed" ? (
+                  <p className="mb-5 rounded-lg border border-warn-line bg-warn-wash p-3.5 text-xs leading-relaxed text-warn-ink">
+                    This link has no claim code. If this is your credential, use the link in the
+                    email it came with, or ask the issuer to resend it.
+                  </p>
+                ) : null}
+
                 {state.phase === "failed" ? (
                   <div className="mb-5">
                     <ErrorNote>{state.message}</ErrorNote>
@@ -206,7 +231,11 @@ export default function ClaimCredentialPage({
                   </button>
                 ) : (
                   <>
-                    <SignInButton mode="modal">
+                    <SignInButton
+                      mode="modal"
+                      forceRedirectUrl={returnPath}
+                      signUpForceRedirectUrl={returnPath}
+                    >
                       <button className={buttonClass("primary")}>Sign in to claim</button>
                     </SignInButton>
                     <p className="mt-3.5 text-xs leading-relaxed text-faint">

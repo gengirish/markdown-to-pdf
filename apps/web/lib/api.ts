@@ -1257,9 +1257,16 @@ export class CertForgeClient {
     });
   }
 
-  claimCredential(credentialId: string, signal?: AbortSignal): Promise<ClaimResult> {
+  /** `token` is the `?t=` of the claim link in the delivery email. The holder
+   *  of an already-claimed credential may omit it. */
+  claimCredential(
+    credentialId: string,
+    token?: string | null,
+    signal?: AbortSignal,
+  ): Promise<ClaimResult> {
     return this.request<ClaimResult>(`/api/v1/claims/${encodeURIComponent(credentialId)}`, {
       method: "POST",
+      json: { token: token || null },
       signal,
     });
   }
