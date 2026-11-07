@@ -1,6 +1,12 @@
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
 xhtml2pdf==0.2.16
+# xhtml2pdf's own dependency, pinned here because it does not pin it. It is
+# what lays a traced template's text over the uploaded artwork, and pypdf 7.0
+# removed the PageObject.replace_contents() path xhtml2pdf takes for that:
+# every traced render then fails, and bulk rows land as "failed". 6.21.4 is
+# what the last green CI run on main installed.
+pypdf==6.21.4
 python-multipart==0.0.12
 pydantic==2.9.2
 reportlab==4.2.5
