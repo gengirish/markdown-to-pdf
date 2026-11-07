@@ -20,20 +20,23 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 
 from api.core.config import BILLING_TIERS, DEFAULT_TIER, canonical_tier, get_tier_quota
 from api.core.envelope import ApiException, ApiResponse
 from api.core.principal import Principal, require_operator
 from api.models import get_db
+from api.models.credential import NOT_REQUESTED, Credential
 from api.models.organization import Organization, OrgMember
 from api.models.quota_change import CredentialQuotaChange
 from api.models.usage import UsageLedger
+from api.routes.credentials import LIKE_ESCAPE, _like_contains
 from api.services.clerk_users import ContactsUnavailable, fetch_contacts
 from api.services.issuance import (
     UNLIMITED,
     credential_quota_source,
     effective_credential_quota,
+    is_test_credential,
     quota_state,
 )
 from api.services.plans import (
@@ -311,4 +314,95 @@ def set_tier(
             "previous_tier": previous_tier,
             "changed": changed,
             "override_cleared": changed and had_override,
+        })
+
+
+# -- who each org has emailed -----------------------------------------------------
+
+_DELIVERY_PATTERN = "^(attempted|not_requested|pending|sent|failed|unknown|all)$"
+
+
+@router.get("/deliveries", response_model=ApiResponse[dict])
+def list_deliveries(
+    org: Optional[str] = Query(default=None, max_length=100, description="An org slug; omit for every org"),
+    q: Optional[str] = Query(default=None, max_length=200, description="Recipient name, email or title"),
+    delivery_status: str = Query(default="attempted", pattern=_DELIVERY_PATTERN),
+    limit: int = Query(default=50, ge=1, le=200),
+    cursor: Optional[str] = Query(default=None, description="The last id of the previous page"),
+    principal: Principal = Depends(require_operator),
+):
+    """Every credential email across every org: who issued it, to whom, and
+    what became of the send. Newest first.
+
+    `attempted` (the default) is every row where a send was tried or may have
+    been — everything but `not_requested`. `unknown` rows predate delivery
+    tracking and are reported as such, never guessed. Read-only.
+    """
+    with get_db() as session:
+        query = session.query(Credential, Organization).join(
+            Organization, Organization.id == Credential.org_id
+        )
+        if org:
+            target = _get_org(session, org)
+            query = query.filter(Credential.org_id == target.id)
+        if delivery_status == "attempted":
+            query = query.filter(Credential.delivery_status != NOT_REQUESTED)
+        elif delivery_status != "all":
+            query = query.filter(Credential.delivery_status == delivery_status)
+        needle = (q or "").strip()
+        if needle:
+            pattern = _like_contains(needle)
+            query = query.filter(
+                or_(
+                    Credential.recipient_name.ilike(pattern, escape=LIKE_ESCAPE),
+                    Credential.recipient_email.ilike(pattern, escape=LIKE_ESCAPE),
+                    Credential.title.ilike(pattern, escape=LIKE_ESCAPE),
+                )
+            )
+
+        total = query.count()
+        if cursor:
+            anchor = session.query(Credential).filter_by(public_id=cursor).first()
+            if anchor is None:
+                raise HTTPException(status_code=400, detail="Unknown cursor")
+            # (issued_at, public_id) so a bulk batch issued in one instant is
+            # neither skipped nor repeated at a page boundary.
+            query = query.filter(
+                or_(
+                    Credential.issued_at < anchor.issued_at,
+                    and_(
+                        Credential.issued_at == anchor.issued_at,
+                        Credential.public_id < anchor.public_id,
+                    ),
+                )
+            )
+        rows = (
+            query.order_by(Credential.issued_at.desc(), Credential.public_id.desc())
+            .limit(limit + 1)
+            .all()
+        )
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+
+        return ApiResponse.ok({
+            "deliveries": [
+                {
+                    "id": c.public_id,
+                    "org_slug": o.slug,
+                    "org_name": o.name,
+                    "recipient_name": c.recipient_name,
+                    "recipient_email": c.recipient_email or None,
+                    "title": c.title,
+                    "status": c.status,
+                    "is_test": is_test_credential(c),
+                    "issued_at": c.issued_at.isoformat(),
+                    "delivery_status": c.delivery_status,
+                    "delivered_at": c.delivered_at.isoformat() if c.delivered_at else None,
+                    "delivery_attempts": c.delivery_attempts,
+                    "delivery_error": c.delivery_error,
+                }
+                for c, o in rows
+            ],
+            "total": total,
+            "next_cursor": rows[-1][0].public_id if has_more else None,
         })
