@@ -82,6 +82,72 @@ def format_issued_date(value) -> str:
         return text
 
 
+def _issued_year_month(value) -> tuple[int, int] | None:
+    """`(year, month)` of an issue date, or None when it cannot be read.
+
+    Same parsing as `format_issued_date`, and the same rule: never raise. The
+    caller drops the fields rather than sending LinkedIn a guessed date.
+    """
+    if isinstance(value, datetime):
+        return value.year, value.month
+    text = str(value or "").strip()
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.year, parsed.month
+
+
+def _hashtag(value: str) -> str:
+    """`Acme Academy` -> `#AcmeAcademy`; empty when nothing alphanumeric is left."""
+    word = "".join(ch for ch in str(value) if ch.isalnum())
+    return f"#{word}" if word else ""
+
+
+def linkedin_post_text(*, title: str, issuer_name: str, page_url: str) -> str:
+    """The post a recipient shares, written from the credential itself.
+
+    LinkedIn's documented share link (`share-offsite/?url=`) takes a URL and
+    nothing else — `summary` and `title` have been ignored for years — so the
+    button used to open an empty composer with a link card. The text is built
+    here, from fields already on the page, rather than by a model: a public,
+    unauthenticated page cannot be allowed to spend money per click.
+
+    The verify URL goes inside the text because that is what makes LinkedIn
+    unfurl the og:image card under the post.
+    """
+    tags = " ".join(t for t in ("#Certification", _hashtag(issuer_name), "#LearningAndDevelopment") if t)
+    return (
+        f"I'm happy to share that I've earned \"{title}\" from {issuer_name}!\n\n"
+        f"Anyone can verify this credential here: {page_url}\n\n"
+        f"{tags}"
+    )
+
+
+def linkedin_add_to_profile_url(
+    *, title: str, issuer_name: str, issued_at, page_url: str, credential_id: str
+) -> str:
+    """LinkedIn's documented "Add to profile" link for a certification.
+
+    Opens the Licenses & Certifications form prefilled. Unlike the composer
+    link this one is published by LinkedIn, so it is the durable half of the
+    pair. Issue year and month are omitted rather than guessed when the date
+    does not parse.
+    """
+    params = [
+        ("startTask", "CERTIFICATION_NAME"),
+        ("name", str(title)),
+        ("organizationName", str(issuer_name)),
+    ]
+    ym = _issued_year_month(issued_at)
+    if ym:
+        params += [("issueYear", str(ym[0])), ("issueMonth", str(ym[1]))]
+    params += [("certUrl", page_url), ("certId", str(credential_id))]
+    return "https://www.linkedin.com/profile/add?" + "&".join(
+        f"{k}={quote(v, safe='')}" for k, v in params
+    )
+
+
 def _safe_color(value: str | None, fallback: str) -> str:
     """Return `value` only if it is unmistakably a CSS colour."""
     if value and _COLOR_RE.match(str(value).strip()):
@@ -190,6 +256,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .btn-twitter{border-color:#1da1f2;color:#1da1f2}
 .btn-twitter:hover{background:#f0f9ff;border-color:#0c85d0}
 .btn-share svg{width:15px;height:15px}
+.share-note{font-size:.68rem;color:#718096;min-height:1em}
 
 .qr-section{display:flex;align-items:center;justify-content:center;gap:.8rem;margin-top:1.4rem;padding-top:1.2rem;border-top:1px solid #f0f0f0}
 .qr-section img{border-radius:6px;border:1px solid #e2e8f0}
@@ -270,15 +337,19 @@ CREDENTIAL_VIEWER_HTML = """<!DOCTYPE html>
             <div class="actions">
                 {download_html}
                 <div class="share-row">
-                    <a class="btn-share btn-linkedin" href="{linkedin_url}" target="_blank" rel="noopener noreferrer">
+                    <a class="btn-share btn-linkedin" href="{linkedin_url}" data-post="{linkedin_post}" target="_blank" rel="noopener noreferrer">
                         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.5 2h-17A1.5 1.5 0 002 3.5v17A1.5 1.5 0 003.5 22h17a1.5 1.5 0 001.5-1.5v-17A1.5 1.5 0 0020.5 2zM8 19H5v-9h3zM6.5 8.25A1.75 1.75 0 118.3 6.5a1.78 1.78 0 01-1.8 1.75zM19 19h-3v-4.74c0-1.42-.6-1.93-1.38-1.93A1.74 1.74 0 0013 14.19V19h-3v-9h2.9v1.3a3.11 3.11 0 012.7-1.4c1.55 0 3.36.86 3.36 3.66z"/></svg>
                         Share on LinkedIn
+                    </a>
+                    <a class="btn-share btn-li-profile" href="{linkedin_profile_url}" target="_blank" rel="noopener noreferrer">
+                        Add to LinkedIn profile
                     </a>
                     <a class="btn-share btn-twitter" href="{twitter_url}" target="_blank" rel="noopener noreferrer">
                         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
                         Share on X
                     </a>
                 </div>
+                <div class="share-note" aria-live="polite"></div>
             </div>
             <div class="qr-section">
                 <img src="{qr_data_uri}" alt="QR code linking to this credential's verification page" width="80" height="80" />
@@ -289,6 +360,22 @@ CREDENTIAL_VIEWER_HTML = """<!DOCTYPE html>
             <p>{footer_html}</p>
         </div>
     </div>
+    <script>
+    // The composer link that prefills the post is not one LinkedIn documents,
+    // so the post is also put on the clipboard: if LinkedIn ever drops the
+    // text, the person pastes it. Nothing is interpolated into this script —
+    // the post is read from data-post, which was escaped as an attribute.
+    (function(){{
+        var a = document.querySelector('.btn-linkedin');
+        var note = document.querySelector('.share-note');
+        if (!a || !navigator.clipboard) return;
+        a.addEventListener('click', function(){{
+            navigator.clipboard.writeText(a.getAttribute('data-post') || '').then(function(){{
+                if (note) note.textContent = 'Post copied - paste it if LinkedIn opens empty.';
+            }}, function(){{}});
+        }});
+    }})();
+    </script>
 </body>
 </html>"""
 
@@ -372,8 +459,18 @@ def render_credential_viewer(
         )
 
     share_target = safe_public_url(page_url)
+    post = linkedin_post_text(title=str(title), issuer_name=str(issuer_name), page_url=share_target)
     linkedin_url = html.escape(
-        "https://www.linkedin.com/sharing/share-offsite/?url=" + quote(share_target, safe="")
+        "https://www.linkedin.com/feed/?shareActive=true&text=" + quote(post, safe="")
+    )
+    linkedin_profile_url = html.escape(
+        linkedin_add_to_profile_url(
+            title=str(title),
+            issuer_name=str(issuer_name),
+            issued_at=issued_at,
+            page_url=share_target,
+            credential_id=str(credential_id),
+        )
     )
     twitter_url = html.escape(
         "https://twitter.com/intent/tweet?text="
@@ -413,6 +510,8 @@ def render_credential_viewer(
         logo_html=logo_html,
         download_html=download_html,
         linkedin_url=linkedin_url,
+        linkedin_post=html.escape(post),
+        linkedin_profile_url=linkedin_profile_url,
         twitter_url=twitter_url,
         qr_data_uri=qr_data_uri,
         footer_html=footer,
