@@ -240,6 +240,37 @@ def test_cursor_pagination_walks_without_repeating(client, db_session):
     assert not ({i["id"] for i in first["items"]} & {i["id"] for i in second["items"]})
 
 
+def test_cursor_pagination_does_not_skip_rows_issued_in_the_same_instant(client, db_session):
+    """A bulk batch stamps many rows with one issued_at. A cursor on
+    issued_at alone resumes strictly before that instant, so every row of it
+    past the page boundary vanishes — the walk above only checks for repeats,
+    which is why it never noticed."""
+    raw = LIVE_PREFIX + "tie-key"
+    org = org_with_key(db_session, "ties", raw)
+    same = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
+    for i in range(5):
+        db_session.add(Credential(
+            public_id=f"CF-2026-TIE{i}", org_id=org.id, recipient_name=f"Tie {i}",
+            recipient_email=f"t{i}@example.com", title="Batch", metadata_={},
+            hmac_signature="x", status="issued", issued_at=same,
+        ))
+    db_session.commit()
+
+    seen, cursor = [], None
+    for _ in range(10):  # bounded, so a cursor that never advances fails rather than hangs
+        url = "/api/v1/orgs/ties/credentials?limit=2"
+        if cursor:
+            url += f"&cursor={cursor}"
+        data = client.get(url, headers=auth(raw)).json()["data"]
+        seen += [i["id"] for i in data["items"]]
+        cursor = data["next_cursor"]
+        if not cursor:
+            break
+
+    assert len(seen) == len(set(seen)) == 5
+    assert data["total"] == 5
+
+
 def test_an_unknown_cursor_is_400_not_a_silent_empty_page(client, db_session):
     raw = LIVE_PREFIX + "badcursor-key"
     org_with_key(db_session, "badcursor", raw)
