@@ -456,3 +456,72 @@ def test_a_clerk_failure_is_a_503_not_empty_contacts(client, operator, monkeypat
         r = _contacts(client, "contacts-down")
     assert r.status_code == 503
     assert r.json()["error"]["type"] == "contacts_unavailable"
+
+
+# -- who each org has emailed ------------------------------------------------------
+
+def _cred(db_session, org, public_id, *, email, delivery_status, issued_at=None, error=None):
+    from datetime import datetime, timezone
+
+    from api.models.credential import Credential
+
+    cred = Credential(
+        public_id=public_id, org_id=org.id, recipient_name=public_id.title(),
+        recipient_email=email, title="Course", metadata_={}, hmac_signature="x",
+        status="issued", delivery_status=delivery_status, delivery_error=error,
+        issued_at=issued_at or datetime.now(timezone.utc),
+    )
+    db_session.add(cred)
+    db_session.commit()
+    return cred
+
+
+def test_deliveries_name_the_org_and_the_recipient(client, operator, db_session):
+    acme = make_org(db_session, "op-mail-acme")
+    beta = make_org(db_session, "op-mail-beta")
+    _cred(db_session, acme, "CF-MAIL-A1", email="ada@example.com", delivery_status="sent")
+    _cred(db_session, beta, "CF-MAIL-B1", email="bob@example.com", delivery_status="failed", error="bounced")
+    _cred(db_session, beta, "CF-MAIL-B2", email="", delivery_status="not_requested")
+
+    r = client.get("/api/v1/operator/deliveries", params={"q": "CF-MAIL"})
+    assert r.status_code == 200, r.text
+    rows = {d["id"]: d for d in r.json()["data"]["deliveries"]}
+    # The default is "attempted": a row nobody tried to email is not an email.
+    assert set(rows) == {"CF-MAIL-A1", "CF-MAIL-B1"}
+    assert rows["CF-MAIL-A1"]["org_slug"] == "op-mail-acme"
+    assert rows["CF-MAIL-A1"]["recipient_email"] == "ada@example.com"
+    assert rows["CF-MAIL-B1"]["delivery_error"] == "bounced"
+
+    r = client.get("/api/v1/operator/deliveries", params={"org": "op-mail-beta", "delivery_status": "all"})
+    data = r.json()["data"]
+    assert {d["id"] for d in data["deliveries"]} == {"CF-MAIL-B1", "CF-MAIL-B2"}
+    assert data["total"] == 2
+
+
+def test_deliveries_page_without_skipping_a_shared_timestamp(client, operator, db_session):
+    """A bulk batch issues many rows in one instant; a cursor on issued_at
+    alone would drop the rest of that instant at a page boundary."""
+    from datetime import datetime, timezone
+
+    org = make_org(db_session, "op-mail-page")
+    same = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    for i in range(5):
+        _cred(db_session, org, f"CF-PAGE-{i}", email=f"p{i}@example.com", delivery_status="sent", issued_at=same)
+
+    seen, cursor = [], None
+    while True:
+        params = {"org": "op-mail-page", "limit": 2}
+        if cursor:
+            params["cursor"] = cursor
+        data = client.get("/api/v1/operator/deliveries", params=params).json()["data"]
+        seen += [d["id"] for d in data["deliveries"]]
+        cursor = data["next_cursor"]
+        if not cursor:
+            break
+    assert sorted(seen) == [f"CF-PAGE-{i}" for i in range(5)]
+    assert len(seen) == 5
+
+
+def test_deliveries_are_operator_only(client, mock_clerk, monkeypatch, db_session):
+    monkeypatch.setattr(config, "OPERATOR_USER_IDS", frozenset({"user_someone_else"}))
+    assert client.get("/api/v1/operator/deliveries").status_code == 403

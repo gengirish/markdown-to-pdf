@@ -9,6 +9,7 @@ import { useCertForge } from "@/lib/use-api";
 import { HeaderAccount } from "@/components/header-account";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { formatLimit, QuotaPanel } from "@/components/operator/quota-panel";
+import { DeliveriesPanel } from "@/components/operator/deliveries-panel";
 import { EmptyNote, ErrorNote, Mono, Skeleton, StatusTag, buttonClass, inputClass } from "@/components/dashboard/ui";
 
 const PAGE_SIZE = 25;
@@ -35,6 +36,7 @@ export default function OperatorPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [tiers, setTiers] = useState<Tier[] | null>(null);
+  const [view, setView] = useState<"plans" | "deliveries">("plans");
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query.trim()), 250);
@@ -109,7 +111,9 @@ export default function OperatorPage() {
             CertForge home
           </Link>
           <h1 className="mb-2 text-3xl font-semibold tracking-tight text-ink">Operator</h1>
-          <p className="text-muted">Per-org credential limits and plans. Every change is logged with a reason.</p>
+          <p className="text-muted">
+            Per-org credential limits and plans, and who each org has emailed. Every change is logged with a reason.
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <ThemeToggle />
@@ -136,6 +140,29 @@ export default function OperatorPage() {
             </p>
           </div>
         ) : (
+          <>
+          <div role="tablist" aria-label="Operator views" className="mb-6 flex gap-2">
+            {(
+              [
+                ["plans", "Plans & limits"],
+                ["deliveries", "Email deliveries"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={view === id}
+                onClick={() => setView(id)}
+                className={buttonClass(view === id ? "primary" : "secondary", "sm")}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {view === "deliveries" ? (
+            <DeliveriesPanel org={selected} onClearOrg={() => setSelected(null)} />
+          ) : (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
             <section className="min-w-0 space-y-4">
               <input
@@ -240,6 +267,8 @@ export default function OperatorPage() {
               ) : null}
             </div>
           </div>
+          )}
+          </>
         )}
       </main>
     </div>

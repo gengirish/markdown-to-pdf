@@ -573,6 +573,34 @@ export interface OperatorTierResult extends OperatorOrg {
   override_cleared: boolean;
 }
 
+/** One credential email, across every org, as `routes/operator.py`
+ *  `list_deliveries` serves it. */
+export interface OperatorDelivery {
+  id: string;
+  org_slug: string;
+  org_name: string;
+  recipient_name: string;
+  /** `null` when the credential was issued with no address. */
+  recipient_email: string | null;
+  title: string;
+  status: string;
+  is_test: boolean;
+  issued_at: string;
+  delivery_status: DeliveryStatus;
+  delivered_at: string | null;
+  delivery_attempts: number;
+  delivery_error: string | null;
+}
+
+/** `attempted` is everything except `not_requested`. */
+export type OperatorDeliveryFilter = DeliveryStatus | "attempted" | "all";
+
+export interface OperatorDeliveryPage {
+  deliveries: OperatorDelivery[];
+  total: number;
+  next_cursor: string | null;
+}
+
 export interface HealthStatus {
   status: string;
   service: string;
@@ -1247,6 +1275,29 @@ export class CertForgeClient {
       `/api/v1/operator/orgs/${encodeURIComponent(slug)}/tier`,
       { method: "PUT", json: { tier: input.tier, reason: input.reason }, signal },
     );
+  }
+
+  /** Every org's credential emails, newest first. `org` narrows to one slug. */
+  listOperatorDeliveries(
+    query: {
+      org?: string | null;
+      q?: string;
+      deliveryStatus?: OperatorDeliveryFilter;
+      limit?: number;
+      cursor?: string | null;
+    } = {},
+    signal?: AbortSignal,
+  ): Promise<OperatorDeliveryPage> {
+    return this.request<OperatorDeliveryPage>("/api/v1/operator/deliveries", {
+      query: {
+        org: query.org || undefined,
+        q: query.q || undefined,
+        delivery_status: query.deliveryStatus,
+        limit: query.limit,
+        cursor: query.cursor,
+      },
+      signal,
+    });
   }
 
   // --- passports, claims, verification ---
