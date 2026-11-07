@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 
 from api.core.credential_signature import signature_state
 from api.core.envelope import ApiResponse
@@ -221,7 +221,18 @@ def list_credentials(
             )
             if anchor is None:
                 raise HTTPException(status_code=400, detail="Unknown cursor")
-            query = query.filter(Credential.issued_at < anchor.issued_at)
+            # The same (issued_at, public_id) key the ORDER BY uses. issued_at
+            # alone skips every row sharing the anchor's instant — and a bulk
+            # batch stamps its rows with one.
+            query = query.filter(
+                or_(
+                    Credential.issued_at < anchor.issued_at,
+                    and_(
+                        Credential.issued_at == anchor.issued_at,
+                        Credential.public_id < anchor.public_id,
+                    ),
+                )
+            )
         elif offset:
             query = query.offset(offset)
 
