@@ -123,6 +123,9 @@ class Credential(Base):
         Index("idx_credentials_recipient_email", "recipient_email"),
         # "show me this org's failed deliveries" is the query support runs.
         Index("idx_credentials_delivery", "org_id", "delivery_status"),
+        # The operator console's "last activity" (max issued_at per org) and
+        # its per-org date-range filter. Migration b5e2f7a1c9d3.
+        Index("idx_credentials_org_issued", "org_id", "issued_at"),
         Index(
             "idx_credentials_legacy_token", "legacy_token",
             postgresql_where="legacy_token IS NOT NULL",

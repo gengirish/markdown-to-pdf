@@ -8,6 +8,11 @@ has to read correctly when it does.
 
 Written only by `services/plans.py`, in the same transaction as the change it
 describes: a rolled-back change leaves no row, a committed one always has one.
+
+A plan change writes a row too, whether or not it touched the override, with
+the tier before and after in `previous_tier` / `new_tier`. Those are NULL on an
+override-only change, and on every row written before migration a7d3e91c0b54 —
+plan changes before then were logged only when they cleared an override.
 """
 
 import uuid
@@ -39,6 +44,11 @@ class CredentialQuotaChange(Base):
     #: `effective_credential_quota()` either side of the change. -1 = unlimited.
     effective_before: Mapped[int] = mapped_column(Integer, nullable=False)
     effective_after: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: The plan either side of a plan change; both NULL when the plan did not
+    #: change. Raw `organizations.tier` values, so a retired name reads as it
+    #: was stored.
+    previous_tier: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    new_tier: Mapped[str | None] = mapped_column(String(50), nullable=True)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     #: An operator's verified Clerk user id (`user_…`), or a system actor such
     #: as `razorpay-webhook`. Free text because the webhook is not a user, and
