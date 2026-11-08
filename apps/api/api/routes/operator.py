@@ -588,6 +588,7 @@ def list_deliveries(
 
 
 def _delivery_row(c: Credential, o: Organization, dupes: set[str]) -> dict:
+    refusal = resend_refusal(c)
     return {
         "id": c.public_id,
         "org_slug": o.slug,
@@ -602,7 +603,10 @@ def _delivery_row(c: Credential, o: Organization, dupes: set[str]) -> dict:
         "delivered_at": _iso(c.delivered_at),
         "delivery_attempts": c.delivery_attempts,
         "delivery_error": c.delivery_error,
-        "resendable": resend_refusal(c) is None,
+        "resendable": refusal is None,
+        # Why not, in words, so a failed row without a Resend button explains
+        # itself instead of looking broken.
+        "resend_refusal": refusal,
         "title_looks_like_email": title_looks_like_email(c.title),
         "possible_duplicate": c.public_id in dupes,
     }

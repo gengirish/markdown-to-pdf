@@ -404,6 +404,8 @@ def test_resend_eligibility(client, operator, db_session, status, age, allowed):
 
     listed = _deliveries(client, org=slug, delivery_status="all")["deliveries"][0]
     assert listed["resendable"] is allowed
+    # A refused row says why, so the console can explain a missing button.
+    assert (listed["resend_refusal"] is None) is allowed
     with patch(SEND, return_value=(True, "ok")) as send:
         r = _resend(client, pid, f"key-{slug}")
     assert (r.status_code == 200) is allowed, r.text

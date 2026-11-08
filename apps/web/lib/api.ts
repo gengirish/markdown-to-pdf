@@ -629,6 +629,8 @@ export interface OperatorDelivery {
   delivery_error: string | null;
   /** The operator resend rule allows a resend now (failed, or pending/unknown over an hour). */
   resendable: boolean;
+  /** Why it is not resendable, in words; `null` when it is. */
+  resend_refusal: string | null;
   /** Data-quality flags, read-only. */
   title_looks_like_email: boolean;
   /** Same org, same recipient name or email, within 7 days. */

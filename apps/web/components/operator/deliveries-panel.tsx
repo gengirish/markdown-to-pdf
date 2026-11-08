@@ -45,6 +45,10 @@ const RANGE_LABEL: Record<DateRange, string> = {
   custom: "Custom range…",
 };
 
+/** Rows an operator would expect to resend; only these explain a refusal.
+ *  A sent row has no button and needs no reason. */
+const STUCK: ReadonlySet<DeliveryStatus> = new Set<DeliveryStatus>(["failed", "pending", "unknown"]);
+
 const TONE: Record<DeliveryStatus, "ok" | "warn" | "neutral" | "bad"> = {
   sent: "ok",
   failed: "bad",
@@ -234,7 +238,7 @@ export function DeliveriesPanel({
           value={filter}
           onChange={(event) => onParams({ status: event.target.value as OperatorDeliveryFilter, page: 1 })}
           aria-label="Delivery status"
-          className={`${inputClass} w-auto`}
+          className={`${inputClass} w-auto!`}
         >
           {FILTERS.map((f) => (
             <option key={f.value} value={f.value}>
@@ -247,7 +251,7 @@ export function DeliveriesPanel({
           value={range}
           onChange={(event) => onParams({ range: event.target.value as DateRange, page: 1 })}
           aria-label="Issued"
-          className={`${inputClass} w-auto`}
+          className={`${inputClass} w-auto!`}
         >
           {DATE_RANGES.map((value) => (
             <option key={value} value={value}>
@@ -264,7 +268,7 @@ export function DeliveriesPanel({
                 value={from ?? ""}
                 max={to ?? undefined}
                 onChange={(event) => onParams({ from: event.target.value || null, page: 1 })}
-                className={`${inputClass} w-auto`}
+                className={`${inputClass} w-auto!`}
               />
             </label>
             <label className="flex items-center gap-2">
@@ -274,7 +278,7 @@ export function DeliveriesPanel({
                 value={to ?? ""}
                 min={from ?? undefined}
                 onChange={(event) => onParams({ to: event.target.value || null, page: 1 })}
-                className={`${inputClass} w-auto`}
+                className={`${inputClass} w-auto!`}
               />
             </label>
           </span>
@@ -348,9 +352,6 @@ export function DeliveriesPanel({
                   onSort={sortBy}
                   align="right"
                 />
-                <th scope="col" className="px-4 py-3 font-medium">
-                  <span className="sr-only">Actions</span>
-                </th>
               </tr>
             </thead>
             <tbody>
@@ -392,24 +393,26 @@ export function DeliveriesPanel({
                     {row.delivery_error ? (
                       <p className="mt-1 max-w-xs break-words text-xs text-danger">{row.delivery_error}</p>
                     ) : null}
+                    {/* The action sits under the status it acts on, so it is
+                        never in a column scrolled off the table's right edge. */}
+                    {row.resendable ? (
+                      <button
+                        type="button"
+                        onClick={() => setResending(row)}
+                        aria-label={`Resend email to ${row.recipient_name}`}
+                        className={`${buttonClass("secondary", "sm")} mt-2`}
+                      >
+                        Resend
+                      </button>
+                    ) : row.resend_refusal && STUCK.has(row.delivery_status) ? (
+                      <p className="mt-1 max-w-xs text-xs text-muted">No resend: {row.resend_refusal}</p>
+                    ) : null}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-muted" title={formatAbsolute(row.issued_at)}>
                     {formatDateTime(row.issued_at)}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-muted">{formatDateTime(row.delivered_at)}</td>
                   <td className="px-4 py-3 text-right font-mono text-muted">{row.delivery_attempts}</td>
-                  <td className="px-4 py-3 text-right">
-                    {row.resendable ? (
-                      <button
-                        type="button"
-                        onClick={() => setResending(row)}
-                        aria-label={`Resend email to ${row.recipient_name}`}
-                        className={buttonClass("secondary", "sm")}
-                      >
-                        Resend
-                      </button>
-                    ) : null}
-                  </td>
                 </tr>
               ))}
             </tbody>
