@@ -212,3 +212,11 @@ Re-runnable; refuses `ENV=production`.
   loads. The keyset `cursor` remains for API callers who need stable paging.
 - The duplicate rule compares names and emails trimmed and lower-cased; it
   does not normalise Unicode or Gmail dots.
+
+### Follow-up after the live check (8 November)
+
+Checked live in production after #41. Three layout faults that no test could see, fixed:
+
+- **Org names were crushed beside the drawer** ("IntelliForge Learning" rendered as "I."). The name cell was `max-w-0`, so it got only leftover width. It now has a 11rem floor, and Last activity is hidden whenever the drawer is open (the drawer shows it).
+- **Resend sat in a column off the table's right edge.** It now sits in the Email cell under the status it acts on. The filter selects had `w-auto` losing to `inputClass`'s `w-full` (no class merging here), so each spanned the page; they use `w-auto!`.
+- **A failed row with no Resend button gave no reason.** Rows now carry `resend_refusal`, and failed, pending and unknown rows show it.

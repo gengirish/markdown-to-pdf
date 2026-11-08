@@ -39,7 +39,7 @@ export function OrgTable({
   onSelect: (slug: string, trigger: HTMLElement | null) => void;
   tiers: OperatorTier[] | null;
   reloadToken: number;
-  /** The drawer is open beside the table: drop the least-needed column below xl. */
+  /** The drawer is open beside the table: drop Last activity, which the drawer shows. */
   compact: boolean;
   /** The API said 403: the page swaps the console for its explanation. */
   onForbidden: () => void;
@@ -121,7 +121,9 @@ export function OrgTable({
   const anyFilter = params.plans.length > 0 || params.active || params.near || params.override;
   const now = new Date();
   // Hidden only beside the drawer below xl, where it would push Used / limit off screen.
-  const lastActivityCol = compact ? "hidden xl:table-cell" : "";
+  // Beside the drawer the table has ~45rem; Last activity is also in the
+  // drawer, so it gives its width to the name rather than crushing it.
+  const lastActivityCol = compact ? "hidden" : "";
 
   return (
     <section className="min-w-0 space-y-4" aria-label="Organizations">
@@ -232,8 +234,10 @@ export function OrgTable({
                       selected === org.slug ? "bg-well" : ""
                     }`}
                   >
-                    <td className="max-w-0 px-4 py-3">
-                      <div className="flex min-w-0 items-center gap-1">
+                    {/* A floor on the name: `max-w-0` alone let the other
+                        columns take everything, and names rendered as "I.". */}
+                    <td className="px-4 py-3">
+                      <div className="flex min-w-44 max-w-80 items-center gap-1">
                         {/* A real button so the row is reachable by keyboard. */}
                         <button
                           type="button"
