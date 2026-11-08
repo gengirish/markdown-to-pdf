@@ -9,7 +9,8 @@ forget:
   docs/operator-quota-overrides-plan.md), and says so in the change log. An
   org given 1,000 on Community that pays for Growth goes to 2,000 without
   anyone having to notice.
-- Every override change is logged, with a reason, in the same transaction.
+- Every override change and every plan change is logged, with a reason, in
+  the same transaction.
 - `monthly_quota` is kept equal to the effective limit on every write, so a
   rollback to code that still reads it finds a current number. Until W4.
 
@@ -52,6 +53,7 @@ def _log_override_change(
     effective_before: int,
     actor: str,
     reason: str,
+    previous_tier: Optional[str] = None,
 ) -> CredentialQuotaChange:
     row = CredentialQuotaChange(
         org_id=org.id,
@@ -59,6 +61,8 @@ def _log_override_change(
         new_override=org.credential_quota_override,
         effective_before=effective_before,
         effective_after=effective_credential_quota(org),
+        previous_tier=previous_tier,
+        new_tier=org.tier if previous_tier is not None else None,
         reason=reason,
         actor=actor,
     )
@@ -80,8 +84,10 @@ def change_tier(
       repeated `subscription.activated` for the plan the org already has must
       not wipe an override an operator set since.
     - **Up or down, it clears the override.** One rule: the plan changed.
-    - **The clear is logged** under `actor`. No override, no row — the
-      override did not change.
+    - **Every real change is logged** under `actor`, with the tier before and
+      after, whether or not there was an override to clear. It used to log
+      only the clear, so most plan changes left nothing an operator could
+      read back.
     """
     if new_tier not in BILLING_TIERS:
         raise UnknownTier(new_tier)
@@ -97,15 +103,15 @@ def change_tier(
     org.monthly_quota = effective_credential_quota(org)
 
     detail = f"Plan changed from {previous_tier} to {new_tier}"
-    if previous_override is not None:
-        _log_override_change(
-            session,
-            org,
-            previous_override=previous_override,
-            effective_before=effective_before,
-            actor=actor,
-            reason=f"{detail}: {reason}" if reason else detail,
-        )
+    _log_override_change(
+        session,
+        org,
+        previous_override=previous_override,
+        effective_before=effective_before,
+        actor=actor,
+        reason=f"{detail}: {reason}" if reason else detail,
+        previous_tier=previous_tier,
+    )
 
     logger.warning(
         "Tier change: org=%s %s -> %s by %s (override %s cleared) reason=%r",

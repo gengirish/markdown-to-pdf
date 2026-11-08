@@ -1,25 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import {
   toApiError,
   type OperatorContact,
   type OperatorOrg,
   type OperatorQuotaDetail,
+  type OperatorQuotaResult,
+  type OperatorTier,
   type QuotaOverride,
-  type Tier,
 } from "@/lib/api";
+import {
+  MAX_OVERRIDE,
+  MIN_REASON_LENGTH,
+  describeHistoryEntry,
+  describePlanChange,
+  formatAbsolute,
+  formatLimit,
+  formatRelative,
+  isReasonValid,
+  planOptions,
+} from "@/lib/operator";
 import { useCertForge } from "@/lib/use-api";
 import { ErrorNote, Eyebrow, Mono, Skeleton, buttonClass, inputClass } from "@/components/dashboard/ui";
+import { CloseIcon, CopySlug, Spinner } from "./bits";
+import { PlanChangeDialog } from "./plan-change-dialog";
 
-/** Mirrors `services/plans.py`; the API enforces both, these only save a round trip. */
-const MIN_REASON_LENGTH = 10;
-const MAX_OVERRIDE = 1_000_000;
-
-export function formatLimit(limit: number | null): string {
-  return limit === null ? "Unlimited" : limit.toLocaleString("en-US");
-}
+export { formatLimit };
 
 function formatOverride(override: QuotaOverride | null): string {
   return override === null ? "none" : formatLimit(override.limit);
@@ -30,34 +38,53 @@ function formatOverride(override: QuotaOverride | null): string {
  * and read the change log. Every write goes back to the API and the panel
  * re-reads the org afterwards, so what it shows is what issuance enforces.
  * Mount with `key={slug}`: a different org is a different form.
+ *
+ * The two writes each ask for their own reason. They used to share one field
+ * above both, so a reason typed for an override could be spent on a plan
+ * change — which also silently removed that override.
  */
 export function QuotaPanel({
   slug,
   tiers,
+  tiersError,
   onChanged,
   onClose,
+  onToast,
+  onViewEmails,
 }: {
   slug: string;
-  /** `null` while loading or if the catalog failed; the plan control hides. */
-  tiers: Tier[] | null;
+  /** The operator catalog. `null` while loading or if it failed. */
+  tiers: OperatorTier[] | null;
+  tiersError: string | null;
   onChanged: (org: OperatorOrg) => void;
   onClose: () => void;
+  onToast: (message: string) => void;
+  /** Switch to the Emails tab, narrowed to this org. */
+  onViewEmails: () => void;
 }) {
   const api = useCertForge();
+  const headingId = useId();
+  const closeButton = useRef<HTMLButtonElement>(null);
   const [detail, setDetail] = useState<OperatorQuotaDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
+  // Move focus into the drawer when it opens, so Esc and Tab start here.
+  useEffect(() => {
+    closeButton.current?.focus();
+  }, []);
+
   const [limitText, setLimitText] = useState("");
   const [unlimited, setUnlimited] = useState(false);
-  const [tier, setTier] = useState("");
-  const [reason, setReason] = useState("");
+  const [overrideReason, setOverrideReason] = useState("");
   // Set when the limit asked for is below this month's usage: the next click
   // sends it, after the numbers have been on screen.
   const [confirmBelowUsage, setConfirmBelowUsage] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [saving, setSaving] = useState<"save" | "remove" | null>(null);
+  const [overrideError, setOverrideError] = useState<string | null>(null);
+
+  const [tier, setTier] = useState("");
+  const [planTarget, setPlanTarget] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -93,27 +120,26 @@ export function QuotaPanel({
     return () => controller.abort();
   }, [api, slug]);
 
-  const trimmedReason = reason.trim();
-  const reasonOk = trimmedReason.length >= MIN_REASON_LENGTH;
+  const reasonOk = isReasonValid(overrideReason);
+  const trimmedReason = overrideReason.trim();
   const parsedLimit = /^\d+$/.test(limitText.trim()) ? Number(limitText.trim()) : null;
   const limitOk = unlimited || (parsedLimit !== null && parsedLimit <= MAX_OVERRIDE);
   const requestedLimit = unlimited ? null : parsedLimit;
 
-  async function run<T extends OperatorOrg>(action: () => Promise<T>, describe: (result: T) => string) {
-    setBusy(true);
-    setActionError(null);
-    setNotice(null);
+  async function runOverride(kind: "save" | "remove", action: () => Promise<OperatorQuotaResult>, describe: (r: OperatorQuotaResult) => string) {
+    setSaving(kind);
+    setOverrideError(null);
     try {
       const result = await action();
-      setNotice(describe(result));
-      setReason("");
+      onToast(describe(result));
+      setOverrideReason("");
       setConfirmBelowUsage(false);
       onChanged(result);
       setReloadToken((current) => current + 1);
     } catch (err) {
-      setActionError(toApiError(err).message);
+      setOverrideError(toApiError(err).message);
     } finally {
-      setBusy(false);
+      setSaving(null);
     }
   }
 
@@ -123,7 +149,8 @@ export function QuotaPanel({
       setConfirmBelowUsage(true);
       return;
     }
-    void run(
+    void runOverride(
+      "save",
       () => api.setCredentialQuota(slug, { limit: requestedLimit, reason: trimmedReason }),
       (result) => {
         if (!result.changed) return "That is already this org's override. Nothing changed.";
@@ -137,7 +164,8 @@ export function QuotaPanel({
 
   function removeOverride() {
     if (!reasonOk) return;
-    void run(
+    void runOverride(
+      "remove",
       () => api.clearCredentialQuota(slug, trimmedReason),
       (result) =>
         result.changed
@@ -146,30 +174,39 @@ export function QuotaPanel({
     );
   }
 
-  function changePlan() {
-    if (!detail || !reasonOk || !tier || tier === detail.tier) return;
-    void run(
-      () => api.setOrgTier(slug, { tier, reason: trimmedReason }),
-      (result) =>
-        result.changed
-          ? `Moved from ${result.previous_tier} to ${result.tier_name}.` +
-            (result.override_cleared ? " Its credential override was removed." : "")
-          : "The org is already on that plan. Nothing changed.",
-    );
-  }
+  const options = detail && tiers ? planOptions(tiers, detail) : [];
+  const diff = detail && tiers && planTarget ? describePlanChange(detail, planTarget, tiers) : null;
+  const tierName = (key: string) => tiers?.find((t) => t.key === key)?.name ?? key;
+  const busy = saving !== null;
+  // Owners come first from the API; fall back to any member with an email.
+  const ownerEmail =
+    contacts?.find((c) => c.role === "owner" && c.email)?.email ?? contacts?.find((c) => c.email)?.email ?? null;
 
   return (
-    <aside className="rounded-xl border border-hair bg-surface p-6 shadow-[var(--cf-shadow-card)]">
+    <aside
+      aria-labelledby={headingId}
+      className="h-full overflow-y-auto border-hair bg-surface p-6 shadow-[var(--cf-shadow-card)] lg:h-auto lg:overflow-visible lg:rounded-xl lg:border"
+    >
       <div className="mb-5 flex items-start justify-between gap-4">
         <div className="min-w-0">
           <Eyebrow>Organization</Eyebrow>
-          <h2 className="mt-2 truncate font-display text-xl font-semibold tracking-[-0.02em] text-ink">
-            {detail?.name ?? slug}
+          <h2 id={headingId} className="mt-2 truncate font-display text-xl font-semibold tracking-[-0.02em] text-ink">
+            {detail?.name ?? "Loading…"}
           </h2>
-          <Mono className="text-xs text-faint">{slug}</Mono>
+          <div className="flex min-w-0 items-center gap-1">
+            <Mono className="truncate text-xs text-faint">{slug}</Mono>
+            <CopySlug slug={slug} />
+          </div>
         </div>
-        <button type="button" onClick={onClose} className={buttonClass("quiet", "sm")}>
-          Close
+        <button
+          ref={closeButton}
+          type="button"
+          onClick={onClose}
+          aria-label="Close organization panel"
+          title="Close (Esc)"
+          className="rounded-lg p-2 text-muted transition-colors hover:bg-well hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        >
+          <CloseIcon />
         </button>
       </div>
 
@@ -183,8 +220,49 @@ export function QuotaPanel({
             <Fact label="Plan quota" value={formatLimit(detail.tier_quota)} />
             <Fact label="Override" value={formatOverride(detail.override)} />
             <Fact label="Enforced" value={formatLimit(detail.effective)} strong />
-            <Fact label="Used this month" value={detail.used.toLocaleString("en-US")} />
+            <Fact
+              label="Used this month"
+              value={
+                detail.used.toLocaleString("en-US") +
+                (detail.usage_percent === null ? "" : ` (${Math.round(detail.usage_percent)}%)`)
+              }
+            />
+            <Fact label="All-time credentials" value={detail.credentials_all_time.toLocaleString("en-US")} />
+            <Fact
+              label="Last activity"
+              value={formatRelative(detail.last_activity_at)}
+              title={formatAbsolute(detail.last_activity_at) || undefined}
+            />
+            <Fact label="Members" value={detail.member_count.toLocaleString("en-US")} />
+            <Fact
+              label="Created"
+              value={detail.created_at ? new Date(detail.created_at).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+              title={formatAbsolute(detail.created_at) || undefined}
+            />
           </dl>
+
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={onViewEmails} className={buttonClass("secondary", "sm")}>
+              View this org&apos;s emails
+            </button>
+            {ownerEmail ? (
+              <a
+                href={`mailto:${ownerEmail}?subject=${encodeURIComponent(`CertForge: ${detail.name}`)}`}
+                className={buttonClass("secondary", "sm")}
+              >
+                Email owner
+              </a>
+            ) : (
+              <button
+                type="button"
+                disabled
+                title={contacts === null && !contactsError ? "Loading contacts…" : "No owner email on file"}
+                className={buttonClass("secondary", "sm")}
+              >
+                Email owner
+              </button>
+            )}
+          </div>
 
           <section>
             <Eyebrow tone="muted">Contacts</Eyebrow>
@@ -207,19 +285,18 @@ export function QuotaPanel({
                     {contact.found ? (
                       <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5">
                         {contact.email ? (
-                          <a href={`mailto:${contact.email}`} className="text-accent underline-offset-2 hover:underline">
+                          <a href={`mailto:${contact.email}`} className="break-all text-accent underline-offset-2 hover:underline">
                             {contact.email}
                           </a>
                         ) : (
                           <span className="text-faint">No email on file</span>
                         )}
+                        {/* No phone is the common case; saying so on every row is noise. */}
                         {contact.phone ? (
                           <a href={`tel:${contact.phone}`} className="font-mono text-accent underline-offset-2 hover:underline">
                             {contact.phone}
                           </a>
-                        ) : (
-                          <span className="text-faint">No phone on file</span>
-                        )}
+                        ) : null}
                       </div>
                     ) : (
                       <div className="mt-0.5 text-faint">
@@ -232,25 +309,7 @@ export function QuotaPanel({
             )}
           </section>
 
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-ink">Reason</span>
-            <textarea
-              value={reason}
-              onChange={(event) => {
-                setReason(event.target.value);
-                setConfirmBelowUsage(false);
-              }}
-              rows={2}
-              maxLength={1000}
-              placeholder="Why, for whoever asks in six months. Required for every change."
-              className={inputClass}
-            />
-            <span className="mt-1 block text-xs text-faint">
-              At least {MIN_REASON_LENGTH} characters. Saved in the change log with your user id.
-            </span>
-          </label>
-
-          <section className="space-y-3">
+          <section className="space-y-3" aria-label="Credential override">
             <Eyebrow tone="muted">Credential override</Eyebrow>
             <div className="flex flex-wrap items-center gap-3">
               <input
@@ -260,7 +319,7 @@ export function QuotaPanel({
                 max={MAX_OVERRIDE}
                 step={1}
                 value={unlimited ? "" : limitText}
-                disabled={unlimited}
+                disabled={unlimited || busy}
                 onChange={(event) => {
                   setLimitText(event.target.value);
                   setConfirmBelowUsage(false);
@@ -273,6 +332,7 @@ export function QuotaPanel({
                 <input
                   type="checkbox"
                   checked={unlimited}
+                  disabled={busy}
                   onChange={(event) => {
                     setUnlimited(event.target.checked);
                     setConfirmBelowUsage(false);
@@ -282,12 +342,30 @@ export function QuotaPanel({
                 Unlimited
               </label>
             </div>
-            <p className="text-xs text-faint">A plan change removes this limit.</p>
             {!unlimited && limitText.trim() !== "" && !limitOk ? (
               <p className="text-xs text-danger">
                 A whole number from 0 to {MAX_OVERRIDE.toLocaleString("en-US")}.
               </p>
             ) : null}
+
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium text-ink">Reason for this override</span>
+              <textarea
+                value={overrideReason}
+                onChange={(event) => {
+                  setOverrideReason(event.target.value);
+                  setConfirmBelowUsage(false);
+                }}
+                rows={2}
+                maxLength={1000}
+                disabled={busy}
+                placeholder="Why, for whoever asks in six months."
+                className={`${inputClass} disabled:bg-well disabled:text-muted`}
+              />
+              <span className="mt-1 block text-xs text-faint">
+                At least {MIN_REASON_LENGTH} characters. Saved in the change log with your user id.
+              </span>
+            </label>
 
             {confirmBelowUsage && requestedLimit !== null ? (
               <p role="alert" className="rounded-lg border border-warn-line bg-warn-wash px-4 py-3 text-sm text-warn-ink">
@@ -301,77 +379,80 @@ export function QuotaPanel({
                 type="button"
                 onClick={saveOverride}
                 disabled={busy || !limitOk || !reasonOk}
-                className={buttonClass("primary", "sm")}
+                className={`${buttonClass("primary", "sm")} gap-2`}
               >
-                {confirmBelowUsage ? "Confirm and save" : "Save override"}
+                {saving === "save" ? <Spinner /> : null}
+                {saving === "save" ? "Saving…" : confirmBelowUsage ? "Confirm and save" : "Save override"}
               </button>
               {detail.override !== null ? (
                 <button
                   type="button"
                   onClick={removeOverride}
                   disabled={busy || !reasonOk}
-                  className={buttonClass("secondary", "sm")}
+                  className={`${buttonClass("secondary", "sm")} gap-2`}
                 >
-                  Remove override
+                  {saving === "remove" ? <Spinner /> : null}
+                  {saving === "remove" ? "Removing…" : "Remove override"}
                 </button>
               ) : null}
             </div>
+            {overrideError ? <ErrorNote>{overrideError}</ErrorNote> : null}
           </section>
 
-          {tiers && tiers.length > 0 ? (
-            <section className="space-y-3">
-              <Eyebrow tone="muted">Plan</Eyebrow>
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={tier}
-                  onChange={(event) => setTier(event.target.value)}
-                  aria-label="Plan"
-                  className={`${inputClass} max-w-48`}
-                >
-                  {detail.tier_known ? null : <option value={detail.tier}>{detail.tier} (unknown)</option>}
-                  {tiers.map((option) => (
-                    <option key={option.key} value={option.key}>
-                      {option.name} · {formatLimit(option.monthly_quota)}/mo
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={changePlan}
-                  disabled={busy || !reasonOk || tier === detail.tier}
-                  className={buttonClass("secondary", "sm")}
-                >
-                  Change plan
-                </button>
-              </div>
-              <p className="text-xs text-faint">
-                No payment is taken. Changing the plan removes any credential override.
-              </p>
-            </section>
-          ) : null}
-
-          {actionError ? <ErrorNote>{actionError}</ErrorNote> : null}
-          {notice ? (
-            <p role="status" className="rounded-lg border border-accent-line bg-accent-wash px-4 py-3 text-sm text-accent">
-              {notice}
-            </p>
-          ) : null}
+          <section className="space-y-3" aria-label="Plan">
+            <Eyebrow tone="muted">Plan</Eyebrow>
+            {tiersError ? (
+              <p className="text-sm text-danger">Plan catalog unavailable: {tiersError}</p>
+            ) : tiers === null ? (
+              <Skeleton rows={1} />
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={tier}
+                    onChange={(event) => setTier(event.target.value)}
+                    aria-label="Plan"
+                    className={`${inputClass} max-w-64`}
+                  >
+                    {options.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setPlanTarget(tier)}
+                    disabled={busy || tier === detail.tier}
+                    className={buttonClass("secondary", "sm")}
+                  >
+                    Change plan
+                  </button>
+                </div>
+                <p className="text-xs text-faint">
+                  You confirm the change and give a reason next. No payment is taken.
+                </p>
+              </>
+            )}
+          </section>
 
           <section>
             <Eyebrow tone="muted">History</Eyebrow>
             {detail.history.length === 0 ? (
-              <p className="mt-3 text-sm text-faint">No changes have been made to this org&apos;s override.</p>
+              <p className="mt-3 text-sm text-faint">
+                Changes to plan or override will appear here with who made them and why.
+              </p>
             ) : (
               <ol className="mt-3 space-y-3">
-                {detail.history.map((change) => (
-                  <li key={`${change.created_at}-${change.actor}`} className="border-l-2 border-hair pl-3 text-sm">
+                {detail.history.map((change, index) => (
+                  <li key={`${change.created_at}-${change.actor}-${index}`} className="border-l-2 border-hair pl-3 text-sm">
                     <div className="text-ink">
-                      Override {formatOverride(change.previous_override)} → {formatOverride(change.new_override)}
+                      {describeHistoryEntry(change, tierName)}
                       <span className="text-faint">
                         {" "}· enforced {formatLimit(change.effective_before)} → {formatLimit(change.effective_after)}
                       </span>
                     </div>
-                    <div className="mt-0.5 text-muted">{change.reason}</div>
+                    <div className="mt-0.5 break-words text-muted">{change.reason}</div>
                     <div className="mt-0.5 text-xs text-faint">
                       {new Date(change.created_at).toLocaleString("en-US")} · <Mono>{change.actor}</Mono>
                     </div>
@@ -380,17 +461,48 @@ export function QuotaPanel({
               </ol>
             )}
           </section>
+
+          <PlanChangeDialog
+            slug={slug}
+            orgName={detail.name}
+            targetTier={diff?.changed ? planTarget : null}
+            diff={diff?.changed ? diff : null}
+            onCancel={() => setPlanTarget(null)}
+            onDone={(result) => {
+              setPlanTarget(null);
+              onToast(
+                result.changed
+                  ? `${result.name} moved from ${tierName(result.previous_tier)} to ${result.tier_name}.` +
+                      (result.override_cleared ? " Its credential override was removed." : "")
+                  : "The org is already on that plan. Nothing changed.",
+              );
+              onChanged(result);
+              setReloadToken((current) => current + 1);
+            }}
+          />
         </div>
       ) : null}
     </aside>
   );
 }
 
-function Fact({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+function Fact({
+  label,
+  value,
+  strong = false,
+  title,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+  title?: string;
+}) {
   return (
     <div>
       <dt className="text-faint">{label}</dt>
-      <dd className={`font-mono ${strong ? "font-semibold text-ink" : "text-ink"}`}>{value}</dd>
+      <dd title={title} className={`font-mono ${strong ? "font-semibold text-ink" : "text-ink"}`}>
+        {value}
+      </dd>
     </div>
   );
 }

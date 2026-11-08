@@ -616,6 +616,7 @@ def test_a_dodo_plan_change_clears_an_operator_override_and_logs_it(client, db_s
     assert [(r.actor, r.previous_override, r.new_override) for r in rows] == [
         ("dodo-webhook", 1000, None)
     ]
+    assert (rows[0].previous_tier, rows[0].new_tier) == ("community", "scale")
 
 
 def test_a_redelivered_dodo_event_keeps_an_override_set_since(client, db_session):
@@ -628,8 +629,11 @@ def test_a_redelivered_dodo_event_keeps_an_override_set_since(client, db_session
     org = reloaded(db_session, org)
     org.credential_quota_override = 9000
     db_session.commit()
+    # The real plan change above is logged; the redelivery below must add nothing.
+    logged = db_session.query(CredentialQuotaChange).filter_by(org_id=org.id).count()
+    assert logged == 1
 
     deliver(client, "subscription.renewed", subscription(org, tier="scale"))
     org = reloaded(db_session, org)
     assert org.credential_quota_override == 9000
-    assert db_session.query(CredentialQuotaChange).filter_by(org_id=org.id).count() == 0
+    assert db_session.query(CredentialQuotaChange).filter_by(org_id=org.id).count() == logged

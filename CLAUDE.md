@@ -648,6 +648,21 @@ stale pricing page buys what replaced the plan it lists. Migration
   `/api/v1/operator` (`routes/operator.py`) and are not in `llms.txt`.
 - **A test fixture passes `credential_quota_override=`**, not
   `monthly_quota=` — the latter is a column nothing reads.
+- **The operator console has a second copy of the enforced limit, in SQL.**
+  `effective_limit_sql()` in `services/operator_console.py` mirrors
+  `effective_credential_quota()` so `GET /operator/orgs` can sort and filter
+  by usage % in the database. `test_operator_console.py` checks the two
+  against each other over every tier, alias, an unknown tier and each kind of
+  override; change one and that test tells you to change the other. Plan
+  changes from *any* actor now write a `credential_quota_changes` row with
+  `previous_tier` / `new_tier`, not only those that cleared an override.
+- **An operator resend is idempotent and audited in `operator_actions`.**
+  `POST /operator/deliveries/{id}/resend` needs an `Idempotency-Key` (one per
+  confirmation dialog); a repeat replays the first answer. A partial unique
+  index allows one in-flight resend per credential. It goes through the org
+  dashboard's `resend_credential()`, so the attempt ceiling still binds.
+  `test_every_operator_route_is_403_for_a_non_operator` reads the route list
+  off the app, so a new operator route is covered the day it is added.
 
 ### Delivery state, and why it exists
 

@@ -13,6 +13,10 @@
  * callers only ever have one failure type to handle.
  */
 
+import type { OperatorTier } from "./operator";
+
+export type { OperatorTier };
+
 export const DEFAULT_API_BASE_URL = "https://api.certforge.intelliforge.tech";
 
 /** Base URL of the CertForge API, without a trailing slash. */
@@ -523,10 +527,35 @@ export interface OperatorOrg {
   used: number;
 }
 
+/** A row of the operator org list. A write's response is a plain
+ *  {@link OperatorOrg}, so merge it over the row rather than replacing it. */
+export interface OperatorOrgRow extends OperatorOrg {
+  /** This month's usage as a % of the enforced limit; `null` when unlimited. */
+  usage_percent: number | null;
+  /** The org's most recent credential, ISO 8601; `null` if it never issued. */
+  last_activity_at: string | null;
+  /** Another org has the same display name (case- and space-insensitive). */
+  duplicate_name: boolean;
+}
+
+export type OperatorOrgSort = "usage" | "name" | "plan" | "limit" | "used" | "last_activity" | "slug";
+
 export interface OperatorOrgPage {
-  orgs: OperatorOrg[];
+  orgs: OperatorOrgRow[];
+  /** Every org matching the filters, not just this page. */
+  total: number;
   /** Pass back as `cursor` for the next page; `null` on the last one. */
   next_cursor: string | null;
+}
+
+/** The Plans tab's strip, as `GET /api/v1/operator/kpis` serves it. */
+export interface OperatorKpis {
+  period: string;
+  active_orgs: number;
+  credentials_issued: number;
+  near_limit_orgs: number;
+  near_limit_percent: number;
+  failed_emails_7d: number;
 }
 
 export interface CredentialQuotaChange {
@@ -534,6 +563,9 @@ export interface CredentialQuotaChange {
   new_override: QuotaOverride | null;
   effective_before: number | null;
   effective_after: number | null;
+  /** The plan either side of a plan change; both null on an override-only change. */
+  previous_tier: string | null;
+  new_tier: string | null;
   reason: string;
   /** An operator's Clerk user id, or a system actor such as `razorpay-webhook`. */
   actor: string;
@@ -541,6 +573,11 @@ export interface CredentialQuotaChange {
 }
 
 export interface OperatorQuotaDetail extends OperatorOrg {
+  usage_percent: number | null;
+  created_at: string | null;
+  last_activity_at: string | null;
+  member_count: number;
+  credentials_all_time: number;
   /** Newest first. */
   history: CredentialQuotaChange[];
 }
@@ -590,6 +627,40 @@ export interface OperatorDelivery {
   delivered_at: string | null;
   delivery_attempts: number;
   delivery_error: string | null;
+  /** The operator resend rule allows a resend now (failed, or pending/unknown over an hour). */
+  resendable: boolean;
+  /** Data-quality flags, read-only. */
+  title_looks_like_email: boolean;
+  /** Same org, same recipient name or email, within 7 days. */
+  possible_duplicate: boolean;
+}
+
+export type OperatorDeliverySort =
+  | "issued_at"
+  | "delivered_at"
+  | "attempts"
+  | "status"
+  | "org"
+  | "recipient"
+  | "title";
+
+export interface OperatorDeliveryQuery {
+  org?: string | null;
+  q?: string;
+  deliveryStatus?: OperatorDeliveryFilter;
+  /** ISO 8601, inclusive. */
+  since?: string | null;
+  until?: string | null;
+  sort?: OperatorDeliverySort;
+  dir?: "asc" | "desc";
+}
+
+export interface OperatorResendResult {
+  id: string;
+  sent: boolean;
+  delivery: { status: DeliveryStatus; delivered_at: string | null; error: string | null; attempts: number };
+  /** True when this answer is the first request's, replayed for a repeated key. */
+  replayed: boolean;
 }
 
 /** `attempted` is everything except `not_requested`. */
@@ -598,6 +669,8 @@ export type OperatorDeliveryFilter = DeliveryStatus | "attempted" | "all";
 export interface OperatorDeliveryPage {
   deliveries: OperatorDelivery[];
   total: number;
+  /** Rows per status under every filter except status, plus `attempted` and `all`. */
+  counts: Partial<Record<OperatorDeliveryFilter, number>>;
   next_cursor: string | null;
 }
 
@@ -618,10 +691,12 @@ export interface CertForgeClientOptions {
   getToken?: TokenGetter;
 }
 
-type QueryValue = string | number | boolean | undefined | null;
+type QueryValue = string | number | boolean | undefined | null | readonly string[];
 
 interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  /** Extra request headers, e.g. `Idempotency-Key`. Must be in the API's CORS allow-list. */
+  headers?: Record<string, string>;
   json?: unknown;
   form?: FormData;
   query?: Record<string, QueryValue>;
@@ -685,6 +760,18 @@ function errorFromBody(status: number, body: unknown): ApiError | null {
   return null;
 }
 
+function deliveryQuery(query: OperatorDeliveryQuery): Record<string, QueryValue> {
+  return {
+    org: query.org || undefined,
+    q: query.q || undefined,
+    delivery_status: query.deliveryStatus,
+    since: query.since || undefined,
+    until: query.until || undefined,
+    sort: query.sort,
+    dir: query.dir,
+  };
+}
+
 export class CertForgeClient {
   readonly baseUrl: string;
   private readonly getToken?: TokenGetter;
@@ -697,10 +784,12 @@ export class CertForgeClient {
   private async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const url = new URL(this.baseUrl + path);
     for (const [key, value] of Object.entries(options.query ?? {})) {
-      if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
+      // An array is a repeated parameter (`?tier=pro&tier=scale`).
+      if (Array.isArray(value)) value.forEach((item) => url.searchParams.append(key, String(item)));
+      else if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
     }
 
-    const headers: Record<string, string> = { Accept: "application/json" };
+    const headers: Record<string, string> = { Accept: "application/json", ...options.headers };
     if (options.json !== undefined) headers["Content-Type"] = "application/json";
 
     if (!options.anonymous && this.getToken) {
@@ -765,7 +854,23 @@ export class CertForgeClient {
    *  it as JSON, which would corrupt a PDF. Failures still arrive as JSON, so
    *  the content type decides which of the two this response is. */
   private async requestBlob(path: string, options: RequestOptions = {}): Promise<Blob> {
-    const headers: Record<string, string> = { Accept: "application/pdf, application/json" };
+    return (await this.requestFile(path, options)).blob;
+  }
+
+  /** {@link requestBlob}, plus the response headers (a download's file name). */
+  private async requestFile(
+    path: string,
+    options: RequestOptions = {},
+  ): Promise<{ blob: Blob; headers: Headers }> {
+    const url = new URL(this.baseUrl + path);
+    for (const [key, value] of Object.entries(options.query ?? {})) {
+      if (Array.isArray(value)) value.forEach((item) => url.searchParams.append(key, String(item)));
+      else if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
+    }
+    const headers: Record<string, string> = {
+      Accept: "application/pdf, text/csv, application/json",
+      ...options.headers,
+    };
     if (options.json !== undefined) headers["Content-Type"] = "application/json";
 
     if (!options.anonymous && this.getToken) {
@@ -781,7 +886,7 @@ export class CertForgeClient {
 
     let response: Response;
     try {
-      response = await fetch(new URL(this.baseUrl + path), {
+      response = await fetch(url, {
         method: options.method ?? "GET",
         headers,
         body: options.json !== undefined ? JSON.stringify(options.json) : undefined,
@@ -801,7 +906,7 @@ export class CertForgeClient {
       if (!response.ok) {
         throw new ApiError(`API returned ${response.status}`, { status: response.status });
       }
-      return await response.blob();
+      return { blob: await response.blob(), headers: response.headers };
     }
 
     const body = await response.json().catch(() => null);
@@ -1219,14 +1324,48 @@ export class CertForgeClient {
   // --- operator ---
   // 403 for anyone not on CERTFORGE_OPERATOR_USER_IDS, API keys included.
 
+  /** Every plan, hand-sold ones included. The plan control must use this,
+   *  not {@link listTiers}: the public catalog hides Scale. */
+  listOperatorTiers(signal?: AbortSignal): Promise<OperatorTier[]> {
+    return this.request<{ tiers: OperatorTier[] }>("/api/v1/operator/tiers", { signal }).then(
+      (data) => data.tiers,
+    );
+  }
+
   listOperatorOrgs(
-    query: { q?: string; limit?: number; cursor?: string | null } = {},
+    query: {
+      q?: string;
+      tiers?: readonly string[];
+      active?: boolean;
+      nearLimit?: boolean;
+      hasOverride?: boolean;
+      sort?: OperatorOrgSort;
+      dir?: "asc" | "desc";
+      limit?: number;
+      offset?: number;
+      cursor?: string | null;
+    } = {},
     signal?: AbortSignal,
   ): Promise<OperatorOrgPage> {
     return this.request<OperatorOrgPage>("/api/v1/operator/orgs", {
-      query: { q: query.q || undefined, limit: query.limit, cursor: query.cursor },
+      query: {
+        q: query.q || undefined,
+        tier: query.tiers && query.tiers.length ? query.tiers : undefined,
+        active: query.active || undefined,
+        near_limit: query.nearLimit || undefined,
+        has_override: query.hasOverride || undefined,
+        sort: query.sort,
+        dir: query.dir,
+        limit: query.limit,
+        offset: query.offset || undefined,
+        cursor: query.cursor,
+      },
       signal,
     });
+  }
+
+  getOperatorKpis(signal?: AbortSignal): Promise<OperatorKpis> {
+    return this.request<OperatorKpis>("/api/v1/operator/kpis", { signal });
   }
 
   getCredentialQuota(slug: string, signal?: AbortSignal): Promise<OperatorQuotaDetail> {
@@ -1279,25 +1418,50 @@ export class CertForgeClient {
 
   /** Every org's credential emails, newest first. `org` narrows to one slug. */
   listOperatorDeliveries(
-    query: {
-      org?: string | null;
-      q?: string;
-      deliveryStatus?: OperatorDeliveryFilter;
-      limit?: number;
-      cursor?: string | null;
-    } = {},
+    query: OperatorDeliveryQuery & { limit?: number; offset?: number; cursor?: string | null } = {},
     signal?: AbortSignal,
   ): Promise<OperatorDeliveryPage> {
     return this.request<OperatorDeliveryPage>("/api/v1/operator/deliveries", {
       query: {
-        org: query.org || undefined,
-        q: query.q || undefined,
-        delivery_status: query.deliveryStatus,
+        ...deliveryQuery(query),
         limit: query.limit,
+        offset: query.offset || undefined,
         cursor: query.cursor,
       },
       signal,
     });
+  }
+
+  /** The filtered view as CSV (at most 10,000 rows; `truncated` says if cut). */
+  async exportOperatorDeliveries(
+    query: OperatorDeliveryQuery = {},
+    signal?: AbortSignal,
+  ): Promise<{ blob: Blob; filename: string; total: number; truncated: boolean }> {
+    const { blob, headers } = await this.requestFile("/api/v1/operator/deliveries/export", {
+      query: deliveryQuery(query),
+      signal,
+    });
+    const disposition = headers.get("content-disposition") ?? "";
+    const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? "certforge-deliveries.csv";
+    return {
+      blob,
+      filename,
+      total: Number(headers.get("x-export-total") ?? 0),
+      truncated: headers.get("x-export-truncated") === "true",
+    };
+  }
+
+  /** Resend one credential's email. `idempotencyKey` is one per confirmation:
+   *  a repeat is answered from the first request (`replayed: true`), never resent. */
+  resendOperatorDelivery(
+    publicId: string,
+    idempotencyKey: string,
+    signal?: AbortSignal,
+  ): Promise<OperatorResendResult> {
+    return this.request<OperatorResendResult>(
+      `/api/v1/operator/deliveries/${encodeURIComponent(publicId)}/resend`,
+      { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, signal },
+    );
   }
 
   // --- passports, claims, verification ---

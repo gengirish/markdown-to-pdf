@@ -352,6 +352,69 @@ def test_a_plan_change_needs_a_reason(client, operator, db_session):
     assert reload(db_session, "op-tier-reason").tier == "community"
 
 
+def test_a_plan_change_with_no_override_is_still_logged(client, operator, db_session):
+    """It used to log only an override clear, so most plan changes left
+    nothing in History. Every real change is an audit row now."""
+    org = make_org(db_session, "op-log-plan", tier="scale")
+    assert put_tier(client, "op-log-plan", "pro").status_code == 200
+
+    rows = changes(db_session, org)
+    assert len(rows) == 1
+    row = rows[0]
+    assert (row.actor, row.previous_tier, row.new_tier) == (OPERATOR, "scale", "pro")
+    assert REASON in row.reason
+    assert (row.previous_override, row.new_override) == (None, None)
+    assert (row.effective_before, row.effective_after) == (-1, get_tier_quota("pro"))
+
+    history = client.get(quota_url("op-log-plan")).json()["data"]["history"]
+    assert history[0]["previous_tier"] == "scale"
+    assert history[0]["new_tier"] == "pro"
+    assert history[0]["effective_before"] is None  # unlimited on the wire
+
+
+def test_an_override_change_carries_no_tiers(client, operator, db_session):
+    org = make_org(db_session, "op-log-override")
+    put_quota(client, "op-log-override", 700)
+    (row,) = changes(db_session, org)
+    assert (row.previous_tier, row.new_tier) == (None, None)
+
+
+def test_an_org_on_scale_keeps_scale_and_resaving_it_is_a_no_op(client, operator, db_session):
+    """The dashboard's plan control selects the org's current tier; saving
+    that unchanged must change and log nothing."""
+    org = make_org(db_session, "op-on-scale", tier="scale", override=None)
+    detail = client.get(quota_url("op-on-scale")).json()["data"]
+    assert (detail["tier"], detail["tier_name"], detail["effective"]) == ("scale", "Scale", None)
+
+    data = put_tier(client, "op-on-scale", "scale").json()["data"]
+    assert data["changed"] is False
+    assert reload(db_session, "op-on-scale").tier == "scale"
+    assert changes(db_session, org) == []
+
+
+# -- the operator's plan catalog -----------------------------------------------------
+
+def test_the_operator_catalog_lists_every_tier_including_unlisted_ones(client, operator):
+    tiers = client.get("/api/v1/operator/tiers").json()["data"]["tiers"]
+    keys = [t["key"] for t in tiers]
+    assert keys == sorted(config.BILLING_TIERS, key=lambda k: config.BILLING_TIERS[k]["order"])
+    assert "scale" in keys
+    scale = next(t for t in tiers if t["key"] == "scale")
+    assert scale["listed"] is False
+    assert scale["monthly_quota"] is None  # unlimited is null on the wire
+
+
+def test_the_public_catalog_still_hides_unlisted_tiers(client):
+    """The operator catalog must not leak into the pricing page."""
+    keys = [t["key"] for t in client.get("/api/v1/tiers").json()["data"]]
+    assert "scale" not in keys
+
+
+def test_the_operator_catalog_is_operator_only(client, mock_clerk, monkeypatch):
+    monkeypatch.setattr(config, "OPERATOR_USER_IDS", frozenset({"user_someone_else"}))
+    assert client.get("/api/v1/operator/tiers").status_code == 403
+
+
 def test_missing_org_is_404(client, operator):
     assert put_tier(client, "nope-not-here", "pro").status_code == 404
     assert put_quota(client, "nope-not-here", 10).status_code == 404
@@ -364,12 +427,14 @@ def test_list_searches_and_pages_by_slug(client, operator, db_session):
         make_org(db_session, s)
     make_org(db_session, "oplist-d", override=1000)
 
-    first = client.get("/api/v1/operator/orgs", params={"q": "oplist-", "limit": 2}).json()["data"]
+    params = {"q": "oplist-", "limit": 2, "sort": "slug", "dir": "asc"}
+    first = client.get("/api/v1/operator/orgs", params=params).json()["data"]
     assert [o["slug"] for o in first["orgs"]] == ["oplist-a", "oplist-b"]
-    assert first["next_cursor"] == "oplist-b"
+    assert first["total"] == 4
+    assert first["next_cursor"]  # opaque
 
     rest = client.get(
-        "/api/v1/operator/orgs", params={"q": "oplist-", "limit": 2, "cursor": first["next_cursor"]}
+        "/api/v1/operator/orgs", params={**params, "cursor": first["next_cursor"]}
     ).json()["data"]
     assert [o["slug"] for o in rest["orgs"]] == ["oplist-c", "oplist-d"]
     assert rest["next_cursor"] is None
