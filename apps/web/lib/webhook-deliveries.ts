@@ -54,9 +54,19 @@ export function deliveryTagText(delivery: Pick<WebhookDelivery, "status" | "last
   return delivery.last_status_code == null ? label : `${label} · ${delivery.last_status_code}`;
 }
 
+/** A `pending` row this far past its due time has lost its job (the API has
+ *  no sweep), so it may be redelivered. Mirrors the API's threshold. */
+export const STRANDED_PENDING_AFTER_MS = 15 * 60 * 1000;
+
 /** Mirrors the API's rule; the API still enforces it with a 409. */
-export function isRedeliverable(status: string): boolean {
-  return status === "failed" || status === "abandoned";
+export function isRedeliverable(
+  delivery: Pick<WebhookDelivery, "status" | "next_attempt_at">,
+  now: number = Date.now(),
+): boolean {
+  if (delivery.status === "failed" || delivery.status === "abandoned") return true;
+  if (delivery.status !== "pending" || !delivery.next_attempt_at) return false;
+  const due = Date.parse(delivery.next_attempt_at);
+  return Number.isFinite(due) && now - due > STRANDED_PENDING_AFTER_MS;
 }
 
 /** An API that predates delivery records omits `last_delivery` entirely;

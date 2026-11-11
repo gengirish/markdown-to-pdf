@@ -486,7 +486,7 @@ function WebhookRow({
                           <NextTry at={delivery.next_attempt_at} />
                         </span>
                       </div>
-                      {isRedeliverable(delivery.status) ? (
+                      {isRedeliverable(delivery) ? (
                         <button
                           type="button"
                           onClick={() => redeliver(delivery.id)}

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import type { WebhookDeliveryStatus } from "./api.ts";
 
 import {
   DELIVERY_STATUS,
@@ -57,11 +58,17 @@ test("the tag carries the response code when there is one", () => {
   assert.equal(deliveryTagText({ status: "failed", last_status_code: null }), "Failed");
 });
 
-test("only failed and abandoned deliveries offer Redeliver", () => {
-  assert.equal(isRedeliverable("failed"), true);
-  assert.equal(isRedeliverable("abandoned"), true);
-  assert.equal(isRedeliverable("pending"), false);
-  assert.equal(isRedeliverable("succeeded"), false);
+test("failed, abandoned and stranded-pending deliveries offer Redeliver", () => {
+  const now = Date.parse("2026-11-11T12:00:00Z");
+  const ago = (min: number) => new Date(now - min * 60_000).toISOString();
+  const d = (status: WebhookDeliveryStatus, next_attempt_at: string | null = null) => ({ status, next_attempt_at });
+  assert.equal(isRedeliverable(d("failed", ago(-5)), now), true);
+  assert.equal(isRedeliverable(d("abandoned"), now), true);
+  assert.equal(isRedeliverable(d("succeeded"), now), false);
+  // A pending row is only redeliverable once its job is evidently lost.
+  assert.equal(isRedeliverable(d("pending", ago(1)), now), false);
+  assert.equal(isRedeliverable(d("pending", ago(16)), now), true);
+  assert.equal(isRedeliverable(d("pending", null), now), false);
 });
 
 test("an old API without last_delivery reads as never sent", () => {
