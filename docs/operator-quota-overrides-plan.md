@@ -3,7 +3,8 @@
 Status: **W1 and W2 merged in #11 (`2198b37`), 2026-09-22. W3 (the page) built
 2026-10-30** and merged in #32 (`1f6afab`), including the manual plan change
 and the plan card's "Custom limit". W4 (drop `monthly_quota`) is in progress:
-W4a, stop writing it, is a package of `docs/build-plan-2026-11.md`. The one open question was decided on 2026-09-22:
+W4a, stop writing it, is done (a package of `docs/build-plan-2026-11.md`); W4b,
+the drop migration, ships in a later deploy. The one open question was decided on 2026-09-22:
 a plan change clears the override (Decision 4).
 
 #11 also adds `PUT /operator/orgs/{slug}/tier`, the manual plan change Decision
@@ -281,7 +282,53 @@ The Dashboard section above.
 ### W4: Drop `monthly_quota` (one release after W3)
 
 Stop writing it and drop the column. This waits a release so that W1–W3 can
-still be rolled back.
+still be rolled back. It is two packages, in two separate deploys.
+
+**Why two deploys.** Fly runs `release_command` (`python -m api.release`,
+which applies Alembic migrations) *before* the old machines are replaced. If
+one deploy both stopped the writes and dropped the column, the old code still
+serving requests during the rollover would `UPDATE organizations SET
+monthly_quota = …` on every plan or override change, and the ORM would select
+the column on every org load — against a column that no longer exists. So the
+writes stop first, that release goes live everywhere, and only then does the
+drop ship.
+
+#### W4a: stop writing it (done, `build/w4a`)
+
+- `services/plans.py` no longer sets `org.monthly_quota` in `change_tier()` or
+  `set_credential_quota_override()`.
+- `seed.py`'s system org no longer passes `monthly_quota=-1`.
+- **No migration.** The column stays `nullable=False` with its Python-side
+  `default=lambda: get_tier_quota("community")`, so inserts that do not set it
+  still succeed. Only the model comment changed.
+- Guard: `tests/test_monthly_quota_not_written.py` starts an org at a sentinel
+  value, changes its tier and its override through `services/plans.py`, and
+  asserts the sentinel survived. Seen to fail with the write reintroduced
+  (`assert 1000 == 7` after a Community → Pro change).
+
+From this release on, the column's value is stale by design: whatever the
+default or the last pre-W4a write left there. Nothing may start reading it.
+
+#### W4b: drop the column (next step, a later deploy)
+
+Ship only after the W4a release is live on every machine — check `fly status`
+shows no machine on an older image. Then, in one package:
+
+1. **Migration** `drop_organizations_monthly_quota`: `upgrade()` runs
+   `op.drop_column("organizations", "monthly_quota")`. `downgrade()` re-adds it
+   as `sa.Integer(), nullable=False, server_default="50"` and then fills it
+   from the same tier-literal `CASE` that `d9e4b7a2c615` uses (override wins
+   where set, `-1` for unlimited), so a rollback to code that reads it gets a
+   current number. Write the quotas as literals, not imported from
+   `config.py`, for the same reason as W1's backfill.
+2. **Model:** delete the `monthly_quota` mapped column and its comment from
+   `models/organization.py`. Nothing else in `apps/api/api` refers to the
+   column at that point — the remaining `monthly_quota` hits are the
+   `BILLING_TIERS` key, which `/api/v1/tiers` publishes and which stays.
+3. **Tests:** delete `tests/test_monthly_quota_not_written.py` (its column is
+   gone) and any fixture that still passes `monthly_quota=` to `Organization`.
+4. **Before merging:** run the migration against a Neon branch of production.
+   CI builds its schema with `create_all`, so nothing there runs this SQL.
 
 ## Tests
 
