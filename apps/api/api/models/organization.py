@@ -87,14 +87,11 @@ class Organization(Base):
     cancel_at_period_end: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )
-    # Derived from the tier table rather than repeated as a literal: a new org
-    # is created with tier="community" and no explicit quota, so a default that
-    # disagreed with BILLING_TIERS["community"] would silently win.
-    #
-    # No longer read by issuance. `effective_credential_quota()` decides the
-    # limit; this column is kept equal to it on every write so that a rollback
-    # to code that still reads it finds a current number. Dropped in W4 of
-    # docs/operator-quota-overrides-plan.md.
+    # Nothing reads or writes this column any more. `effective_credential_quota()`
+    # decides the limit live, and since W4a nothing sets it after insert, so the
+    # value is whatever the default was when the row was created — do not start
+    # reading it again. The default stays only because the column is still
+    # NOT NULL. W4b of docs/operator-quota-overrides-plan.md drops it.
     monthly_quota: Mapped[int] = mapped_column(
         Integer, nullable=False, default=lambda: get_tier_quota("community")
     )

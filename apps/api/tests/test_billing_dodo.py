@@ -269,9 +269,9 @@ def test_the_granted_quota_is_the_tier_tables(client, db_session, tier):
     deliver(client, "subscription.active", subscription(org, tier=tier))
     org = reloaded(db_session, org)
     assert org.tier == tier
-    # What binds is the effective limit; monthly_quota is kept equal until W4.
+    # What binds is the effective limit. monthly_quota is no longer written
+    # (W4a), so it is not asserted.
     assert effective_credential_quota(org) == get_tier_quota(tier)
-    assert org.monthly_quota == get_tier_quota(tier)
 
 
 def test_a_non_subscription_event_is_recorded_and_changes_nothing(client, db_session):
@@ -325,7 +325,6 @@ def test_every_ending_returns_the_org_to_community(client, db_session, status):
     org = reloaded(db_session, org)
     assert org.tier == "community"
     assert effective_credential_quota(org) == get_tier_quota("community")
-    assert org.monthly_quota == get_tier_quota("community")
 
 
 def test_a_plan_change_moves_the_tier_by_product(client, db_session):

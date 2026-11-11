@@ -117,8 +117,7 @@ def test_a_new_org_follows_the_community_tier_quota(db_session):
     It used to be a copy in `monthly_quota`, and a copy that disagreed with the
     tier table meant raising the table changed the pricing page and nothing
     else. Assert the effective limit is the tier's rather than that it is 50.
-    `monthly_quota` is still written for rollback safety until W4, so it must
-    agree too.
+    `monthly_quota` is no longer read or written (W4a), so it is not asserted.
     """
     from api.services.issuance import credential_quota_source, effective_credential_quota
 
@@ -129,7 +128,6 @@ def test_a_new_org_follows_the_community_tier_quota(db_session):
     assert org.credential_quota_override is None
     assert credential_quota_source(org) == "tier"
     assert effective_credential_quota(org) == get_tier_quota("community")
-    assert org.monthly_quota == effective_credential_quota(org)
 
 
 def test_the_quota_actually_refuses_once_reached(client, db_session):

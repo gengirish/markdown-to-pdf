@@ -11,8 +11,9 @@ forget:
   anyone having to notice.
 - Every override change and every plan change is logged, with a reason, in
   the same transaction.
-- `monthly_quota` is kept equal to the effective limit on every write, so a
-  rollback to code that still reads it finds a current number. Until W4.
+- `organizations.monthly_quota` is not written here any more (W4a of
+  docs/operator-quota-overrides-plan.md). Nothing reads it; the limit is
+  `effective_credential_quota()`, decided live. W4b drops the column.
 
 Nothing here commits. The caller's transaction is what makes the change and
 its log row land together or not at all.
@@ -100,7 +101,6 @@ def change_tier(
 
     org.tier = new_tier
     org.credential_quota_override = None
-    org.monthly_quota = effective_credential_quota(org)
 
     detail = f"Plan changed from {previous_tier} to {new_tier}"
     _log_override_change(
@@ -149,7 +149,6 @@ def set_credential_quota_override(
     effective_before = effective_credential_quota(org)
 
     org.credential_quota_override = override
-    org.monthly_quota = effective_credential_quota(org)
 
     row = _log_override_change(
         session,

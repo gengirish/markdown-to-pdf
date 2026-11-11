@@ -21,7 +21,6 @@ SYSTEM_ORG = {
     "slug": "intelliforge-learning",
     "name": "IntelliForge Learning",
     "tier": "scale",
-    "monthly_quota": -1,  # unlimited
 }
 
 # ── Default templates ──────────────────────────────────────────────────
