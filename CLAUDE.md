@@ -712,6 +712,37 @@ lifespan so it scales with the web process.
   only its still-pending rows; rows rendered after the last commit may be emailed
   twice, which beats never.
 
+### Webhook deliveries
+
+`api/services/webhooks.py` is the only place a customer webhook is sent. The
+`batch.completed` POST used to run once, inside the batch job, and a 500 from the
+receiver was logged as "dispatched", because `httpx` does not raise on a status.
+
+- **A delivery is a row and each attempt is a job.** `_process_batch_sync` writes
+  one `webhook_deliveries` row per subscribed endpoint, in the batch's own
+  transaction, and makes no HTTP call. `process_batch` defers `deliver_webhook`
+  only after that commit, so a rolled-back batch leaves neither a row nor a job.
+- **Only a 2xx is success.** Anything else, a timeout or a network error retries on
+  `RETRY_DELAYS_SECONDS` (1m … 12h), 7 attempts, then `abandoned`. A 3xx is not
+  followed.
+- **Every attempt sends the stored bytes.** `payload` is a `Text` column, not JSON,
+  because a JSON column round-trips through a dict and the signature is over bytes.
+  The row id is the `X-CertForge-Event-Id`, the same on every attempt.
+- **The v1 signature is over bytes:** `f"{t}.".encode() + body`, keyed by the
+  whole secret string. Formatting the bytes object into an f-string produces
+  `b'...'` and breaks every receiver silently; a test pins it.
+  `x-certforge-signature` (HMAC of the body alone) is deprecated and must not
+  change — existing receivers verify it.
+- **Retries run late, on purpose.** The machine scales to zero and nothing wakes it
+  for a retry: no sweep, no keep-alive. A `pending` row whose job was lost
+  (machine died between commit and defer) is rescued by a person, not a timer:
+  redeliver accepts `pending` once it is 15 minutes past `next_attempt_at`,
+  as well as `failed` and `abandoned`. A redeliver on a `failed` row starts a second
+  chain alongside the scheduled one; the shared attempt counter still caps both.
+- The delivery routes (`routes/developers.py`) are owner/admin and `api_access`
+  gated, look a delivery up by id **and** endpoint **and** org, and never return
+  `payload`. They are not public, so they are not in `llms.txt`.
+
 ## Agent-discovery surface
 
 `/llms.txt`, `/robots.txt`, `/sitemap.xml`, `/.well-known/ai-plugin.json`, and the
