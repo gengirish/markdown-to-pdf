@@ -8,11 +8,30 @@ import {
   type ApiKeySummary,
   type CreatedApiKey,
   type CreatedWebhook,
+  type WebhookDelivery,
   type WebhookSummary,
 } from "@/lib/api";
 import { useCertForge } from "@/lib/use-api";
+import {
+  WEBHOOK_COPY,
+  deliveryStatusLabel,
+  deliveryTagText,
+  isRedeliverable,
+  lastDeliveryOf,
+  nextTryHint,
+  redeliverErrorMessage,
+} from "@/lib/webhook-deliveries";
 import { ApiStatusBadge } from "./api-status-badge";
-import { Card, EmptyNote, ErrorNote, Skeleton, buttonClass, formatDate } from "./ui";
+import {
+  Card,
+  EmptyNote,
+  ErrorNote,
+  Mono,
+  Skeleton,
+  StatusTag,
+  buttonClass,
+  formatDate,
+} from "./ui";
 
 export function DeveloperCard({ slug }: { slug: string }) {
   return (
@@ -291,14 +310,14 @@ function WebhooksPanel({ slug }: { slug: string }) {
 
       {error ? <ErrorNote>{error}</ErrorNote> : null}
 
+      <p className="text-sm text-muted">{WEBHOOK_COPY.purpose}</p>
+
       {webhooks === null ? (
         <Skeleton rows={1} />
       ) : webhooks.length === 0 ? (
         !error ? (
           <div className="space-y-2">
-            <EmptyNote>
-              No webhook endpoints registered. Add one to be told when a credential is issued.
-            </EmptyNote>
+            <EmptyNote>{WEBHOOK_COPY.empty}</EmptyNote>
             <p className="text-sm text-muted">
               Registering and removing endpoints over the API is in the <DocsLink />.
             </p>
@@ -306,24 +325,190 @@ function WebhooksPanel({ slug }: { slug: string }) {
         ) : null
       ) : (
         webhooks.map((webhook) => (
-          <div key={webhook.id} className="flex items-center justify-between gap-4 text-sm">
-            <div className="min-w-0">
-              <p className="truncate font-medium text-ink">{webhook.url}</p>
-              <p className="mt-1 text-faint">
-                Events: {webhook.events.length > 0 ? webhook.events.join(", ") : "none"}
-              </p>
-            </div>
-            <button
-              onClick={() => remove(webhook.id)}
-              disabled={busy}
-              className="shrink-0 text-danger transition-colors hover:text-danger disabled:cursor-not-allowed disabled:text-muted"
-            >
-              Delete
-            </button>
-          </div>
+          <WebhookRow
+            key={webhook.id}
+            slug={slug}
+            webhook={webhook}
+            busy={busy}
+            onRemove={() => remove(webhook.id)}
+            onChanged={() => load()}
+          />
         ))
       )}
     </Panel>
+  );
+}
+
+function DeliveryTag({ delivery }: { delivery: WebhookDelivery | null }) {
+  if (!delivery) return <StatusTag tone="neutral">{WEBHOOK_COPY.noDeliveries}</StatusTag>;
+  return <StatusTag tone={deliveryStatusLabel(delivery.status).tone}>{deliveryTagText(delivery)}</StatusTag>;
+}
+
+function NextTry({ at }: { at: string | null }) {
+  const hint = nextTryHint(at);
+  if (!hint) return null;
+  return (
+    <span title={WEBHOOK_COPY.lateRetryCaveat} className="cursor-help underline decoration-dotted underline-offset-2">
+      {hint}
+    </span>
+  );
+}
+
+/** One endpoint: its last delivery as a tag, and its recent deliveries on demand.
+ *  The list is fetched when opened, not with the card, so an org with many
+ *  endpoints does not pay one request per endpoint on every dashboard load. */
+function WebhookRow({
+  slug,
+  webhook,
+  busy,
+  onRemove,
+  onChanged,
+}: {
+  slug: string;
+  webhook: WebhookSummary;
+  busy: boolean;
+  onRemove: () => void;
+  onChanged: () => void;
+}) {
+  const api = useCertForge();
+  const last = lastDeliveryOf(webhook);
+  const [open, setOpen] = useState(false);
+  const [deliveries, setDeliveries] = useState<WebhookDelivery[] | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const [inFlight, setInFlight] = useState<Set<string>>(() => new Set());
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    api
+      .listWebhookDeliveries(slug, webhook.id, controller.signal)
+      .then((result) => {
+        setDeliveries(result);
+        setListError(null);
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        setDeliveries([]);
+        setListError(toApiError(err).message);
+      });
+    return () => controller.abort();
+  }, [api, open, slug, webhook.id]);
+
+  const redeliver = useCallback(
+    async (deliveryId: string) => {
+      setInFlight((current) => new Set(current).add(deliveryId));
+      setRowErrors((current) => {
+        const next = { ...current };
+        delete next[deliveryId];
+        return next;
+      });
+      try {
+        const updated = await api.redeliverWebhookDelivery(slug, webhook.id, deliveryId);
+        setDeliveries((current) =>
+          current ? current.map((row) => (row.id === updated.id ? updated : row)) : current,
+        );
+        onChanged();
+      } catch (err) {
+        setRowErrors((current) => ({ ...current, [deliveryId]: redeliverErrorMessage(toApiError(err)) }));
+      } finally {
+        setInFlight((current) => {
+          const next = new Set(current);
+          next.delete(deliveryId);
+          return next;
+        });
+      }
+    },
+    [api, onChanged, slug, webhook.id],
+  );
+
+  const listId = `webhook-deliveries-${webhook.id}`;
+
+  return (
+    <div className="space-y-3 text-sm">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="truncate font-medium text-ink">{webhook.url}</p>
+          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-faint">
+            <span>Events: {webhook.events.length > 0 ? webhook.events.join(", ") : "none"}</span>
+            <DeliveryTag delivery={last} />
+            {last ? <NextTry at={last.next_attempt_at} /> : null}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-4">
+          <button
+            type="button"
+            onClick={() => setOpen((current) => !current)}
+            aria-expanded={open}
+            aria-controls={listId}
+            className="text-accent underline-offset-2 hover:underline"
+          >
+            {open ? WEBHOOK_COPY.hideDeliveries : WEBHOOK_COPY.showDeliveries}
+          </button>
+          <button
+            onClick={onRemove}
+            disabled={busy}
+            className="text-danger transition-colors hover:text-danger disabled:cursor-not-allowed disabled:text-muted"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+
+      {open ? (
+        <div id={listId} className="rounded-lg border border-hair">
+          {listError ? (
+            <div className="p-3">
+              <ErrorNote>{listError}</ErrorNote>
+            </div>
+          ) : deliveries === null ? (
+            <div className="p-3">
+              <Skeleton rows={2} />
+            </div>
+          ) : deliveries.length === 0 ? (
+            <p className="p-3 text-muted">{WEBHOOK_COPY.deliveriesEmpty}</p>
+          ) : (
+            <ul className="divide-y divide-hair">
+              {deliveries.map((delivery) => {
+                const sending = inFlight.has(delivery.id);
+                const rowError = rowErrors[delivery.id];
+                return (
+                  <li key={delivery.id} className="space-y-2 px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                        <DeliveryTag delivery={delivery} />
+                        <Mono className="text-xs text-muted">{delivery.event}</Mono>
+                        <span className="text-faint">
+                          {formatDate(delivery.created_at)} · {delivery.attempts}{" "}
+                          {delivery.attempts === 1 ? "attempt" : "attempts"}
+                        </span>
+                        <span className="text-faint">
+                          <NextTry at={delivery.next_attempt_at} />
+                        </span>
+                      </div>
+                      {isRedeliverable(delivery.status) ? (
+                        <button
+                          type="button"
+                          onClick={() => redeliver(delivery.id)}
+                          disabled={sending}
+                          className={buttonClass("secondary", "sm")}
+                        >
+                          {sending ? WEBHOOK_COPY.redelivering : WEBHOOK_COPY.redeliver}
+                        </button>
+                      ) : null}
+                    </div>
+                    {delivery.last_error ? (
+                      <p className="break-all font-mono text-xs text-muted">{delivery.last_error}</p>
+                    ) : null}
+                    {rowError ? <ErrorNote>{rowError}</ErrorNote> : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

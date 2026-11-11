@@ -439,6 +439,32 @@ export interface WebhookSummary {
   url: string;
   events: string[];
   created_at: string;
+  /** The endpoint's newest delivery, or null when it has never been sent one.
+   *  Optional because an API that predates delivery records omits the key
+   *  altogether; read it through `lastDeliveryOf` in `lib/webhook-deliveries.ts`,
+   *  which folds the two absences together. */
+  last_delivery?: WebhookDelivery | null;
+}
+
+/** Where a delivery stands. `failed` still has retries scheduled;
+ *  `abandoned` has used every attempt and will not be tried again on its own. */
+export type WebhookDeliveryStatus = "pending" | "succeeded" | "failed" | "abandoned";
+
+/** One event sent (or being sent) to one endpoint. A delivery is a row and
+ *  each attempt is a job, so `attempts` counts tries of the same event. */
+export interface WebhookDelivery {
+  /** Also the event id: the same `X-CertForge-Event-Id` on every attempt. */
+  id: string;
+  event: string;
+  status: WebhookDeliveryStatus;
+  attempts: number;
+  /** The receiver's HTTP status on the last attempt; null if it never answered. */
+  last_status_code: number | null;
+  last_error: string | null;
+  /** When the next automatic attempt is due; null once the delivery is final. */
+  next_attempt_at: string | null;
+  created_at: string;
+  delivered_at: string | null;
 }
 
 /** The only response that ever carries `secret`. */
@@ -1320,6 +1346,34 @@ export class CertForgeClient {
     return this.request<{ status: string }>(
       `/api/v1/orgs/${encodeURIComponent(slug)}/webhooks/${encodeURIComponent(webhookId)}`,
       { method: "DELETE", signal },
+    );
+  }
+
+  /** The endpoint's 50 most recent deliveries, newest first. */
+  listWebhookDeliveries(
+    slug: string,
+    webhookId: string,
+    signal?: AbortSignal,
+  ): Promise<WebhookDelivery[]> {
+    return this.request<WebhookDelivery[]>(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/webhooks/${encodeURIComponent(webhookId)}/deliveries`,
+      { signal },
+    );
+  }
+
+  /** Queues one more attempt of the same event (same event id) and returns the
+   *  row as it stands afterwards. Only `failed` and `abandoned` deliveries
+   *  qualify; anything else rejects 409 with `type === "delivery_not_redeliverable"`.
+   *  It does not reset the automatic retry schedule. */
+  redeliverWebhookDelivery(
+    slug: string,
+    webhookId: string,
+    deliveryId: string,
+    signal?: AbortSignal,
+  ): Promise<WebhookDelivery> {
+    return this.request<WebhookDelivery>(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/webhooks/${encodeURIComponent(webhookId)}/deliveries/${encodeURIComponent(deliveryId)}/redeliver`,
+      { method: "POST", signal },
     );
   }
 
