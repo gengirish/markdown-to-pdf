@@ -29,6 +29,11 @@ from api.models.credential import DELIVERY_FAILED
 from api.services.delivery import deliver_credential_email, may_retry
 from api.services.backgrounds import background_data_uri
 from api.services.rendering import build_render_variables
+from api.services.webhooks import (
+    EVENT_BATCH_COMPLETED,
+    attempt_delivery as attempt_webhook_delivery,
+    create_deliveries as create_webhook_deliveries,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +131,50 @@ async def process_batch(batch_id_str: str):
             await retry_delivery.defer_async(public_id=public_id)
         except Exception:
             logger.exception("Could not queue a delivery retry for %s", public_id)
+
+    # The batch has committed, and its webhook rows with it. Deferred here and
+    # never inside _process_batch_sync: Procrastinate commits a job on its own
+    # connection, so a job queued before the batch commit would outlive a
+    # batch that then rolled back.
+    for delivery_id in getattr(retry_ids, "webhook_delivery_ids", ()):
+        try:
+            await deliver_webhook.defer_async(delivery_id=str(delivery_id))
+        except Exception:
+            logger.exception("Could not queue webhook delivery %s", delivery_id)
+
+
+class BatchOutcome(list):
+    """What _process_batch_sync hands back: the email retry ids, as a list.
+
+    Still a list of public ids so every caller that compares it to ``[]``
+    keeps working, plus the webhook deliveries the batch committed, which
+    process_batch defers once the commit is behind it.
+    """
+
+    def __init__(self, retry_ids=(), webhook_delivery_ids=()):
+        super().__init__(retry_ids)
+        self.webhook_delivery_ids = list(webhook_delivery_ids)
+
+
+@worker_app.task(queue="webhooks", retry=False)
+async def deliver_webhook(delivery_id: str):
+    """One attempt at one webhook delivery; schedules the next itself.
+
+    Procrastinate's retry is off because the schedule is ours
+    (services/webhooks.RETRY_DELAYS_SECONDS) and the count lives on the row,
+    where support and the customer can see it. The next attempt is a fresh
+    job deferred with ``schedule_in``; while the machine is stopped it runs
+    at the next wake, which is accepted rather than fought.
+    """
+    delay = await asyncio.to_thread(attempt_webhook_delivery, uuid.UUID(delivery_id))
+    if delay is None:
+        return
+    try:
+        await deliver_webhook.configure(
+            schedule_in={"seconds": int(delay)}
+        ).defer_async(delivery_id=delivery_id)
+    except Exception:
+        logger.exception("Could not schedule the next attempt for webhook %s", delivery_id)
 
 
 # A batch still pending this long after upload has probably lost its job.
@@ -369,54 +418,35 @@ def _process_batch_sync(batch_id: uuid.UUID) -> list[str] | None:
         batch.status = "completed" if failed_count == 0 else "completed_with_errors"
         batch.completed_at = datetime.now(timezone.utc)
         batch.error_report = errors if errors else None
+
+        # batch.completed webhooks: rows, not requests. One pending delivery
+        # per subscribed endpoint, written in this commit with the batch, so
+        # the batch and the event it owes either both exist or neither does.
+        # No HTTP here: a receiver that hangs used to hold this job for its
+        # full timeout, once per endpoint. process_batch defers one
+        # deliver_webhook per row after this commit.
+        webhook_ids = create_webhook_deliveries(
+            session,
+            batch.org_id,
+            EVENT_BATCH_COMPLETED,
+            {
+                "batch_id": str(batch.id),
+                "status": batch.status,
+                "succeeded": batch.succeeded,
+                "failed": batch.failed,
+                # A subscriber reading only succeeded/failed would conclude
+                # every recipient was emailed. These say otherwise when they
+                # were not.
+                "delivered": batch.delivered,
+                "delivery_failed": batch.delivery_failed,
+                "completed_at": batch.completed_at.isoformat(),
+            },
+        )
         session.commit()
-        
+
         logger.info(
             f"Batch {batch_id} completed: {success_count} rendered, {failed_count} failed, "
             f"{delivered_count} delivered, {delivery_failed_count} delivery failures."
         )
 
-        # Dispatch Webhooks
-        try:
-            from api.models.api_key import WebhookEndpoint
-            import httpx
-            import hmac
-            import hashlib
-            import json
-
-            webhooks = session.query(WebhookEndpoint).filter_by(org_id=batch.org_id, active=True).all()
-            if webhooks:
-                payload = {
-                    "event": "batch.completed",
-                    "data": {
-                        "batch_id": str(batch.id),
-                        "status": batch.status,
-                        "succeeded": batch.succeeded,
-                        "failed": batch.failed,
-                        # A subscriber reading only succeeded/failed would
-                        # conclude every recipient was emailed. These say
-                        # otherwise when they were not.
-                        "delivered": batch.delivered,
-                        "delivery_failed": batch.delivery_failed,
-                        "completed_at": batch.completed_at.isoformat()
-                    }
-                }
-                payload_bytes = json.dumps(payload).encode('utf-8')
-                
-                with httpx.Client(timeout=5.0) as client:
-                    for wh in webhooks:
-                        if "batch.completed" in wh.events:
-                            signature = hmac.new(wh.secret.encode('utf-8'), payload_bytes, hashlib.sha256).hexdigest()
-                            headers = {
-                                "Content-Type": "application/json",
-                                "x-certforge-signature": signature
-                            }
-                            try:
-                                client.post(wh.url, content=payload_bytes, headers=headers)
-                                logger.info(f"Webhook dispatched to {wh.url}")
-                            except Exception as e:
-                                logger.warning(f"Failed to dispatch webhook to {wh.url}: {e}")
-        except Exception as e:
-            logger.error(f"Webhook dispatch error: {e}")
-
-    return retry_ids
+    return BatchOutcome(retry_ids, webhook_ids)
