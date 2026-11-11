@@ -5,7 +5,7 @@ Status: **Part A built 2026-10-31** (A-API, A-email, A-web), shipping with
 steps. One change from the plan below: with no `t`, the claim page warns
 rather than hiding the button, because the holder of an already-claimed
 credential may re-claim without a token and the page cannot tell who holds
-it. **Part B not started.**
+it. **Part B in build, see `docs/build-plan-2026-11.md`.**
 
 Originally: **planned 2026-10-30.** These are the two items the
 landing page's status section (`apps/web/app/page.tsx`, `STATUS`) lists as not

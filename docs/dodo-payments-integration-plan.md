@@ -1,6 +1,11 @@
 # Plan: Dodo Payments as CertForge's billing provider
 
-Status: **backend in review on `feature/dodo-billing`, 2026-09-22.**
+Status: **merged to `main` and live.** The backend landed in #12 (`74013f7`),
+the two-plan catalog in #15 (`8d8fc0b`), webhook registration in #18
+(`e3a92c4`), the plan-card checkout in #23 (`174f1cf`), and the
+release-time webhook-join check in #28 (`12bac4a`); #34 (`88912f7`) marked
+self-serve billing live. The table below is as of 2026-09-22, when the
+backend was in review on `feature/dodo-billing`.
 
 | Package | State |
 |---|---|
