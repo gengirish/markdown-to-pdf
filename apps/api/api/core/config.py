@@ -134,8 +134,8 @@ ANTHROPIC_API_KEY = _env("ANTHROPIC_API_KEY")
 VISION_MODEL = _env("VISION_MODEL", "claude-opus-5-5")
 VISION_AVAILABLE = bool(ANTHROPIC_API_KEY)
 
-#: Per org, per calendar month. Billing is still mocked, so tier gating cannot
-#: bound this — anyone who can create an org could otherwise run up an
+#: Per org, per calendar month, the same on every tier: no plan bounds design
+#: readings, so without this anyone who can create an org could run up an
 #: Anthropic bill with a loop.
 VISION_IMPORTS_PER_MONTH = int(_env("VISION_IMPORTS_PER_MONTH", "10") or "10")
 
