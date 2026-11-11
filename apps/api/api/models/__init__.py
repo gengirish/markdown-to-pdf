@@ -93,7 +93,7 @@ from api.models.template import Template  # noqa: F401, E402
 from api.models.template_asset import TemplateAsset  # noqa: F401, E402
 from api.models.credential import Credential, CredentialBatch  # noqa: F401, E402
 from api.models.passport import Passport, PassportCredential  # noqa: F401, E402
-from api.models.api_key import ApiKey, WebhookEndpoint  # noqa: F401, E402
+from api.models.api_key import ApiKey, WebhookEndpoint, WebhookDelivery  # noqa: F401, E402
 from api.models.usage import UsageLedger  # noqa: F401, E402
 from api.models.quota_change import CredentialQuotaChange  # noqa: F401, E402
 from api.models.operator_action import OperatorAction  # noqa: F401, E402
