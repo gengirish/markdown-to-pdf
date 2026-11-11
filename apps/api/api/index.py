@@ -2578,6 +2578,17 @@ Appreciation body adds: `certificate_kind` `"appreciation"`, `recognition_text` 
 - Bulk admin: `POST /api/admin/certificates/bulk` with `X-Admin-Key`.
 - Email delivery: optional `participant_email` via AgentMail.
 
+## CertForge /api/v1 webhooks
+
+Separate from the legacy `callback_url` above. Register with `POST /api/v1/orgs/{{slug}}/webhooks`; the response returns the signing `secret` (`whsec_...`) once. Only `batch.completed` is sent today (when a CSV batch finishes); single issuance sends none.
+
+- Headers on every attempt: `X-CertForge-Event-Id` (delivery id, the same on every retry), `X-CertForge-Timestamp` (unix seconds of this attempt), `X-CertForge-Signature-256: t=<timestamp>,v1=<hex HMAC-SHA256(secret, f"{{t}}.{{raw_body}}")>`.
+- Body: JSON with `event`, `delivery_id` and `data`; every attempt sends the same bytes.
+- Verify over the raw request bytes with a constant-time compare (`hmac.compare_digest`); reject timestamps more than 5 minutes old.
+- Deduplicate on `X-CertForge-Event-Id` and answer 2xx to a duplicate.
+- Only a 2xx counts as delivered. Retries after 1m, 5m, 30m, 2h, 6h, 12h (7 attempts), then abandoned; a longer `Retry-After` is honoured. Retries can run late: the API scales to zero and a due retry runs at the next wake.
+- `x-certforge-signature` (hex HMAC-SHA256 of the body alone, no timestamp) is deprecated but still sent unchanged.
+
 ## Branding (env-configurable)
 
 - Org tagline: {b['org_tagline']}
