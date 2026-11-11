@@ -4,9 +4,10 @@ Turning `/operator` (certforge.intelliforge.tech/operator) from a database
 viewer into an operator console. Two phases; Phase 1 ships first and stops for
 review.
 
-Status: **Phases 1 and 2 implemented, not yet deployed.** Two migrations
-(`a7d3e91c0b54`, `b5e2f7a1c9d3`) run on the next Fly release. Not visually
-verified — see "Verification" under each phase.
+Status: **shipped.** Merged to `main` in #41 (`f35bccb`), with layout fixes
+from the live check in #42 (`04adc81`); `deploy-api` succeeded on both main
+CI runs, so the two migrations (`a7d3e91c0b54`, `b5e2f7a1c9d3`) ran in that
+release. See "Follow-up after the live check" at the end.
 
 ## What exists today (Step 0 findings)
 

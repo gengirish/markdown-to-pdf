@@ -450,3 +450,39 @@ def test_the_image_sent_to_the_model_is_smaller_than_the_one_stored():
 
     assert max(sent.size) <= VISION_EDGE_PX
     assert abs(ratio - 2480 / 1754) < 0.01
+
+
+def test_the_model_is_the_configured_one_not_a_literal():
+    """The model is a setting (config.VISION_MODEL), so moving to a new one is a
+    `fly secrets set` rather than a code change. A literal in vision.py would
+    quietly win over whatever the setting says."""
+    import re
+    from pathlib import Path
+
+    import api.services.vision as vision
+
+    sent = {}
+
+    class FakeMessages:
+        def parse(self, **kwargs):
+            sent.update(kwargs)
+            return FakeResponse(a_layout())
+
+    class FakeClient:
+        def with_options(self, **kwargs):
+            return SimpleNamespace(messages=FakeMessages())
+
+    with (
+        patch("anthropic.Anthropic", lambda **kwargs: FakeClient()),
+        patch("api.services.vision.VISION_MODEL", "claude-configured-for-test"),
+    ):
+        vision.read_layout(png_bytes())
+
+    assert sent["model"] == "claude-configured-for-test"
+    # The effort is explicit on purpose: the model's default has changed before.
+    assert sent["output_config"] == {"effort": "medium"}
+
+    source = Path(vision.__file__).read_text(encoding="utf-8")
+    assert not re.search(r"""["']claude-[^"']*["']""", source), (
+        "vision.py names a model; read config.VISION_MODEL instead"
+    )

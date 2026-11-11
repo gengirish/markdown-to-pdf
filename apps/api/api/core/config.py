@@ -131,6 +131,7 @@ STORAGE_TIMEOUT_SEC = 10.0
 # (VISION_IMPORTS_PER_MONTH) as well as rate limited.
 
 ANTHROPIC_API_KEY = _env("ANTHROPIC_API_KEY")
+VISION_MODEL = _env("VISION_MODEL", "claude-opus-5-5")
 VISION_AVAILABLE = bool(ANTHROPIC_API_KEY)
 
 #: Per org, per calendar month. Billing is still mocked, so tier gating cannot

@@ -1,7 +1,9 @@
 # Plan: real Razorpay, an import counter, and re-gating templates
 
 Status: **partly shipped, 2026-09-21.** P2's usage endpoint and P3's gate have
-landed; P1 (real Razorpay) has not.
+landed. P1 (real Razorpay) never shipped: Dodo Payments replaced it, and
+self-serve checkout is live (#12, #23, #28, #34) — see
+`docs/dodo-payments-integration-plan.md`.
 
 > **P1 is superseded, 2026-09-22.** The provider is now Dodo Payments, not
 > Razorpay. See `docs/dodo-payments-integration-plan.md`. Findings B1–B5 below
@@ -9,9 +11,9 @@ landed; P1 (real Razorpay) has not.
 
 | Package | State |
 |---|---|
-| P1 — real Razorpay | **Not started.** `create_checkout_session` still returns a fabricated URL, and there are no keys or plan ids. B2, B4 and B5 below are all still open. B3 is half-fixed: the webhook now writes a tier `BILLING_TIERS` knows and takes the quota from the table, but *which* tier is still a guess, because there is no `plan_id` to map from. |
+| P1 — real Razorpay | **Superseded by Dodo** (see the note above). As written on 2026-09-21: **Not started.** `create_checkout_session` still returns a fabricated URL, and there are no keys or plan ids. B2, B4 and B5 below are all still open. B3 is half-fixed: the webhook now writes a tier `BILLING_TIERS` knows and takes the quota from the table, but *which* tier is still a guess, because there is no `plan_id` to map from. |
 | P2 — the counter | **Shipped in the form that gates, not the form proposed.** `GET /orgs/{slug}/usage` exists (B7) and reports credentials, templates and vision imports. `usage_ledger.templates_imported` was **not** added: option (b) below won the argument outright, and a monotonic activity counter that nothing reads is a column to maintain for nothing. Add it when billing analytics actually needs it. |
-| P3 — the gate | **Shipped.** `_enforce_template_limit` in `routes/templates.py`, 402 / `template_limit_reached`, on all three creation paths. Limits live in `BILLING_TIERS[tier]["template_limit"]`: community 1, starter 5, growth 25, scale unlimited. Tests in `tests/test_template_quota.py`, each one verified by reintroducing its bug. |
+| P3 — the gate | **Shipped.** `_enforce_template_limit` in `routes/templates.py`, 402 / `template_limit_reached`, on all three creation paths. Limits live in `BILLING_TIERS[tier]["template_limit"]`: community 1, pro 5, scale unlimited (starter and growth are now aliases of pro, #15). Tests in `tests/test_template_quota.py`, each one verified by reintroducing its bug. |
 | P4 — dashboard | **Shipped, minus the upgrade button.** The plan card reads the usage endpoint; `apps/web/app/pricing/page.tsx` renders the public catalog from `GET /api/v1/tiers`. No checkout button, because there is no checkout. Confirmed no `vercel.json` change was needed: `apps/web` calls the API at its absolute host (`NEXT_PUBLIC_CERTFORGE_API_URL`), not through a same-origin path. |
 
 **The order was deliberately broken, with the cost stated.** This plan says ship
