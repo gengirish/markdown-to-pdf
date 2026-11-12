@@ -392,7 +392,8 @@ include. It is stateless, so a retry or a resend rebuilds the same link.
 - `POST /api/v1/claims/{id}` refuses an unclaimed credential without it
   (403 `claim_token_invalid`) **only while `CLAIM_TOKEN_REQUIRED` is on** —
   it shipped off so the API could deploy ahead of the claim page that sends
-  it. The holder re-claims without a token; anyone else gets "already
+  it, and has been on in production (a Fly secret) since November 2026,
+  where a token-less claim was seen refused. The holder re-claims without a token; anyone else gets "already
   claimed" whatever they send.
 - The claim page carries `?t=` through sign-in **and** sign-up
   (`forceRedirectUrl` / `signUpForceRedirectUrl`). Most recipients are new

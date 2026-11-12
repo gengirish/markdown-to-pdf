@@ -67,10 +67,10 @@ const LIFECYCLE = [
 /** The redesign asks for this section, and it is the most useful thing on the
  *  page — so it has to be true. Each line below is a surface that exists in
  *  this repository today, not a roadmap. */
-const STATUS = [
+const STATUS: { label: string; tone: "ok" | "warn"; items: string[] }[] = [
   {
     label: "Live",
-    tone: "ok" as const,
+    tone: "ok",
     items: [
       "Public verification page",
       "Open Badges 3.0 export",
@@ -85,15 +85,10 @@ const STATUS = [
       "Self-serve plan upgrades and billing portal",
       // A delivery is a row and each attempt a job; 2xx is the only success.
       "Webhook delivery retries, with a delivery log",
+      // CLAIM_TOKEN_REQUIRED is on in production, and a claim without the
+      // token was seen refused there (403 claim_token_invalid) on 12 Nov 2026.
+      "Claim link in the delivery email",
     ],
-  },
-  {
-    label: "In build",
-    tone: "warn" as const,
-    // The email carries the claim link (#35), but the claim token is only
-    // enforced once CLAIM_TOKEN_REQUIRED is on in production. Move this to
-    // Live only after a claim without the token has been seen refused there.
-    items: ["Claim link in the delivery email"],
   },
 ];
 
@@ -247,7 +242,7 @@ export default function Home() {
                 </p>
               </div>
               <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-faint">
-                Updated Oct 2026
+                Updated Nov 2026
               </span>
             </div>
 
