@@ -11,6 +11,10 @@ over from the earlier plan.
 
 ## Status — 2026-09-05, `main` @ `cecee49`
 
+> **2026-11-11:** the table below has not been brought forward past
+> 2026-09-05. For what has shipped since and what is being built now, see
+> `docs/build-plan-2026-11.md` and `git log`.
+
 | | Commit | State |
 |---|---|---|
 | B1.0 | Golden contract test | **landed** — `c05a848` wrote `tests/test_contract_legacy.py`; `5d8df79` added `test_contract_certforge.py` alongside it. B1.5 is no longer blocked |

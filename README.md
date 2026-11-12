@@ -217,6 +217,86 @@ seconds per client IP by default.
 
 ---
 
+## CertForge Webhooks (`/api/v1`)
+
+Register an endpoint with `POST /api/v1/orgs/{slug}/webhooks` (`{"url": "…"}`). The
+response carries the endpoint's signing `secret` (`whsec_…`) **once**; store it, because
+the list route does not return it again.
+
+**Only `batch.completed` is sent today**, when a CSV batch finishes. Single issuance
+sends no webhook. (This is separate from the legacy `callback_url` /
+`certificate.created` callback on `POST /api/certificate`, which
+[`examples/webhook_receiver.py`](examples/webhook_receiver.py) handles.)
+
+Every delivery attempt is a `POST` with these headers:
+
+| Header | Value |
+|--------|-------|
+| `Content-Type` | `application/json` |
+| `X-CertForge-Event-Id` | The delivery id. **The same on every attempt** of one event |
+| `X-CertForge-Timestamp` | Unix seconds when this attempt was sent |
+| `X-CertForge-Signature-256` | `t=<timestamp>,v1=<hex HMAC-SHA256(secret, f"{t}.{body}")>` |
+| `x-certforge-signature` | Hex `HMAC-SHA256(secret, body)`. **Deprecated**, unchanged, and will be removed in a later, announced release. It has no timestamp, so a captured request can be replayed with it forever |
+
+The body is JSON with `event`, `delivery_id` (equal to the event id) and `data`:
+
+```json
+{
+  "event": "batch.completed",
+  "delivery_id": "6f1c…",
+  "data": {
+    "batch_id": "…", "status": "completed",
+    "succeeded": 30, "failed": 0,
+    "delivered": 28, "delivery_failed": 2,
+    "completed_at": "2026-11-11T09:30:00+00:00"
+  }
+}
+```
+
+`succeeded` / `failed` count rendered PDFs; `delivered` / `delivery_failed` count
+emails. The body is serialized once and every attempt sends the same bytes.
+
+### Verifying a delivery
+
+1. Sign the **raw request bytes**, not re-serialized JSON: the signing input is
+   `f"{t}.".encode() + raw_body`, keyed with the whole secret string (including
+   `whsec_`) as UTF-8.
+2. Compare with `hmac.compare_digest`, never `==`.
+3. Reject a timestamp more than **5 minutes** from your clock, which stops a captured
+   request being replayed later.
+4. **Deduplicate on `X-CertForge-Event-Id`.** A retry carries the same id, and a
+   delivery can arrive more than once (for example, your 2xx was lost on the way
+   back). Answer 2xx to a duplicate without processing it again.
+
+```python
+import hashlib, hmac, time
+
+def verify(secret: str, raw_body: bytes, header: str, tolerance: int = 300) -> bool:
+    parts = dict(p.split("=", 1) for p in header.split(",") if "=" in p)
+    t, sig = parts.get("t", ""), parts.get("v1", "")
+    if not t.isdigit() or abs(time.time() - int(t)) > tolerance:
+        return False
+    expected = hmac.new(secret.encode(), f"{t}.".encode() + raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, sig)
+```
+
+A complete standard-library receiver, with in-memory dedupe, is in
+[`examples/certforge_webhook_receiver.py`](examples/certforge_webhook_receiver.py).
+Run it with no arguments for a self-check, or `--serve` to listen.
+
+### Retries
+
+Only a **2xx** response counts as delivered. A non-2xx, a network error or a timeout
+(10 seconds) is retried after 1 min, 5 min, 30 min, 2 h, 6 h and 12 h: **7 attempts**
+over about 21 hours, after which the delivery is `abandoned`. A `Retry-After` header
+is honoured when it asks for longer than the next step.
+
+**Retries can run late.** The API scales to zero when idle, and a scheduled retry runs
+only when the machine is next awake, which may be hours after it was due. Do not
+rely on the schedule for timing; rely on the event id for correctness.
+
+---
+
 ## Python SDK
 
 ```bash

@@ -29,7 +29,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from api.core.config import ANTHROPIC_API_KEY, VISION_AVAILABLE
+from api.core.config import ANTHROPIC_API_KEY, VISION_AVAILABLE, VISION_MODEL
 from api.services.templates import KIND_TRACED, TRACED_VARIABLES
 
 logger = logging.getLogger(__name__)
@@ -41,8 +41,6 @@ VISION_EDGE_PX = 1568
 #: Adaptive thinking over an image can take most of a minute, and the SDK's
 #: 10-minute default is far longer than anything in front of this will wait.
 VISION_TIMEOUT_SEC = 90.0
-
-MODEL = "claude-opus-5"
 
 
 class VisionError(Exception):
@@ -168,7 +166,7 @@ def read_layout(image_bytes: bytes) -> dict[str, Any]:
         response = client.with_options(
             timeout=VISION_TIMEOUT_SEC, max_retries=1
         ).messages.parse(
-            model=MODEL,
+            model=VISION_MODEL,
             max_tokens=8000,
             thinking={"type": "adaptive"},
             output_config={"effort": "medium"},

@@ -83,20 +83,17 @@ const STATUS = [
       "Credential email, with per-recipient delivery status",
       "Usage and quota reporting",
       "Self-serve plan upgrades and billing portal",
+      // A delivery is a row and each attempt a job; 2xx is the only success.
+      "Webhook delivery retries, with a delivery log",
     ],
   },
   {
     label: "In build",
     tone: "warn" as const,
-    // Passports and the /claim page are live, but nothing sends a recipient
-    // there yet: the delivery email carries the verify and PDF links only.
+    // The email carries the claim link (#35), but the claim token is only
+    // enforced once CLAIM_TOKEN_REQUIRED is on in production. Move this to
+    // Live only after a claim without the token has been seen refused there.
     items: ["Claim link in the delivery email"],
-  },
-  {
-    label: "Not yet",
-    tone: "neutral" as const,
-    // Webhooks are live; a failed `batch.completed` POST is logged and dropped.
-    items: ["Webhook delivery retries"],
   },
 ];
 

@@ -161,7 +161,6 @@ def test_removing_the_override_restores_the_tier_quota(client, operator, db_sess
     assert data["source"] == "tier"
     assert data["override"] is None
     assert data["effective"] == get_tier_quota("community")
-    assert reload(db_session, "op-remove").monthly_quota == get_tier_quota("community")
 
 
 def test_a_tier_default_change_reaches_orgs_with_no_migration(db_session, monkeypatch):
@@ -176,10 +175,11 @@ def test_a_tier_default_change_reaches_orgs_with_no_migration(db_session, monkey
 
 
 def test_issuance_binds_at_the_live_tier_quota_not_the_stored_copy(client, mock_clerk, db_session, monkeypatch):
-    """The override test above cannot catch issuance reading `monthly_quota`:
-    every write keeps that column equal to the effective limit until W4, so
-    both read 2. What only the live rule gets right is a tier default that
-    changed after the row was written — the stored copy still says 50."""
+    """The override test above cannot catch issuance reading `monthly_quota`
+    on its own. What only the live rule gets right is a tier default that
+    changed after the row was written — the stored copy still says 50. (Since
+    W4a nothing writes that column; tests/test_monthly_quota_not_written.py
+    guards that.)"""
     make_org(db_session, "op-live-issue", member=True)
     patched = {**config.BILLING_TIERS, "community": {**config.BILLING_TIERS["community"], "monthly_quota": 1}}
     monkeypatch.setattr(config, "BILLING_TIERS", patched)

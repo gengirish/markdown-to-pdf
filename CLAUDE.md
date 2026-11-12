@@ -159,7 +159,7 @@ production (every check is a GET); run it after any deploy that touches hosts.
 It takes an optional base URL, plus `SMOKE_CERTFORGE_WEB` and
 `SMOKE_CERTFORGE_API` to point the two CertForge host sections elsewhere.
 
-### One known pothole
+### Windows: PDF generation fails locally
 
 The root turbo scripts used to be listed here as broken. They work now — the
 `packageManager` field turbo was asking for is in the root `package.json`
@@ -495,8 +495,9 @@ Things that follow, all load-bearing:
 ### Reading a design with a model
 
 `api/services/vision.py` is the only place an Anthropic client is constructed.
-`POST /orgs/{slug}/templates/from-image` sends the artwork to `claude-opus-5`
-and gets back a traced spec — where the name, title, date and QR belong.
+`POST /orgs/{slug}/templates/from-image` sends the artwork to the model named
+by `VISION_MODEL` in `api/core/config.py` (default `claude-opus-5-5`) and gets
+back a traced spec — where the name, title, date and QR belong.
 
 **The model proposes; the canvas decides.** Everything it returns is clamped by
 `normalise_traced_config` and then corrected by a person dragging boxes, which
@@ -518,8 +519,8 @@ Three rules that are not negotiable:
   design reading is not a credential — one meter for two units would make
   "quota exceeded" mean two things.
 
-Cost is roughly $0.05–0.20 per call. Billing is still mocked, so that counter
-is the only thing standing between a new org and an Anthropic bill. The template
+Cost is roughly $0.05–0.20 per call. No plan bounds design readings, so that
+counter is the only thing standing between a new org and an Anthropic bill. The template
 allowance below bounds how many designs an org may *hold*; it does not bound how
 many times the model is asked to read one, which is what costs money. Two
 limits, two meters — do not fold them together.
@@ -528,8 +529,9 @@ limits, two meters — do not fold them together.
 
 `BILLING_TIERS` in `api/core/config.py` is the one place a plan is defined:
 name, price in paise, monthly credential quota, template allowance, and the
-copy the pricing page prints. Four tiers — `community`, `starter`, `growth`,
-`scale`. Read it through `get_tier` / `get_tier_quota` /
+copy the pricing page prints. Three tiers — `community`, `pro`, `scale`;
+`starter` and `growth` are retired names that `TIER_ALIASES` maps onto `pro`.
+Read it through `get_tier` / `get_tier_quota` /
 `get_tier_template_limit` rather than by subscripting it, because those fall
 back to Community for a tier the table does not know, and `organizations.tier`
 is free text that has held such values (the Razorpay webhook wrote `"pro"` for
@@ -632,13 +634,13 @@ stale pricing page buys what replaced the plan it lists. Migration
   written equal to the effective limit on every change, so a rollback finds a
   current number. W4 drops it; do not start reading it again.
 - **`services/plans.py` is the only writer of `tier` and the override.**
-  `change_tier()` — called by the Razorpay webhook and the operator route —
+  `change_tier()` — called by the Dodo webhook and the operator route —
   does nothing for a same-tier change (webhooks retry) and otherwise **clears
   the override**, up or down, logging that it did. Write `org.tier` anywhere
   else and a paying org can be left pinned below its plan.
 - **Every override change lands in `credential_quota_changes`** in the same
   transaction, with a required reason and an `actor` (a Clerk user id, or
-  `razorpay-webhook`). An override travels as `null` (none) or
+  `dodo-webhook`). An override travels as `null` (none) or
   `{"limit": n | null}` (null = unlimited), because a bare `null` cannot
   distinguish "no override" from "unlimited".
 - **Operators are `CERTFORGE_OPERATOR_USER_IDS`**, verified Clerk `sub`s, set
@@ -710,6 +712,37 @@ lifespan so it scales with the web process.
   only its still-pending rows; rows rendered after the last commit may be emailed
   twice, which beats never.
 
+### Webhook deliveries
+
+`api/services/webhooks.py` is the only place a customer webhook is sent. The
+`batch.completed` POST used to run once, inside the batch job, and a 500 from the
+receiver was logged as "dispatched", because `httpx` does not raise on a status.
+
+- **A delivery is a row and each attempt is a job.** `_process_batch_sync` writes
+  one `webhook_deliveries` row per subscribed endpoint, in the batch's own
+  transaction, and makes no HTTP call. `process_batch` defers `deliver_webhook`
+  only after that commit, so a rolled-back batch leaves neither a row nor a job.
+- **Only a 2xx is success.** Anything else, a timeout or a network error retries on
+  `RETRY_DELAYS_SECONDS` (1m … 12h), 7 attempts, then `abandoned`. A 3xx is not
+  followed.
+- **Every attempt sends the stored bytes.** `payload` is a `Text` column, not JSON,
+  because a JSON column round-trips through a dict and the signature is over bytes.
+  The row id is the `X-CertForge-Event-Id`, the same on every attempt.
+- **The v1 signature is over bytes:** `f"{t}.".encode() + body`, keyed by the
+  whole secret string. Formatting the bytes object into an f-string produces
+  `b'...'` and breaks every receiver silently; a test pins it.
+  `x-certforge-signature` (HMAC of the body alone) is deprecated and must not
+  change — existing receivers verify it.
+- **Retries run late, on purpose.** The machine scales to zero and nothing wakes it
+  for a retry: no sweep, no keep-alive. A `pending` row whose job was lost
+  (machine died between commit and defer) is rescued by a person, not a timer:
+  redeliver accepts `pending` once it is 15 minutes past `next_attempt_at`,
+  as well as `failed` and `abandoned`. A redeliver on a `failed` row starts a second
+  chain alongside the scheduled one; the shared attempt counter still caps both.
+- The delivery routes (`routes/developers.py`) are owner/admin and `api_access`
+  gated, look a delivery up by id **and** endpoint **and** org, and never return
+  `payload`. They are not public, so they are not in `llms.txt`.
+
 ## Agent-discovery surface
 
 `/llms.txt`, `/robots.txt`, `/sitemap.xml`, `/.well-known/ai-plugin.json`, and the
@@ -729,8 +762,9 @@ JSON-LD injected into viewer pages are generated in `apps/api/api/index.py`
   file ownership, and in what order they landed. A historical work-order, deliberately
   not kept current.
 - `docs/billing-and-template-quota-plan.md` — the way out of mocked billing. P2's
-  usage endpoint and P3's template gate have landed; **P1, real Razorpay, has not**,
-  so the gate still has no self-serve door. Read its status block before planning
+  usage endpoint and P3's template gate have landed. P1 (real Razorpay) was
+  replaced by Dodo Payments, and self-serve checkout is live (#23, #28, #34) — see
+  `docs/dodo-payments-integration-plan.md`. Read both status blocks before planning
   billing work.
 - `docs/certificate-internship-vtu.md` — internship field ↔ token-key mapping and the
   college workflow.
