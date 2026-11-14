@@ -344,10 +344,17 @@ export interface CredentialSummary {
   /** Only while `deferred`: when the provider's daily limit is expected to
    *  have reset and the email will go out on its own. */
   delivery_next_attempt_at?: string | null;
+  /** The provider's or our own words, only while `failed` or `deferred`. */
+  delivery_error?: string | null;
+  /** Sends the provider accepted or rejected; resend stops at the page's
+   *  `delivery_attempts_max`. */
+  delivery_attempts?: number;
 }
 
 export interface CredentialPage {
   items: CredentialSummary[];
+  /** The resend ceiling, so the list can say how many tries are left. */
+  delivery_attempts_max?: number;
   /** The count matching the filters, not the org's all-time total. */
   total: number;
   limit: number;
