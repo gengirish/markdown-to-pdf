@@ -205,6 +205,13 @@ class Credential(Base):
     delivery_next_attempt_at: Mapped[datetime | None] = mapped_column(
         TIMESTAMP(timezone=True), nullable=True
     )
+    # When the row entered `deferred`, kept across re-deferrals and cleared on
+    # leaving it. MAX_DEFERRAL counts from this, not from issued_at: a month-old
+    # credential queued for a resend that meets the daily limit has been
+    # deferred for minutes, not a month.
+    delivery_deferred_since: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
     # The provider's own words, kept verbatim. A support answer needs "AgentMail
     # rejected the request (403)", not a boolean.
     delivery_error: Mapped[str | None] = mapped_column(Text, nullable=True)

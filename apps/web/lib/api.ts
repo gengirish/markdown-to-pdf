@@ -377,6 +377,29 @@ export interface RevokeResult {
   revoked_at?: string;
 }
 
+/** Which failed emails a bulk resend takes: the list's own filters. */
+export interface ResendFailedScope {
+  batchId?: string;
+  templateId?: string;
+  q?: string;
+  test?: "only" | "exclude";
+}
+
+export interface ResendFailedResult {
+  /** Rows that can go: an address, not revoked, not a test, under the attempt limit. */
+  eligible: number;
+  /** Rows actually queued; 0 on a dry run. */
+  queued: number;
+  /** Matched but left out, by reason. */
+  skipped: { attempt_limit: number; revoked: number; no_email: number; test: number };
+  /** More matched than one resend may queue; run it again for the rest. */
+  capped: boolean;
+  max: number;
+  attempts_max: number;
+  /** Sending is paused by the provider's daily limit until this time. */
+  paused_until: string | null;
+}
+
 export interface ResendResult {
   id: string;
   /** False when the provider refused it; `delivery.error` says why. */
@@ -1060,6 +1083,31 @@ export class CertForgeClient {
   /** Emails the credential again, inline. Refused (409) for a revoked or test
    *  credential, one with no address, or one already emailed the maximum
    *  number of times. */
+  /** Queue every failed email in `scope` for another send (owner/admin).
+   *  Nothing is sent by the request; the API's sweep sends them, so the
+   *  provider's daily limit applies. `dryRun` only counts, for the dialog. */
+  resendFailed(
+    slug: string,
+    scope: ResendFailedScope,
+    dryRun: boolean,
+    signal?: AbortSignal,
+  ): Promise<ResendFailedResult> {
+    return this.request<ResendFailedResult>(
+      `/api/v1/orgs/${encodeURIComponent(slug)}/credentials/resend-failed`,
+      {
+        method: "POST",
+        json: {
+          batch_id: scope.batchId || undefined,
+          template_id: scope.templateId || undefined,
+          q: scope.q || undefined,
+          test: scope.test,
+          dry_run: dryRun,
+        },
+        signal,
+      },
+    );
+  }
+
   resendCredential(slug: string, credentialId: string, signal?: AbortSignal): Promise<ResendResult> {
     return this.request<ResendResult>(
       `/api/v1/orgs/${encodeURIComponent(slug)}/credentials/${encodeURIComponent(credentialId)}/resend`,

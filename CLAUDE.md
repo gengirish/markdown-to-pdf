@@ -326,6 +326,17 @@ person-initiated send (`resend_credential()`): unlike the worker's automatic ret
 may resend a `sent` or `unknown` row, but never a revoked or test one, and every send
 counts toward `MAX_DELIVERY_ATTEMPTS`, the first included.
 
+`POST .../credentials/resend-failed` is the bulk version, owner/admin only. It
+**queues, never sends**: each eligible `failed` row becomes `deferred`, due now,
+and the deferred-send sweep sends it, so the gate and the daily limit apply as
+they do to every send. It filters through `_filtered`, the list route's own
+filter code, so the count a person confirms is the list they are looking at;
+`dry_run` returns that count first. Eligible means an address, not revoked, not
+test, under the attempt ceiling — the rest come back counted by reason. At most
+`MAX_BULK_RESEND` (500) per call, oldest first. The audit is one log line per
+gesture naming every queued id; the per-row "Resend queued by …" text is
+overwritten by the send.
+
 `routes/verify.py` also exports a `public_router` mounted at the site root, for the
 URLs that go inside QR codes: `GET /verify/{credential_id}` (HTML),
 `GET /credentials/{public_id}/badge.json` (Open Badges 3.0), and
@@ -713,8 +724,11 @@ its retry seconds later. See `docs/email-daily-cap-plan.md`.
 - Resend refuses a `deferred` row, and any row while the gate is closed
   (409 `email_paused`), before reaching the provider. The org route and the
   operator console share `email_paused_refusal()`.
-- A row deferred longer than `MAX_DEFERRAL` (7 days from `issued_at`) fails
-  on its next refusal, with its attempts intact.
+- A row deferred longer than `MAX_DEFERRAL` fails on its next refusal, with
+  its attempts intact. The 7 days count from `delivery_deferred_since` (when
+  the current run of deferrals began, kept through the transient `pending` of
+  each attempt), **not** `issued_at`: measured from issue, a month-old
+  credential re-queued for a resend failed on its first refusal.
 - `DELIVERY_STATUSES` is the one list of states. Both routes build their
   filter regex from it, and a test reads `DeliveryStatus` out of
   `apps/web/lib/api.ts`, so a seventh state cannot reach one half alone.
