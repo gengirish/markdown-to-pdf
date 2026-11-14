@@ -7,7 +7,6 @@ import {
   toApiError,
   type CredentialListQuery,
   type CredentialSummary,
-  type DeliveryStatus,
 } from "@/lib/api";
 import { useCertForge } from "@/lib/use-api";
 import { ResendFailedButton, describeQueued } from "./resend-failed";
@@ -87,6 +86,16 @@ export function CredentialsCard({
   // Bumped after a bulk resend so the list re-reads: queued rows leave the
   // "Email failed" filter and show as scheduled.
   const [reloadKey, setReloadKey] = useState(0);
+  // The ceiling resend stops at, from the API, so "1 of 3 attempts left" is
+  // never a number this file made up.
+  const [attemptsMax, setAttemptsMax] = useState<number | null>(null);
+  // Org-wide counts of emails needing attention, independent of the filter
+  // in use: 43 failed rows scattered through 89 were only findable by
+  // switching to "Email failed", which you had to already know to do.
+  const [attention, setAttention] = useState<{ failed: number; deferred: number } | null>(null);
+  // Rows with a resend in flight. A second click on the same row used to
+  // send a second email and spend a second attempt.
+  const [sending, setSending] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -126,6 +135,7 @@ export function CredentialsCard({
         setItems(page.items);
         setTotal(page.total);
         setCursor(page.next_cursor);
+        setAttemptsMax(page.delivery_attempts_max ?? null);
         setError(null);
       })
       .catch((err) => {
@@ -135,6 +145,28 @@ export function CredentialsCard({
       });
     return () => controller.abort();
   }, [api, slug, filters, refreshToken, reloadKey]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const test = filters.hideTest ? ("exclude" as const) : undefined;
+    Promise.all([
+      api.listOrgCredentials(slug, { limit: 1, deliveryStatus: "failed", test }, controller.signal),
+      api.listOrgCredentials(slug, { limit: 1, deliveryStatus: "deferred", test }, controller.signal),
+    ])
+      .then(([failed, deferred]) => setAttention({ failed: failed.total, deferred: deferred.total }))
+      // A summary, not the list: without it the banner is simply absent.
+      .catch(() => {
+        if (!controller.signal.aborted) setAttention(null);
+      });
+    return () => controller.abort();
+  }, [api, slug, refreshToken, reloadKey, filters.hideTest]);
+
+  // Confirmations clear themselves; errors stay until dismissed or replaced.
+  useEffect(() => {
+    if (notice?.tone !== "ok") return;
+    const timer = window.setTimeout(() => setNotice(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   async function loadMore() {
     if (!cursor) return;
@@ -162,13 +194,25 @@ export function CredentialsCard({
   }
 
   async function resend(row: CredentialSummary) {
+    if (sending.has(row.id)) return;
     setNotice(null);
+    setSending((current) => new Set(current).add(row.id));
     try {
       const result = await api.resendCredential(slug, row.id);
       patchRow(row.id, {
         delivery_status: result.delivery.status,
         delivery_next_attempt_at: result.delivery.next_attempt_at,
+        delivery_error: result.delivery.error,
+        delivery_attempts: result.delivery.attempts,
       });
+      setAttention((current) =>
+        current && row.delivery_status === "failed" && result.delivery.status !== "failed"
+          ? {
+              failed: Math.max(0, current.failed - 1),
+              deferred: current.deferred + (result.delivery.status === "deferred" ? 1 : 0),
+            }
+          : current,
+      );
       setNotice(
         result.sent
           ? { tone: "ok", text: `Email sent to ${row.recipient_email}.` }
@@ -184,6 +228,12 @@ export function CredentialsCard({
       );
     } catch (err) {
       setNotice({ tone: "bad", text: toApiError(err).message });
+    } finally {
+      setSending((current) => {
+        const next = new Set(current);
+        next.delete(row.id);
+        return next;
+      });
     }
   }
 
@@ -302,17 +352,39 @@ export function CredentialsCard({
 
       <div aria-live="polite">
         {notice ? (
-          <p
-            className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
+          <div
+            className={`mb-4 flex items-start justify-between gap-3 rounded-lg border px-4 py-3 text-sm ${
               notice.tone === "ok"
                 ? "border-accent-line bg-accent-wash text-accent"
                 : "border-danger-line bg-danger-wash text-danger"
             }`}
           >
-            {notice.text}
-          </p>
+            <p>{notice.text}</p>
+            <button
+              type="button"
+              onClick={() => setNotice(null)}
+              aria-label="Dismiss"
+              className="-my-1 -mr-2 shrink-0 rounded px-2 py-1 leading-none opacity-70 transition-opacity hover:opacity-100"
+            >
+              ×
+            </button>
+          </div>
         ) : null}
       </div>
+
+      {attention && filters.status !== "email_failed" && filters.status !== "email_scheduled" ? (
+        <AttentionBanner
+          slug={slug}
+          failed={attention.failed}
+          deferred={attention.deferred}
+          hideTest={filters.hideTest}
+          onShow={(status) => setFilters({ ...filters, status })}
+          onQueued={(result) => {
+            setNotice({ tone: "ok", text: describeQueued(result) });
+            setReloadKey((n) => n + 1);
+          }}
+        />
+      ) : null}
 
       {error ? (
         <ErrorNote>{error}</ErrorNote>
@@ -324,37 +396,40 @@ export function CredentialsCard({
         <>
           <ul className="divide-y divide-hair">
             {items.map((credential) => (
-              <li key={credential.id} className="flex items-start gap-3 py-3">
-                <span
-                  className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                    credential.status === "issued" || credential.status === "claimed"
-                      ? "bg-accent"
-                      : credential.status === "failed"
-                        ? "bg-danger"
-                        : "bg-well"
-                  }`}
-                  aria-hidden
-                />
+              <li key={credential.id} className="flex items-start gap-3 py-3.5">
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-ink">
                     <span className="truncate">{credential.recipient_name}</span>
                     {credential.is_test ? <StatusTag tone="neutral">Test</StatusTag> : null}
                     {credential.status === "revoked" ? <StatusTag tone="bad">Revoked</StatusTag> : null}
+                    {credential.status === "pending" ? <StatusTag tone="neutral">Issuing</StatusTag> : null}
+                    {credential.delivery_status === "failed" ? (
+                      <StatusTag tone="bad">Email failed</StatusTag>
+                    ) : credential.delivery_status === "deferred" ? (
+                      <StatusTag tone="warn">Email scheduled</StatusTag>
+                    ) : null}
                   </p>
-                  <p className="truncate text-xs text-muted">
+                  <p className="mt-0.5 truncate text-xs text-muted">
                     {credential.recipient_email || "No email address"}
+                    <span className="text-faint"> · {credential.title}</span>
                   </p>
-                  <p className="truncate text-xs text-faint">{credential.title}</p>
-                  <p className="mt-1 text-xs text-faint">
-                    {formatDate(credential.issued_at)} · {credential.status}
-                    <DeliveryTag
-                      status={credential.delivery_status}
-                      nextAttemptAt={credential.delivery_next_attempt_at}
-                    />
-                  </p>
+                  <DeliveryDetail credential={credential} attemptsMax={attemptsMax} />
+                  <p className="mt-1 text-xs text-faint">Issued {formatDate(credential.issued_at)}</p>
                 </div>
+                {credential.delivery_status === "failed" && canResend(credential, attemptsMax) ? (
+                  <button
+                    type="button"
+                    onClick={() => resend(credential)}
+                    disabled={sending.has(credential.id)}
+                    aria-label={`Resend email to ${credential.recipient_name}`}
+                    className={`${buttonClass("secondary", "sm")} shrink-0`}
+                  >
+                    {sending.has(credential.id) ? "Sending…" : "Resend"}
+                  </button>
+                ) : null}
                 <RowActions
                   credential={credential}
+                  canResend={canResend(credential, attemptsMax) && !sending.has(credential.id)}
                   onResend={() => resend(credential)}
                   onRevoke={() => setRevoking(credential)}
                   onCopied={() => setNotice({ tone: "ok", text: "Verify link copied." })}
@@ -389,42 +464,126 @@ export function CredentialsCard({
   );
 }
 
-/** Flags the rows worth looking at. Deliberately silent for `sent` and
- *  `not_requested`: a list that tags every row tags nothing, and only a failure
- *  needs someone to act. `unknown` is silent too — those rows predate delivery
- *  tracking, and labelling them would assert something we do not know. */
-function DeliveryTag({
-  status,
-  nextAttemptAt,
+/** Whether a resend is possible at all: a live, non-test credential with an
+ *  address and attempts left. The API enforces each of these; checking them
+ *  here only spares a person a button that would be refused. */
+function canResend(credential: CredentialSummary, attemptsMax: number | null): boolean {
+  const live = credential.status === "issued" || credential.status === "claimed";
+  const hasAttempts =
+    attemptsMax === null || (credential.delivery_attempts ?? 0) < attemptsMax;
+  return (
+    live &&
+    !credential.is_test &&
+    credential.recipient_email.trim() !== "" &&
+    credential.delivery_status !== "deferred" &&
+    hasAttempts
+  );
+}
+
+/** The why under a row that needs attention, and only those. Silent for
+ *  `sent` and `not_requested`: a list that annotates every row annotates
+ *  nothing. `unknown` is silent too — those rows predate delivery tracking,
+ *  and labelling them would assert something we do not know. */
+function DeliveryDetail({
+  credential,
+  attemptsMax,
 }: {
-  status: DeliveryStatus | undefined;
-  nextAttemptAt?: string | null;
+  credential: CredentialSummary;
+  attemptsMax: number | null;
 }) {
-  if (status === "deferred") {
-    // Not a failure: the email provider's daily limit was reached and this
-    // one goes out on its own once it resets. Resending now would only meet
-    // the same limit, which is why the row offers no Resend.
-    const when = nextAttemptAt ? formatSendTime(nextAttemptAt) : null;
+  if (credential.delivery_status === "deferred") {
+    const when = credential.delivery_next_attempt_at
+      ? formatSendTime(credential.delivery_next_attempt_at)
+      : null;
     return (
-      <>
-        {" · "}
-        <span
-          className="text-muted"
-          title="The email provider's daily send limit was reached. This email sends automatically once it resets."
-        >
-          {when ? `email scheduled, sends after ${when}` : "email scheduled"}
-        </span>
-      </>
+      <p className="mt-1 text-xs text-warn-ink">
+        {when ? `Sends automatically after ${when}` : "Sends automatically"} — the email
+        provider’s daily limit was reached.
+      </p>
     );
   }
-  if (status !== "failed") return null;
+  if (credential.delivery_status !== "failed") return null;
+
+  const used = credential.delivery_attempts ?? 0;
+  const left = attemptsMax === null ? null : Math.max(0, attemptsMax - used);
   return (
-    <>
-      {" · "}
-      <span className="text-warn-ink" title="The credential issued, but its email did not send">
-        email failed
-      </span>
-    </>
+    <p className="mt-1 truncate text-xs text-danger" title={credential.delivery_error ?? undefined}>
+      {credential.delivery_error || "The email did not send."}
+      {left !== null ? (
+        <span className="text-muted">
+          {" · "}
+          {left === 0
+            ? "no resends left"
+            : `${left} of ${attemptsMax} ${left === 1 ? "attempt" : "attempts"} left`}
+        </span>
+      ) : null}
+    </p>
+  );
+}
+
+/** Above the list, whatever filter is on: how many emails need someone, with
+ *  the two things a person does about it. Counts are the API's totals for
+ *  `delivery_status`, never a count of the rows loaded on this page. */
+function AttentionBanner({
+  slug,
+  failed,
+  deferred,
+  hideTest,
+  onShow,
+  onQueued,
+}: {
+  slug: string;
+  failed: number;
+  deferred: number;
+  hideTest: boolean;
+  onShow: (status: "email_failed" | "email_scheduled") => void;
+  onQueued: Parameters<typeof ResendFailedButton>[0]["onQueued"];
+}) {
+  if (failed === 0 && deferred === 0) return null;
+  return (
+    <div className="mb-4 space-y-2">
+      {failed > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-danger-line bg-danger-wash px-4 py-3">
+          <p className="text-sm text-danger">
+            <span className="font-medium">
+              {failed} {failed === 1 ? "email" : "emails"} didn’t send.
+            </span>{" "}
+            The credentials are issued and verifiable; the recipients were not told.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onShow("email_failed")}
+              className={buttonClass("quiet", "sm")}
+            >
+              Show them
+            </button>
+            <ResendFailedButton
+              slug={slug}
+              scope={{ test: hideTest ? "exclude" : undefined }}
+              onQueued={onQueued}
+            />
+          </div>
+        </div>
+      ) : null}
+      {deferred > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warn-line bg-warn-wash px-4 py-3">
+          <p className="text-sm text-warn-ink">
+            <span className="font-medium">
+              {deferred} {deferred === 1 ? "email is" : "emails are"} scheduled.
+            </span>{" "}
+            The email provider’s daily limit was reached; they send automatically once it resets.
+          </p>
+          <button
+            type="button"
+            onClick={() => onShow("email_scheduled")}
+            className={buttonClass("quiet", "sm")}
+          >
+            Show them
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -441,12 +600,16 @@ function formatSendTime(value: string): string {
 
 function RowActions({
   credential,
+  canResend,
   onResend,
   onRevoke,
   onCopied,
   onCopyFailed,
 }: {
   credential: CredentialSummary;
+  /** Decided by the card: it also knows the attempt ceiling and which rows
+   *  have a send in flight. */
+  canResend: boolean;
   onResend: () => void;
   onRevoke: () => void;
   onCopied: () => void;
@@ -458,7 +621,6 @@ function RowActions({
   const trigger = useRef<HTMLButtonElement>(null);
 
   const live = credential.status === "issued" || credential.status === "claimed";
-  const canResend = live && !credential.is_test && credential.recipient_email.trim() !== "";
   const canRevoke = credential.status !== "revoked";
 
   useEffect(() => {

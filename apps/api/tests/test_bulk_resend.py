@@ -227,3 +227,26 @@ def test_only_owners_and_admins_may_resend_in_bulk(client, db_session, mock_cler
 def _no_real_provider(monkeypatch):
     from api.core import email as email_mod
     monkeypatch.setattr(email_mod, "_agentmail_client", None)
+
+
+# -- what the list tells a person about a failed row ---------------------------
+
+def test_the_list_says_why_a_row_failed_and_how_many_tries_are_left(client, db_session):
+    _, [bad] = failed(db_session, "list-why", n=1, delivery_attempts=2)
+    _, [good] = failed(
+        db_session, "list-why", n=1,
+        delivery_status=SENT, delivery_error="stale text from an earlier failure",
+    )
+
+    page = client.get(
+        "/api/v1/orgs/list-why/credentials",
+        headers={"Authorization": f"Bearer {key('list-why')}"},
+    ).json()["data"]
+    rows = {row["id"]: row for row in page["items"]}
+
+    assert page["delivery_attempts_max"] == MAX_DELIVERY_ATTEMPTS
+    assert rows[bad.public_id]["delivery_error"] == "AgentMail rejected the request (403)."
+    assert rows[bad.public_id]["delivery_attempts"] == 2
+    # Only failed and deferred rows carry a reason; a sent row's leftover
+    # error text would read as a current failure.
+    assert rows[good.public_id]["delivery_error"] is None

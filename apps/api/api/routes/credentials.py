@@ -24,9 +24,18 @@ from api.core.envelope import ApiException, ApiResponse
 from api.core.principal import Principal, require_org_access, resolve_principal
 from api.core.rate_limit import rate_limit
 from api.models import get_db
-from api.models.credential import DELIVERY_FAILED, DELIVERY_STATUSES, Credential
+from api.models.credential import (
+    DELIVERY_DEFERRED,
+    DELIVERY_FAILED,
+    DELIVERY_STATUSES,
+    Credential,
+)
 from api.models.organization import Organization
-from api.services.delivery import delivery_state, queue_failed_resends
+from api.services.delivery import (
+    MAX_DELIVERY_ATTEMPTS,
+    delivery_state,
+    queue_failed_resends,
+)
 from api.services.issuance import (
     UNLIMITED,
     IssuanceError,
@@ -235,6 +244,16 @@ def list_credentials(
                 # Only while deferred, so the list can say when the email
                 # goes out instead of showing a row that looks stuck.
                 "delivery_next_attempt_at": delivery_state(c)["next_attempt_at"],
+                # Why, and how many tries are left — only on the two states a
+                # person acts on. Without them a failed row says "failed" and
+                # nothing else, and the only way to learn the reason, or
+                # whether a resend is still possible, was to open the detail.
+                "delivery_error": (
+                    c.delivery_error
+                    if c.delivery_status in (DELIVERY_FAILED, DELIVERY_DEFERRED)
+                    else None
+                ),
+                "delivery_attempts": c.delivery_attempts or 0,
             }
             for c in rows
         ]
@@ -249,6 +268,9 @@ def list_credentials(
         {
             "items": items,
             "total": total,
+            # So the dashboard can say "1 of 3 attempts left" without keeping
+            # its own copy of the ceiling.
+            "delivery_attempts_max": MAX_DELIVERY_ATTEMPTS,
             "limit": limit,
             "offset": offset or 0,
             "has_more": has_more,
