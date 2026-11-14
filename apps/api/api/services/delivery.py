@@ -18,12 +18,16 @@ the credential. Not sending is a recorded outcome here, not an absence.
 
 import html as html_mod
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy.orm import object_session
 
 from api.core.config import CERT_BRAND_NAME, CERTFORGE_WEB_URL
-from api.core.email import agentmail_deliver
+from api.core.email import SEND_OK, SEND_RATE_LIMITED, agentmail_deliver, send_kind
+from api.services import send_gate
 from api.services.claims import claim_url_for
 from api.models.credential import (
+    DELIVERY_DEFERRED,
     DELIVERY_FAILED,
     DELIVERY_PENDING,
     NOT_REQUESTED,
@@ -47,6 +51,12 @@ MAX_DELIVERY_ATTEMPTS = 3
 #: unexpected exception can carry a whole traceback, and this column is read by
 #: support in a table view.
 MAX_ERROR_LEN = 500
+
+#: A row deferred for longer than this, measured from `issued_at`, becomes
+#: `failed` on its next refusal instead of being deferred again. Without a
+#: bound a permanently over-quota account defers forever and nobody is told.
+#: Not counted in attempts: it still has those left for a manual resend.
+MAX_DEFERRAL = timedelta(days=7)
 
 
 def verify_url_for(public_id: str) -> str:
@@ -169,6 +179,38 @@ def mark_not_requested(cred, reason: str) -> None:
     cred.delivery_status = NOT_REQUESTED
     cred.delivery_error = reason[:MAX_ERROR_LEN]
     cred.delivered_at = None
+    cred.delivery_next_attempt_at = None
+
+
+def _aware(value: datetime | None) -> datetime | None:
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
+def _utc_label(when: datetime) -> str:
+    return when.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _defer(cred, until: datetime, reason: str, now: datetime) -> None:
+    """Record a send the provider's limit stopped: deferred, or — past
+    MAX_DEFERRAL — failed. Neither costs an attempt; nobody was mailed."""
+    issued = _aware(cred.issued_at) or now
+    cred.delivered_at = None
+    if now - issued > MAX_DEFERRAL:
+        cred.delivery_status = DELIVERY_FAILED
+        cred.delivery_next_attempt_at = None
+        days = MAX_DEFERRAL.days
+        cred.delivery_error = (
+            f"{reason} The provider's send limit persisted for {days} days; not sent."
+        )[:MAX_ERROR_LEN]
+        logger.warning("Deferral deadline passed for %s; marked failed.", cred.public_id)
+        return
+    cred.delivery_status = DELIVERY_DEFERRED
+    cred.delivery_next_attempt_at = until
+    cred.delivery_error = (
+        f"{reason} Sending automatically after {_utc_label(until)}."
+    )[:MAX_ERROR_LEN]
 
 
 def deliver_credential_email(cred, *, verify_url: str | None = None, org=None) -> bool:
@@ -178,10 +220,25 @@ def deliver_credential_email(cred, *, verify_url: str | None = None, org=None) -
     a delivery failure must not lose a credential that was otherwise issued
     correctly, so an unexpected exception is recorded as a failed delivery
     rather than propagated into the issuance path.
+
+    `delivery_attempts` counts sends the provider accepted or rejected for a
+    reason of its own. A refusal for volume is not one: it mailed nobody, it
+    will succeed after the reset, and counting it is how 44 credentials
+    reached their last attempt in eight seconds on 2026-11-12. Those become
+    `deferred` (see send_gate.py), and while the gate is closed the provider
+    is not called at all.
     """
     recipient = (cred.recipient_email or "").strip()
     if not recipient:
         mark_not_requested(cred, "No recipient email on this credential.")
+        return False
+
+    now = datetime.now(timezone.utc)
+    session = object_session(cred)
+
+    held_until = send_gate.paused_until(session, now)
+    if held_until is not None:
+        _defer(cred, held_until, "The email provider's daily send limit is reached.", now)
         return False
 
     if verify_url is None:
@@ -190,10 +247,9 @@ def deliver_credential_email(cred, *, verify_url: str | None = None, org=None) -
     subject, text, html = build_credential_email(cred, verify_url, org)
 
     cred.delivery_status = DELIVERY_PENDING
-    cred.delivery_attempts = (cred.delivery_attempts or 0) + 1
 
     try:
-        success, message = agentmail_deliver(
+        result = agentmail_deliver(
             to_email=recipient,
             subject=subject,
             text=text,
@@ -202,12 +258,31 @@ def deliver_credential_email(cred, *, verify_url: str | None = None, org=None) -
         )
     except Exception as exc:  # noqa: BLE001 — recorded, not swallowed
         logger.exception("Delivery raised for %s", cred.public_id)
+        cred.delivery_attempts = (cred.delivery_attempts or 0) + 1
         cred.delivery_status = DELIVERY_FAILED
         cred.delivery_error = str(exc)[:MAX_ERROR_LEN]
         cred.delivered_at = None
+        cred.delivery_next_attempt_at = None
         return False
 
-    if success:
+    _, message = result
+    kind = send_kind(result)
+
+    if kind == SEND_RATE_LIMITED:
+        until = send_gate.resume_at(now, getattr(result, "retry_after", None))
+        reason = message or "The email provider's daily send limit is reached."
+        send_gate.pause(session, until, reason)
+        _defer(cred, until, reason, now)
+        logger.warning(
+            "Delivery deferred for %s to %s until %s: %s",
+            cred.public_id, recipient, until.isoformat(), reason,
+        )
+        return False
+
+    cred.delivery_attempts = (cred.delivery_attempts or 0) + 1
+    cred.delivery_next_attempt_at = None
+
+    if kind == SEND_OK:
         cred.delivery_status = SENT
         cred.delivered_at = datetime.now(timezone.utc)
         cred.delivery_error = None
@@ -224,6 +299,68 @@ def deliver_credential_email(cred, *, verify_url: str | None = None, org=None) -
     return False
 
 
+#: Rows the sweep sends per pass. Small, because each is a synchronous
+#: provider call and the sweep runs every minute anyway.
+RELEASE_PAGE = 50
+
+
+def release_deferred(session, now: datetime | None = None, limit: int = RELEASE_PAGE) -> dict:
+    """Send deferred rows that have come due, oldest first, until the page is
+    done or the provider refuses again.
+
+    Re-reads the gate before every row. When the limit resets, every row
+    deferred that day falls due at the same instant; if the allowance is
+    smaller than the backlog, the first refusal must close the gate and stop
+    the page, rather than turning 44 due rows into 44 refused calls.
+
+    The caller owns the transaction. Rows are locked with SKIP LOCKED so two
+    machines sweeping at once cannot send the same row twice.
+    """
+    from api.models.credential import Credential
+    from api.models.organization import Organization
+
+    now = now or datetime.now(timezone.utc)
+    sent = deferred = failed = 0
+
+    if send_gate.paused_until(session, now) is not None:
+        return {"sent": 0, "deferred": 0, "failed": 0, "paused": True}
+
+    rows = (
+        session.query(Credential)
+        .filter(
+            Credential.delivery_status == DELIVERY_DEFERRED,
+            Credential.delivery_next_attempt_at <= now,
+        )
+        .order_by(Credential.issued_at.asc(), Credential.public_id.asc())
+        .limit(limit)
+        .with_for_update(skip_locked=True)
+        .all()
+    )
+
+    orgs: dict = {}
+    for cred in rows:
+        if send_gate.paused_until(session, now) is not None:
+            break
+        # A revoked credential's email would advertise a verify link that
+        # answers "revoked". It is left deferred-then-cleared, not sent.
+        if cred.status == "revoked":
+            mark_not_requested(cred, "Credential revoked before its deferred email was sent.")
+            continue
+        if cred.org_id not in orgs:
+            orgs[cred.org_id] = session.get(Organization, cred.org_id)
+        if deliver_credential_email(cred, org=orgs[cred.org_id]):
+            sent += 1
+        elif cred.delivery_status == DELIVERY_DEFERRED:
+            deferred += 1
+        else:
+            failed += 1
+
+    return {
+        "sent": sent, "deferred": deferred, "failed": failed,
+        "paused": send_gate.paused_until(session, now) is not None,
+    }
+
+
 def may_retry(cred) -> bool:
     """Whether a failed delivery is still worth another attempt."""
     from api.models.credential import DELIVERY_RETRYABLE
@@ -236,9 +373,12 @@ def may_retry(cred) -> bool:
 
 def delivery_state(cred) -> dict:
     """The delivery half of a credential's API representation."""
+    next_at = getattr(cred, "delivery_next_attempt_at", None)
     return {
         "status": cred.delivery_status,
         "delivered_at": cred.delivered_at.isoformat() if cred.delivered_at else None,
+        # Only while deferred: when it will be sent without anyone asking.
+        "next_attempt_at": _aware(next_at).isoformat() if next_at else None,
         "error": cred.delivery_error,
         "attempts": cred.delivery_attempts or 0,
         "may_retry": may_retry(cred),

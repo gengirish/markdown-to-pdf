@@ -8,6 +8,8 @@ of certificate and invoice notification emails.
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from typing import Optional
 
 from api.core.config import AGENTMAIL_API_KEY, AGENTMAIL_INBOX_ID
@@ -44,6 +46,100 @@ if AGENTMAIL_API_KEY:
         logger.info("AgentMail client configured (inbox warm-up in background)")
     except Exception as e:
         logger.warning(f"AgentMail initialization failed: {e}")
+
+
+# ── Send outcome ───────────────────────────────────────────────────────────
+
+SEND_OK = "sent"
+SEND_RATE_LIMITED = "rate_limited"
+SEND_FAILED = "failed"
+
+
+class SendResult(tuple):
+    """`(ok, message)`, plus why a send was refused and when to try again.
+
+    Still a 2-tuple, so every caller that unpacks `ok, message` — and every
+    test that patches the sender with `return_value=(True, "")` — keeps
+    working. `kind` is the part that matters: a rate-limited refusal mailed
+    nobody and will succeed after the reset, a failed one will not, and the
+    caller used to receive the same `False` for both.
+    """
+
+    kind: str
+    retry_after: Optional[timedelta]
+
+    def __new__(cls, ok: bool, message: str, kind: Optional[str] = None,
+                retry_after: Optional[timedelta] = None):
+        obj = super().__new__(cls, (ok, message))
+        obj.kind = kind or (SEND_OK if ok else SEND_FAILED)
+        obj.retry_after = retry_after
+        return obj
+
+
+def send_kind(result) -> str:
+    """The kind of any sender result, including a plain `(ok, message)` tuple."""
+    kind = getattr(result, "kind", None)
+    if kind:
+        return kind
+    return SEND_OK if result[0] else SEND_FAILED
+
+
+def _header(headers, name: str) -> Optional[str]:
+    if not headers:
+        return None
+    for key, value in dict(headers).items():
+        if str(key).lower() == name:
+            return str(value).strip()
+    return None
+
+
+def parse_retry_after(headers, now: Optional[datetime] = None) -> Optional[timedelta]:
+    """`Retry-After` as seconds or an HTTP date, else `ratelimit-reset`
+    (seconds). None when neither is usable, so the caller falls back to its
+    own reset rule rather than to zero, which would retry at once."""
+    now = now or datetime.now(timezone.utc)
+    for name in ("retry-after", "ratelimit-reset"):
+        raw = _header(headers, name)
+        if not raw:
+            continue
+        try:
+            seconds = float(raw)
+            if seconds >= 0:
+                return timedelta(seconds=seconds)
+            continue
+        except ValueError:
+            pass
+        try:
+            when = parsedate_to_datetime(raw)
+        except (TypeError, ValueError, IndexError):
+            continue
+        if when is None:
+            continue
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        return max(when - now, timedelta(0))
+    return None
+
+
+def _is_rate_limited(exc: Exception) -> bool:
+    """A refusal for volume rather than for anything we could fix.
+
+    429 is the signal. The body check is the fallback for the text seen in
+    production ("Daily send limit exceeded", code `rate_limit_exceeded`), in
+    case a proxy or SDK change ever loses the status.
+    """
+    status = getattr(exc, "status_code", None)
+    if status == 429:
+        return True
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        if str(body.get("code") or "").lower() == "rate_limit_exceeded":
+            return True
+        if str(body.get("name") or "") == "RateLimitError":
+            return True
+        if "send limit" in str(body.get("message") or "").lower():
+            return True
+    return False
 
 
 # ── Core Delivery Logic ────────────────────────────────────────────────────
@@ -161,16 +257,16 @@ def _run_with_timeout(fn, timeout_sec: float, timeout_message: str):
 
 def agentmail_deliver(
     *, to_email: str, subject: str, text: str, html: str, link_hint: str = "certificate"
-) -> tuple[bool, str]:
+) -> SendResult:
     """Synchronously send an email using AgentMail with fallback logic."""
     if not _agentmail_client:
-        return False, "Email service is not configured on this server."
+        return SendResult(False, "Email service is not configured on this server.")
     recipient = to_email.strip()
     if not recipient:
-        return False, "Recipient email is required."
+        return SendResult(False, "Recipient email is required.")
     inbox_id = _get_agentmail_inbox_id()
     if not inbox_id:
-        return False, "AgentMail inbox is not configured. Set AGENTMAIL_INBOX_ID."
+        return SendResult(False, "AgentMail inbox is not configured. Set AGENTMAIL_INBOX_ID.")
     
     fallback = f"Could not deliver email. Share the {link_hint} link instead."
     try:
@@ -183,7 +279,7 @@ def agentmail_deliver(
             request_options=_SEND_OPTIONS,
         )
         logger.info(f"AgentMail sent to {recipient} from inbox {inbox_id}")
-        return True, ""
+        return SendResult(True, "")
     except Exception as e:
         if _is_agentmail_inbox_not_found(e):
             resolved = _refresh_agentmail_inbox_from_api(force=True)
@@ -198,15 +294,25 @@ def agentmail_deliver(
                         request_options=_SEND_OPTIONS,
                     )
                     logger.info(f"AgentMail sent to {recipient} from inbox {resolved}")
-                    return True, ""
+                    return SendResult(True, "")
                 except Exception as retry_exc:
                     e = retry_exc
         err = _agentmail_error_message(e)
         logger.warning(f"AgentMail send to {recipient} failed: {e}")
+        if _is_rate_limited(e):
+            # The provider's words, without the "share the link" advice: this
+            # one will be sent automatically, and the caller says when.
+            reason = err if err and "Could not deliver" not in err else "Provider send limit reached"
+            if not reason.endswith((".", "!", "?")):
+                reason += "."
+            return SendResult(
+                False, reason, kind=SEND_RATE_LIMITED,
+                retry_after=parse_retry_after(getattr(e, "headers", None)),
+            )
         if err and "Could not deliver" not in err:
             # Provider messages often carry no full stop ("Daily send limit
             # exceeded"), and this string is shown verbatim in the dashboard.
             if not err.endswith((".", "!", "?")):
                 err += "."
-            return False, f"{err} Share the {link_hint} link instead."
-        return False, fallback
+            return SendResult(False, f"{err} Share the {link_hint} link instead.")
+        return SendResult(False, fallback)

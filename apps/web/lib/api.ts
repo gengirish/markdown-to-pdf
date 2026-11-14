@@ -317,11 +317,13 @@ export interface TemplateSummary {
 /** Whether the recipient was told, kept apart from whether the credential
  *  exists. `not_requested` is the one that matters: it means no send was
  *  attempted, which is a recorded outcome rather than a missing one. */
-export type DeliveryStatus = "not_requested" | "pending" | "sent" | "failed" | "unknown";
+export type DeliveryStatus = "not_requested" | "pending" | "sent" | "failed" | "unknown" | "deferred";
 
 export interface DeliveryState {
   status: DeliveryStatus;
   delivered_at: string | null;
+  /** Only while `deferred`: when it sends without anyone asking. */
+  next_attempt_at: string | null;
   error: string | null;
   attempts: number;
   may_retry: boolean;
@@ -339,6 +341,9 @@ export interface CredentialSummary {
   /** Issued with a cf_test_ key: never emailed, and not a real award. */
   is_test: boolean;
   delivery_status: DeliveryStatus;
+  /** Only while `deferred`: when the provider's daily limit is expected to
+   *  have reset and the email will go out on its own. */
+  delivery_next_attempt_at?: string | null;
 }
 
 export interface CredentialPage {
@@ -417,8 +422,13 @@ export interface BatchStatus {
 export interface BatchDelivery {
   delivered: number;
   failed: number;
-  /** No address on the row, or delivery was never asked for. Stated rather
-   *  than left to be inferred from a subtraction. */
+  /** Refused for volume by the email provider; sent automatically after its
+   *  daily limit resets. Neither delivered nor failed. */
+  deferred?: number;
+  /** In flight. */
+  pending?: number;
+  /** No address on the row, or delivery was never asked for. Counted off the
+   *  rows, not inferred from a subtraction. */
   not_requested: number;
 }
 
@@ -653,6 +663,8 @@ export interface OperatorDelivery {
   delivered_at: string | null;
   delivery_attempts: number;
   delivery_error: string | null;
+  /** Only while `deferred`: when it sends without anyone asking. */
+  delivery_next_attempt_at?: string | null;
   /** The operator resend rule allows a resend now (failed, or pending/unknown over an hour). */
   resendable: boolean;
   /** Why it is not resendable, in words; `null` when it is. */

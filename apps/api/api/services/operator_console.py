@@ -39,7 +39,13 @@ from api.models.operator_action import FAILED, REFUSED, STARTED, SUCCEEDED, Oper
 from api.models.organization import Organization
 from api.models.usage import UsageLedger
 from api.services.delivery import MAX_DELIVERY_ATTEMPTS
-from api.services.issuance import UNLIMITED, IssuanceError, is_test_credential, resend_credential
+from api.services.issuance import (
+    UNLIMITED,
+    IssuanceError,
+    email_paused_refusal,
+    is_test_credential,
+    resend_credential,
+)
 
 #: "Near limit" on the KPI strip and the table's filter chip.
 NEAR_LIMIT_PERCENT = 80
@@ -350,7 +356,9 @@ def as_key(c: Credential) -> CredentialKey:
 
 # -- resend ------------------------------------------------------------------------
 
-def resend_refusal(cred: Credential, *, now: Optional[datetime] = None) -> Optional[str]:
+def resend_refusal(
+    cred: Credential, *, now: Optional[datetime] = None, session=None
+) -> Optional[str]:
     """Why an operator may not resend this credential's email, or None if
     they may. The console's own rule, on top of `resend_credential()`'s:
     a failed send, or a pending/unknown one that has had an hour to land.
@@ -364,6 +372,12 @@ def resend_refusal(cred: Credential, *, now: Optional[datetime] = None) -> Optio
         return "This credential has no recipient email."
     if (cred.delivery_attempts or 0) >= MAX_DELIVERY_ATTEMPTS:
         return f"This credential has already been emailed {MAX_DELIVERY_ATTEMPTS} times."
+    # The org resend's own check, so the console never offers a button that
+    # the send path would then refuse. The gate's memo means a page of 200
+    # rows reads its table once, not 200 times.
+    paused = email_paused_refusal(cred, session, now=now)
+    if paused:
+        return paused
     if cred.delivery_status == DELIVERY_FAILED:
         return None
     if cred.delivery_status in (DELIVERY_PENDING, DELIVERY_UNKNOWN):
@@ -406,7 +420,7 @@ def resend_credential_email(public_id: str, *, actor: str, idempotency_key: str)
         cred = session.query(Credential).filter_by(public_id=public_id).first()
         if cred is None:
             raise ResendConflict("Credential not found", "not_found")
-        refusal = resend_refusal(cred)
+        refusal = resend_refusal(cred, session=session)
         if refusal:
             raise ResendConflict(refusal, "resend_not_allowed")
         org = session.query(Organization).filter_by(id=cred.org_id).one()

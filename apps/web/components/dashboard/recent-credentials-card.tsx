@@ -79,7 +79,10 @@ export function RecentCredentialsCard({
                 <p className="truncate text-xs text-faint">{credential.title}</p>
                 <p className="mt-1 text-xs text-faint">
                   {formatDate(credential.issued_at)} · {credential.status}
-                  <DeliveryTag status={credential.delivery_status} />
+                  <DeliveryTag
+                    status={credential.delivery_status}
+                    nextAttemptAt={credential.delivery_next_attempt_at}
+                  />
                 </p>
               </div>
               {credential.status === "issued" ? (
@@ -104,7 +107,30 @@ export function RecentCredentialsCard({
  *  `not_requested`: a list that tags every row tags nothing, and only a failure
  *  needs someone to act. `unknown` is silent too — those rows predate delivery
  *  tracking, and labelling them would assert something we do not know. */
-function DeliveryTag({ status }: { status: DeliveryStatus | undefined }) {
+function DeliveryTag({
+  status,
+  nextAttemptAt,
+}: {
+  status: DeliveryStatus | undefined;
+  nextAttemptAt?: string | null;
+}) {
+  if (status === "deferred") {
+    // Not a failure: the email provider's daily limit was reached and this
+    // one goes out on its own once it resets. Resending now would only meet
+    // the same limit, which is why the row offers no Resend.
+    const when = nextAttemptAt ? formatSendTime(nextAttemptAt) : null;
+    return (
+      <>
+        {" · "}
+        <span
+          className="text-muted"
+          title="The email provider's daily send limit was reached. This email sends automatically once it resets."
+        >
+          {when ? `email scheduled, sends after ${when}` : "email scheduled"}
+        </span>
+      </>
+    );
+  }
   if (status !== "failed") return null;
   return (
     <>
@@ -114,4 +140,15 @@ function DeliveryTag({ status }: { status: DeliveryStatus | undefined }) {
       </span>
     </>
   );
+}
+
+function formatSendTime(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }

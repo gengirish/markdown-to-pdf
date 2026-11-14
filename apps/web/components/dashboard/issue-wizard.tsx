@@ -1143,6 +1143,7 @@ function StepReport({
               `Failed,${batch.failed}`,
               `Delivered,${batch.delivery?.delivered ?? ""}`,
               `Delivery failed,${batch.delivery?.failed ?? ""}`,
+              `Delivery scheduled,${batch.delivery?.deferred ?? ""}`,
               `Not requested,${batch.delivery?.not_requested ?? ""}`,
               "",
               "credential_id,error",
@@ -1171,8 +1172,9 @@ function DeliveryLine({ delivery }: { delivery: BatchDelivery | undefined }) {
   if (!delivery) return <p className="text-sm text-faint">No delivery information.</p>;
 
   const { delivered, failed, not_requested: notRequested } = delivery;
+  const deferred = delivery.deferred ?? 0;
 
-  if (failed === 0 && delivered === 0 && notRequested > 0) {
+  if (failed === 0 && delivered === 0 && deferred === 0 && notRequested > 0) {
     return (
       <p className="text-sm text-ink">
         No emails sent — {notRequested === 1 ? "the row had" : "the rows had"} no address, or
@@ -1183,11 +1185,15 @@ function DeliveryLine({ delivery }: { delivery: BatchDelivery | undefined }) {
 
   const parts = [`${delivered} delivered`];
   if (failed > 0) parts.push(`${failed} failed`);
+  if (deferred > 0) parts.push(`${deferred} scheduled`);
   if (notRequested > 0) parts.push(`${notRequested} not sent`);
 
   return (
     <p className={`text-sm ${failed > 0 ? "font-medium text-warn-ink" : "text-ink"}`}>
       {parts.join(", ")}.{failed > 0 ? " Failed sends are retried automatically." : ""}
+      {deferred > 0
+        ? " The email provider's daily send limit was reached; scheduled emails go out automatically once it resets."
+        : ""}
     </p>
   );
 }
