@@ -25,13 +25,14 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import and_, func, or_
+from sqlalchemy.orm import object_session
 
 from api.core.config import BILLING_TIERS, DEFAULT_TIER, canonical_tier, get_tier_quota
 from api.core.envelope import ApiException, ApiResponse
 from api.core.principal import Principal, require_operator
 from api.core.rate_limit import rate_limit
 from api.models import get_db
-from api.models.credential import NOT_REQUESTED, Credential
+from api.models.credential import DELIVERY_STATUSES, NOT_REQUESTED, Credential
 from api.models.organization import Organization, OrgMember
 from api.models.quota_change import CredentialQuotaChange
 from api.routes.credentials import LIKE_ESCAPE, _like_contains
@@ -422,7 +423,9 @@ def set_tier(
 
 # -- who each org has emailed -----------------------------------------------------
 
-_DELIVERY_PATTERN = "^(attempted|not_requested|pending|sent|failed|unknown|all)$"
+# Built from DELIVERY_STATUSES so a new state cannot be written by the
+# backend and refused by this filter.
+_DELIVERY_PATTERN = f"^({'|'.join(sorted(DELIVERY_STATUSES | {'attempted', 'all'}))})$"
 _DELIVERY_SORTS = {
     "issued_at": Credential.issued_at,
     "delivered_at": Credential.delivered_at,
@@ -588,7 +591,7 @@ def list_deliveries(
 
 
 def _delivery_row(c: Credential, o: Organization, dupes: set[str]) -> dict:
-    refusal = resend_refusal(c)
+    refusal = resend_refusal(c, session=object_session(c))
     return {
         "id": c.public_id,
         "org_slug": o.slug,
@@ -603,6 +606,8 @@ def _delivery_row(c: Credential, o: Organization, dupes: set[str]) -> dict:
         "delivered_at": _iso(c.delivered_at),
         "delivery_attempts": c.delivery_attempts,
         "delivery_error": c.delivery_error,
+        # Only while deferred: when the email goes out without anyone asking.
+        "delivery_next_attempt_at": _iso(c.delivery_next_attempt_at),
         "resendable": refusal is None,
         # Why not, in words, so a failed row without a Resend button explains
         # itself instead of looking broken.

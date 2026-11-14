@@ -24,13 +24,14 @@ import { EmptyNote, ErrorNote, Skeleton, StatusTag, buttonClass, formatDate, inp
 
 const PAGE_SIZE = 25;
 
-type StatusFilter = "all" | "issued" | "revoked" | "email_failed";
+type StatusFilter = "all" | "issued" | "revoked" | "email_failed" | "email_scheduled";
 
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All statuses" },
   { value: "issued", label: "Issued" },
   { value: "revoked", label: "Revoked" },
   { value: "email_failed", label: "Email failed" },
+  { value: "email_scheduled", label: "Email scheduled" },
 ];
 
 interface Filters {
@@ -45,7 +46,12 @@ function toQuery(filters: Filters): CredentialListQuery {
     q: filters.q.trim() || undefined,
     status:
       filters.status === "issued" || filters.status === "revoked" ? filters.status : undefined,
-    deliveryStatus: filters.status === "email_failed" ? "failed" : undefined,
+    deliveryStatus:
+      filters.status === "email_failed"
+        ? "failed"
+        : filters.status === "email_scheduled"
+          ? "deferred"
+          : undefined,
     templateId: filters.templateId || undefined,
     test: filters.hideTest ? "exclude" : undefined,
   };
@@ -155,11 +161,19 @@ export function CredentialsCard({
     setNotice(null);
     try {
       const result = await api.resendCredential(slug, row.id);
-      patchRow(row.id, { delivery_status: result.delivery.status });
+      patchRow(row.id, {
+        delivery_status: result.delivery.status,
+        delivery_next_attempt_at: result.delivery.next_attempt_at,
+      });
       setNotice(
         result.sent
           ? { tone: "ok", text: `Email sent to ${row.recipient_email}.` }
-          : {
+          : result.delivery.status === "deferred"
+            ? {
+                tone: "ok",
+                text: `The email provider's daily limit is reached. The email to ${row.recipient_email} will send automatically once it resets.`,
+              }
+            : {
               tone: "bad",
               text: `The email to ${row.recipient_email} did not send: ${result.delivery.error ?? "no reason given"}.`,
             },
@@ -310,7 +324,10 @@ export function CredentialsCard({
                   <p className="truncate text-xs text-faint">{credential.title}</p>
                   <p className="mt-1 text-xs text-faint">
                     {formatDate(credential.issued_at)} · {credential.status}
-                    <DeliveryTag status={credential.delivery_status} />
+                    <DeliveryTag
+                      status={credential.delivery_status}
+                      nextAttemptAt={credential.delivery_next_attempt_at}
+                    />
                   </p>
                 </div>
                 <RowActions
@@ -353,7 +370,30 @@ export function CredentialsCard({
  *  `not_requested`: a list that tags every row tags nothing, and only a failure
  *  needs someone to act. `unknown` is silent too — those rows predate delivery
  *  tracking, and labelling them would assert something we do not know. */
-function DeliveryTag({ status }: { status: DeliveryStatus | undefined }) {
+function DeliveryTag({
+  status,
+  nextAttemptAt,
+}: {
+  status: DeliveryStatus | undefined;
+  nextAttemptAt?: string | null;
+}) {
+  if (status === "deferred") {
+    // Not a failure: the email provider's daily limit was reached and this
+    // one goes out on its own once it resets. Resending now would only meet
+    // the same limit, which is why the row offers no Resend.
+    const when = nextAttemptAt ? formatSendTime(nextAttemptAt) : null;
+    return (
+      <>
+        {" · "}
+        <span
+          className="text-muted"
+          title="The email provider's daily send limit was reached. This email sends automatically once it resets."
+        >
+          {when ? `email scheduled, sends after ${when}` : "email scheduled"}
+        </span>
+      </>
+    );
+  }
   if (status !== "failed") return null;
   return (
     <>
@@ -363,6 +403,17 @@ function DeliveryTag({ status }: { status: DeliveryStatus | undefined }) {
       </span>
     </>
   );
+}
+
+function formatSendTime(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function RowActions({

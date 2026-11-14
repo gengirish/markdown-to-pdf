@@ -26,7 +26,7 @@ from api.models.template import Template
 from api.core.pdf_renderer import render_credential_pdf
 from api.core.credential_signature import sign_credential
 from api.models.credential import DELIVERY_FAILED
-from api.services.delivery import deliver_credential_email, may_retry
+from api.services.delivery import deliver_credential_email, may_retry, release_deferred
 from api.services.backgrounds import background_data_uri
 from api.services.rendering import build_render_variables
 from api.services.webhooks import (
@@ -106,6 +106,9 @@ async def lifespan(app):
 BATCH_VISIBLE_ATTEMPTS = 10
 BATCH_VISIBLE_WAIT_SECONDS = 1.0
 
+#: How long after a failed send its automatic retry runs.
+RETRY_DELAY_SECONDS = 300
+
 
 @worker_app.task(queue="issuance")
 async def process_batch(batch_id_str: str):
@@ -126,9 +129,16 @@ async def process_batch(batch_id_str: str):
     # stall the whole batch behind one address, and Procrastinate already gives
     # us the scheduling. Failing to queue a retry must not fail the batch —
     # the credentials are issued and verifiable either way.
+    #
+    # Scheduled a few minutes out. It used to run seconds after the failure,
+    # which no transient fault recovers in. Rows the provider refused for
+    # volume are not in retry_ids at all: they are `deferred`, and the release
+    # sweep sends them after the reset.
     for public_id in retry_ids:
         try:
-            await retry_delivery.defer_async(public_id=public_id)
+            await retry_delivery.configure(
+                schedule_in={"seconds": RETRY_DELAY_SECONDS}
+            ).defer_async(public_id=public_id)
         except Exception:
             logger.exception("Could not queue a delivery retry for %s", public_id)
 
@@ -266,7 +276,31 @@ def _retry_delivery_sync(public_id: str) -> None:
                 public_id, cred.delivery_status, cred.delivery_attempts,
             )
             return
-        deliver_credential_email(cred)
+        # With the org, so a retried email names the issuer the first send
+        # named rather than falling back to the platform brand.
+        org = session.query(Organization).filter_by(id=cred.org_id).first()
+        deliver_credential_email(cred, org=org)
+
+
+@worker_app.periodic(cron="* * * * *")
+@worker_app.task(queue="issuance")
+async def release_deferred_deliveries(timestamp: int):
+    """Send credential emails deferred by the provider's daily limit, once
+    it has reset.
+
+    Every minute while the machine is up, beside recover_batches. The machine
+    scales to zero and nothing wakes it for this, so "after the reset" means
+    the first wake after the reset — the same posture as webhook retries. It
+    adds no inbound traffic, so it does not hold the machine awake.
+    """
+    outcome = await asyncio.to_thread(_release_deferred_sync)
+    if outcome["sent"] or outcome["deferred"] or outcome["failed"]:
+        logger.info("Released deferred deliveries: %s", outcome)
+
+
+def _release_deferred_sync() -> dict:
+    with get_db() as session:
+        return release_deferred(session)
 
 
 def _process_batch_sync(batch_id: uuid.UUID) -> list[str] | None:

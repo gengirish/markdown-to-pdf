@@ -50,10 +50,25 @@ DELIVERY_PENDING = "pending"     # queued or in flight
 SENT = "sent"                    # AgentMail accepted it
 DELIVERY_FAILED = "failed"       # rejected; delivery_error says why
 DELIVERY_UNKNOWN = "unknown"     # predates this column; never guess for these
+#: The provider refused for volume (its daily send limit), so nobody was
+#: mailed. Sent automatically after `delivery_next_attempt_at` by the sweep in
+#: worker.py. Not `failed`: the dashboard shows "Email failed" with a Resend
+#: button for that, and both are wrong for a row that will go out on its own —
+#: a resend made now only meets the same limit. See docs/email-daily-cap-plan.md.
+DELIVERY_DEFERRED = "deferred"
+
+#: Every delivery state. The single source for each route's `delivery_status`
+#: filter and, through a test, for the dashboard's `DeliveryStatus` type: a
+#: state the backend writes and a filter refuses is a row nobody can find.
+DELIVERY_STATUSES = frozenset({
+    NOT_REQUESTED, DELIVERY_PENDING, SENT, DELIVERY_FAILED, DELIVERY_UNKNOWN,
+    DELIVERY_DEFERRED,
+})
 
 #: Worth retrying. UNKNOWN is excluded deliberately — those rows predate any
 #: delivery record, so a retry would mail people who may already have received
-#: their credential months ago.
+#: their credential months ago. DEFERRED is excluded too: it is not a failure
+#: to count against the attempt ceiling, and it has its own release path.
 DELIVERY_RETRYABLE = frozenset({DELIVERY_FAILED})
 
 #: Counted as delivered when a batch reports itself.
@@ -123,6 +138,13 @@ class Credential(Base):
         Index("idx_credentials_recipient_email", "recipient_email"),
         # "show me this org's failed deliveries" is the query support runs.
         Index("idx_credentials_delivery", "org_id", "delivery_status"),
+        # The deferred-send sweep's query, once a minute. Partial, because
+        # deferred rows are a handful against every credential ever issued.
+        # Migration d2b7e9f4a1c3.
+        Index(
+            "idx_credentials_deferred_due", "delivery_next_attempt_at",
+            postgresql_where="delivery_status = 'deferred'",
+        ),
         # The operator console's "last activity" (max issued_at per org) and
         # its per-org date-range filter. Migration b5e2f7a1c9d3.
         Index("idx_credentials_org_issued", "org_id", "issued_at"),
@@ -174,8 +196,13 @@ class Credential(Base):
     # batch unexplainable.
     delivery_status: Mapped[str] = mapped_column(
         String(50), nullable=False, default=NOT_REQUESTED
-    )  # not_requested, pending, sent, failed, unknown
+    )  # see DELIVERY_STATUSES
     delivered_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
+    # Set only while delivery_status is `deferred`: when the provider's limit
+    # is expected to have reset. Cleared by every other transition.
+    delivery_next_attempt_at: Mapped[datetime | None] = mapped_column(
         TIMESTAMP(timezone=True), nullable=True
     )
     # The provider's own words, kept verbatim. A support answer needs "AgentMail

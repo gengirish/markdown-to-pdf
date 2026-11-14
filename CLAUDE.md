@@ -672,8 +672,9 @@ stale pricing page buys what replaced the plan it lists. Migration
 `api/services/delivery.py` is the only credential-email sender; both the bulk
 worker and single issuance call it. Every path through it writes a terminal
 state onto the credential — `delivery_status` is one of `not_requested`,
-`pending`, `sent`, `failed`, `unknown` — plus `delivered_at`, `delivery_error`
-and `delivery_attempts`.
+`pending`, `sent`, `failed`, `unknown`, `deferred` — plus `delivered_at`,
+`delivery_error`, `delivery_attempts` and, while deferred,
+`delivery_next_attempt_at`.
 
 `not_requested` is the state that earns its keep. Delivery used to leave no
 trace: a rejected send wrote one `logger.warning`, and a credential with no
@@ -691,6 +692,32 @@ Two rules that are easy to break by accident:
   `delivered` / `delivery_failed` are separate for exactly that reason — a batch
   that rendered thirty PDFs and emailed none of them used to report "30
   succeeded" and nothing else.
+
+**The provider's daily send limit defers a send; it does not fail it.**
+AgentMail allows 100 sends a day on the current plan. On 2026-11-12 a batch
+of 86 sent 39, and every refusal after that cost its row an attempt, as did
+its retry seconds later. See `docs/email-daily-cap-plan.md`.
+
+- A 429 makes the row `deferred`, with `delivery_next_attempt_at` set from
+  the provider's `Retry-After`. **It costs no attempt**: `delivery_attempts`
+  counts sends the provider accepted or rejected for a reason of its own.
+- `api/services/send_gate.py` is the only reader and writer of
+  `email_send_pauses`. The first refusal closes the gate, and while it is
+  closed `deliver_credential_email` defers without calling the provider. That
+  is how a batch larger than the day's allowance sends what it can and queues
+  the rest, without any forecast of what is left (none is possible: the
+  legacy surface sends from the same account and is not wired to the gate).
+- `release_deferred_deliveries` (worker, every minute) sends due rows oldest
+  first and stops at the first new refusal. The machine scales to zero, so
+  "after the reset" means the first wake after it.
+- Resend refuses a `deferred` row, and any row while the gate is closed
+  (409 `email_paused`), before reaching the provider. The org route and the
+  operator console share `email_paused_refusal()`.
+- A row deferred longer than `MAX_DEFERRAL` (7 days from `issued_at`) fails
+  on its next refusal, with its attempts intact.
+- `DELIVERY_STATUSES` is the one list of states. Both routes build their
+  filter regex from it, and a test reads `DeliveryStatus` out of
+  `apps/web/lib/api.ts`, so a seventh state cannot reach one half alone.
 
 Quota works the same way: `api/services/issuance.py`'s `consume_quota()` is the
 one meter, called by both paths. Bulk used to read the ledger without writing it

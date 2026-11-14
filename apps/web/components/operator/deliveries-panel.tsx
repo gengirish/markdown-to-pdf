@@ -31,6 +31,7 @@ const FILTERS: { value: OperatorDeliveryFilter; label: string }[] = [
   { value: "attempted", label: "All emails" },
   { value: "sent", label: "Sent" },
   { value: "failed", label: "Failed" },
+  { value: "deferred", label: "Scheduled (daily limit)" },
   { value: "pending", label: "Pending" },
   { value: "unknown", label: "Unknown (pre-tracking)" },
   { value: "not_requested", label: "Not emailed" },
@@ -47,11 +48,18 @@ const RANGE_LABEL: Record<DateRange, string> = {
 
 /** Rows an operator would expect to resend; only these explain a refusal.
  *  A sent row has no button and needs no reason. */
-const STUCK: ReadonlySet<DeliveryStatus> = new Set<DeliveryStatus>(["failed", "pending", "unknown"]);
+const STUCK: ReadonlySet<DeliveryStatus> = new Set<DeliveryStatus>([
+  "failed",
+  "pending",
+  "unknown",
+  // Never resendable; its refusal says when it sends on its own.
+  "deferred",
+]);
 
 const TONE: Record<DeliveryStatus, "ok" | "warn" | "neutral" | "bad"> = {
   sent: "ok",
   failed: "bad",
+  deferred: "warn",
   pending: "warn",
   unknown: "neutral",
   not_requested: "neutral",
@@ -60,6 +68,7 @@ const TONE: Record<DeliveryStatus, "ok" | "warn" | "neutral" | "bad"> = {
 const LABEL: Record<DeliveryStatus, string> = {
   sent: "Sent",
   failed: "Failed",
+  deferred: "Scheduled",
   pending: "Pending",
   unknown: "Unknown",
   not_requested: "Not emailed",
@@ -391,7 +400,13 @@ export function DeliveriesPanel({
                   <td className="px-4 py-3">
                     <StatusTag tone={TONE[row.delivery_status]}>{LABEL[row.delivery_status]}</StatusTag>
                     {row.delivery_error ? (
-                      <p className="mt-1 max-w-xs break-words text-xs text-danger">{row.delivery_error}</p>
+                      <p
+                        className={`mt-1 max-w-xs break-words text-xs ${
+                          row.delivery_status === "deferred" ? "text-muted" : "text-danger"
+                        }`}
+                      >
+                        {row.delivery_error}
+                      </p>
                     ) : null}
                     {/* The action sits under the status it acts on, so it is
                         never in a column scrolled off the table's right edge. */}

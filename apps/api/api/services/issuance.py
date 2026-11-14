@@ -44,10 +44,13 @@ UNLIMITED = -1
 class IssuanceError(Exception):
     """Something the caller can fix. `code` maps to an HTTP status."""
 
-    def __init__(self, message: str, code: int = 400):
+    def __init__(self, message: str, code: int = 400, error_type: Optional[str] = None):
         super().__init__(message)
         self.message = message
         self.code = code
+        #: Set when a client must tell this refusal apart from others with
+        #: the same status, e.g. `email_paused` among the resend 409s.
+        self.error_type = error_type
 
 
 class QuotaExceeded(IssuanceError):
@@ -432,6 +435,32 @@ def is_test_credential(credential: Credential) -> bool:
     return bool((credential.metadata_ or {}).get("_test"))
 
 
+def email_paused_refusal(credential: Credential, session=None, *, now=None) -> Optional[str]:
+    """Why a resend would only meet the provider's send limit, or None.
+
+    Shared by the org resend and the operator console's `resend_refusal`, so
+    the two cannot disagree about whether a Resend button may be shown.
+    """
+    from api.models.credential import DELIVERY_DEFERRED
+    from api.services import send_gate
+
+    now = now or datetime.now(timezone.utc)
+    if credential.delivery_status == DELIVERY_DEFERRED:
+        when = credential.delivery_next_attempt_at
+        if when is not None and when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        after = f" after {when.strftime('%Y-%m-%d %H:%M UTC')}" if when else ""
+        return f"This email is queued and will send automatically{after}."
+    until = send_gate.paused_until(session, now)
+    if until is not None:
+        return (
+            "Email sending is paused until "
+            f"{until.astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} "
+            "(the provider's daily send limit). Try again after that."
+        )
+    return None
+
+
 def resend_credential(org_slug: str, public_id: str) -> dict[str, Any]:
     """Send a credential's email again, now, and report the outcome.
 
@@ -475,6 +504,12 @@ def resend_credential(org_slug: str, public_id: str) -> dict[str, Any]:
                 f"This credential has already been emailed {MAX_DELIVERY_ATTEMPTS} times",
                 code=409,
             )
+        # Checked before sending, so neither refusal costs an attempt. A
+        # resend made while the provider's limit holds is a refused call that
+        # used up the credential's last attempt; that is what this prevents.
+        refusal = email_paused_refusal(credential, session)
+        if refusal:
+            raise IssuanceError(refusal, code=409, error_type="email_paused")
 
         sent = deliver_credential_email(credential, org=org)
         return {"id": public_id, "sent": sent, "delivery": delivery_state(credential)}

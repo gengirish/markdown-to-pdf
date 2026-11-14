@@ -98,6 +98,25 @@ def setup_db():
         except OSError:
             pass
 
+@pytest.fixture(autouse=True)
+def _open_send_gate():
+    """Every test starts with email sending open, and leaves it open.
+
+    The gate is a table row plus a per-process memo (services/send_gate.py).
+    A test that closes it would otherwise defer every send in every test
+    after it, in files that have never heard of the gate.
+    """
+    from api.models.email_send_pause import EmailSendPause
+    from api.services import send_gate
+
+    send_gate.reset_memo()
+    yield
+    send_gate.reset_memo()
+    with TestingSessionLocal() as session:
+        session.query(EmailSendPause).delete()
+        session.commit()
+
+
 @pytest.fixture
 def db_session():
     """Direct session against the test database, for arranging fixture rows."""

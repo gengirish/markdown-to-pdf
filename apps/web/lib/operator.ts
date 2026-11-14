@@ -234,6 +234,7 @@ export const DELIVERY_FILTERS = [
   "attempted",
   "sent",
   "failed",
+  "deferred",
   "pending",
   "unknown",
   "not_requested",

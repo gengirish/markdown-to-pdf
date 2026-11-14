@@ -20,11 +20,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, or_
 
 from api.core.credential_signature import signature_state
-from api.core.envelope import ApiResponse
+from api.core.envelope import ApiException, ApiResponse
 from api.core.principal import Principal, require_org_access, resolve_principal
 from api.core.rate_limit import rate_limit
 from api.models import get_db
-from api.models.credential import Credential
+from api.models.credential import DELIVERY_STATUSES, Credential
 from api.models.organization import Organization
 from api.services.delivery import delivery_state
 from api.services.issuance import (
@@ -155,7 +155,7 @@ def list_credentials(
         description="Case-insensitive substring of recipient name, email or title.",
     ),
     delivery_status: Optional[str] = Query(
-        None, pattern="^(not_requested|pending|sent|failed|unknown)$"
+        None, pattern=f"^({'|'.join(sorted(DELIVERY_STATUSES))})$"
     ),
     template_id: Optional[str] = Query(None),
     batch_id: Optional[str] = Query(None),
@@ -255,6 +255,9 @@ def list_credentials(
                 # flag which rows need attention, and the detail route carries
                 # the error text and attempt count for when one does.
                 "delivery_status": c.delivery_status,
+                # Only while deferred, so the list can say when the email
+                # goes out instead of showing a row that looks stuck.
+                "delivery_next_attempt_at": delivery_state(c)["next_attempt_at"],
             }
             for c in rows
         ]
@@ -364,6 +367,8 @@ def resend(
     try:
         return ApiResponse.ok(resend_credential(slug, public_id))
     except IssuanceError as exc:
+        if exc.error_type:
+            raise ApiException(exc.code, exc.message, error_type=exc.error_type)
         raise HTTPException(status_code=exc.code, detail=exc.message)
 
 

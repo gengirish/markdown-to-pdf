@@ -14,7 +14,18 @@ from api.core.crypto import generate_credential_id
 from api.models import get_db
 from api.models.organization import Organization
 from api.models.template import Template
-from api.models.credential import Credential, CredentialBatch
+from sqlalchemy import func
+
+from api.models.credential import (
+    DELIVERY_DEFERRED,
+    DELIVERY_FAILED,
+    DELIVERY_PENDING,
+    NOT_REQUESTED,
+    PENDING,
+    SENT,
+    Credential,
+    CredentialBatch,
+)
 from api.core.worker import process_batch
 from api.services.entitlements import enforce_csv_batch_limit
 from api.services.issuance import QuotaExceeded, consume_quota
@@ -206,20 +217,42 @@ def get_batch_status(
             # as a complete success. delivery answers the other question.
             "succeeded": batch.succeeded,
             "failed": batch.failed,
-            "delivery": {
-                "delivered": batch.delivered,
-                "failed": batch.delivery_failed,
-                # Neither delivered nor failed: no address on the row, or the
-                # upload did not ask for delivery. Stated rather than left to be
-                # inferred from a subtraction.
-                "not_requested": max(
-                    0, batch.succeeded - batch.delivered - batch.delivery_failed
-                ),
-            },
+            "delivery": _live_delivery_counts(session, batch.id),
             "error_report": batch.error_report,
             "created_at": batch.created_at.isoformat(),
             "completed_at": batch.completed_at.isoformat() if batch.completed_at else None
         })
+
+def _live_delivery_counts(session, batch_id) -> dict:
+    """Where each processed row's email stands now, counted off the rows.
+
+    This read the batch's stored counters and derived `not_requested` by
+    subtraction. Those counters are written once, by the batch pass, so a row
+    deferred by the provider's daily limit and sent the next morning stayed
+    out of `delivered` forever, and the subtraction reported it as "not
+    requested". The rows are the truth; staged rows the worker has not reached
+    yet (`status = pending`) are not counted, so a running batch does not
+    report its backlog as unemailed.
+    """
+    rows = (
+        session.query(Credential.delivery_status, func.count(Credential.id))
+        .filter(Credential.batch_id == batch_id, Credential.status != PENDING)
+        .group_by(Credential.delivery_status)
+        .all()
+    )
+    by_status = {status: int(n) for status, n in rows}
+    return {
+        "delivered": by_status.get(SENT, 0),
+        "failed": by_status.get(DELIVERY_FAILED, 0),
+        # Refused for volume by the provider; sent automatically after the
+        # reset. Neither delivered nor failed.
+        "deferred": by_status.get(DELIVERY_DEFERRED, 0),
+        # In flight, or a send that never recorded its outcome.
+        "pending": by_status.get(DELIVERY_PENDING, 0),
+        # No address on the row, or the upload did not ask for delivery.
+        "not_requested": by_status.get(NOT_REQUESTED, 0),
+    }
+
 
 # GET /orgs/{slug}/credentials now lives in routes/credentials.py, alongside
 # issuing and revoking. It was defined here as well, and FastAPI silently served
