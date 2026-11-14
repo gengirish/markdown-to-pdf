@@ -65,6 +65,7 @@ def repair(session: Session, org_slug: Optional[str] = None,
     for cred in rows:
         cred.delivery_status = DELIVERY_DEFERRED
         cred.delivery_next_attempt_at = now
+        cred.delivery_deferred_since = now
         cred.delivery_error = (
             f"{LIMIT_ERROR_PREFIX}. Recorded as failed before deferred delivery "
             f"existed; queued to send by the repair of {now:%Y-%m-%d}."

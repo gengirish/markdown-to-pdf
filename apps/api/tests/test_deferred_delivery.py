@@ -374,7 +374,8 @@ def test_a_revoked_credential_is_not_mailed_by_the_sweep(db_session):
 def test_a_row_deferred_past_the_deadline_fails_with_its_attempts_intact(db_session):
     cred = a_credential(
         db_session, "defer-deadline",
-        issued_at=datetime.now(timezone.utc) - MAX_DEFERRAL - timedelta(days=1),
+        delivery_status=DELIVERY_DEFERRED,
+        delivery_deferred_since=datetime.now(timezone.utc) - MAX_DEFERRAL - timedelta(days=1),
         delivery_attempts=1,
     )
 
@@ -472,3 +473,45 @@ def test_the_repair_defers_limit_failures_and_nothing_else(db_session):
     assert other.delivery_status == DELIVERY_FAILED
     assert revoked.delivery_status == DELIVERY_FAILED
     assert repair(db_session, "repair-org") == [], "a second run must change nothing"
+
+
+def test_the_deadline_counts_from_the_deferral_not_the_issue(db_session):
+    """A month-old credential re-queued for a resend has been deferred for
+    minutes. Measured from issued_at, its first refusal failed it with "the
+    send limit persisted for 7 days"."""
+    cred = a_credential(
+        db_session, "defer-deadline-old-issue",
+        issued_at=datetime.now(timezone.utc) - timedelta(days=30),
+    )
+
+    with patch(SEND, return_value=refused()):
+        deliver_credential_email(cred)
+
+    assert cred.delivery_status == DELIVERY_DEFERRED
+    assert cred.delivery_deferred_since is not None
+
+
+def test_the_deferral_start_survives_a_second_refusal(db_session):
+    """The sweep sets `pending` before each send; a refusal then must keep the
+    original start, or the deadline restarts on every attempt and never ends."""
+    start = datetime.now(timezone.utc) - timedelta(days=2)
+    cred = a_credential(
+        db_session, "defer-since-kept",
+        delivery_status=DELIVERY_DEFERRED, delivery_deferred_since=start,
+    )
+
+    with patch(SEND, return_value=refused()):
+        deliver_credential_email(cred)
+
+    assert aware(cred.delivery_deferred_since) == start
+
+
+def test_leaving_deferred_clears_the_start(db_session):
+    cred = a_credential(
+        db_session, "defer-since-cleared",
+        delivery_status=DELIVERY_DEFERRED,
+        delivery_deferred_since=datetime.now(timezone.utc) - timedelta(days=1),
+    )
+    with patch(SEND, return_value=(True, "")):
+        deliver_credential_email(cred)
+    assert cred.delivery_deferred_since is None

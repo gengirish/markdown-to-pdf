@@ -180,6 +180,7 @@ def mark_not_requested(cred, reason: str) -> None:
     cred.delivery_error = reason[:MAX_ERROR_LEN]
     cred.delivered_at = None
     cred.delivery_next_attempt_at = None
+    cred.delivery_deferred_since = None
 
 
 def _aware(value: datetime | None) -> datetime | None:
@@ -195,11 +196,16 @@ def _utc_label(when: datetime) -> str:
 def _defer(cred, until: datetime, reason: str, now: datetime) -> None:
     """Record a send the provider's limit stopped: deferred, or — past
     MAX_DEFERRAL — failed. Neither costs an attempt; nobody was mailed."""
-    issued = _aware(cred.issued_at) or now
+    # Kept while the row stays deferred (the transient `pending` of a send
+    # attempt included) and cleared on every other outcome, so this is when
+    # the current run of deferrals began. issued_at was used here, and a
+    # month-old credential re-queued for a resend failed on its first refusal.
+    since = _aware(cred.delivery_deferred_since) or now
     cred.delivered_at = None
-    if now - issued > MAX_DEFERRAL:
+    if now - since > MAX_DEFERRAL:
         cred.delivery_status = DELIVERY_FAILED
         cred.delivery_next_attempt_at = None
+        cred.delivery_deferred_since = None
         days = MAX_DEFERRAL.days
         cred.delivery_error = (
             f"{reason} The provider's send limit persisted for {days} days; not sent."
@@ -208,6 +214,7 @@ def _defer(cred, until: datetime, reason: str, now: datetime) -> None:
         return
     cred.delivery_status = DELIVERY_DEFERRED
     cred.delivery_next_attempt_at = until
+    cred.delivery_deferred_since = since
     cred.delivery_error = (
         f"{reason} Sending automatically after {_utc_label(until)}."
     )[:MAX_ERROR_LEN]
@@ -263,6 +270,7 @@ def deliver_credential_email(cred, *, verify_url: str | None = None, org=None) -
         cred.delivery_error = str(exc)[:MAX_ERROR_LEN]
         cred.delivered_at = None
         cred.delivery_next_attempt_at = None
+        cred.delivery_deferred_since = None
         return False
 
     _, message = result
@@ -281,6 +289,7 @@ def deliver_credential_email(cred, *, verify_url: str | None = None, org=None) -
 
     cred.delivery_attempts = (cred.delivery_attempts or 0) + 1
     cred.delivery_next_attempt_at = None
+    cred.delivery_deferred_since = None
 
     if kind == SEND_OK:
         cred.delivery_status = SENT
@@ -383,3 +392,78 @@ def delivery_state(cred) -> dict:
         "attempts": cred.delivery_attempts or 0,
         "may_retry": may_retry(cred),
     }
+
+
+#: Rows one bulk resend may queue. A person confirms a number in a dialog;
+#: past this, a second click picks up the rest, and nobody queues thousands
+#: of emails with one gesture they did not read.
+MAX_BULK_RESEND = 500
+
+
+def queue_failed_resends(session, failed_query, *, actor: str, dry_run: bool = False,
+                         now: datetime | None = None) -> dict:
+    """Queue failed emails for another send, or count what would be queued.
+
+    `failed_query` is the caller's filtered query over `failed` rows. Each
+    eligible row becomes `deferred`, due now, and the deferred-send sweep
+    sends it through `deliver_credential_email` — so the gate, the attempt
+    ceiling and the provider's daily limit all apply exactly as they do to
+    every other send. Nothing is sent from here.
+
+    Eligible means it can actually go: an address, not revoked, not a test
+    credential, and under MAX_DELIVERY_ATTEMPTS. The rest are counted by
+    reason, so the dialog can say why they are left out instead of quietly
+    queuing fewer than it showed.
+    """
+    from api.models.credential import REVOKED, Credential
+
+    now = now or datetime.now(timezone.utc)
+    skipped = {"attempt_limit": 0, "revoked": 0, "no_email": 0, "test": 0}
+    eligible = []
+
+    # Oldest first, the order the sweep sends in, so a capped resend takes the
+    # rows that have waited longest.
+    for cred in failed_query.order_by(Credential.issued_at.asc(), Credential.public_id.asc()).all():
+        if cred.status == REVOKED:
+            skipped["revoked"] += 1
+        elif (cred.metadata_ or {}).get("_test"):
+            skipped["test"] += 1
+        elif not (cred.recipient_email or "").strip():
+            skipped["no_email"] += 1
+        elif (cred.delivery_attempts or 0) >= MAX_DELIVERY_ATTEMPTS:
+            skipped["attempt_limit"] += 1
+        else:
+            eligible.append(cred)
+
+    capped = len(eligible) > MAX_BULK_RESEND
+    eligible = eligible[:MAX_BULK_RESEND]
+
+    if not dry_run:
+        stamp = now.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        for cred in eligible:
+            cred.delivery_status = DELIVERY_DEFERRED
+            cred.delivery_next_attempt_at = now
+            cred.delivery_deferred_since = now
+            cred.delivered_at = None
+            cred.delivery_error = f"Resend queued by {actor} at {stamp}."[:MAX_ERROR_LEN]
+        # The audit record. One line per gesture, naming every row, so "who
+        # mailed these people again" has an answer after the row's own error
+        # text has been overwritten by the send.
+        logger.info(
+            "Bulk resend queued by %s: %d credential(s) %s; skipped %s",
+            actor, len(eligible), [c.public_id for c in eligible], skipped,
+        )
+
+    held = send_gate.paused_until(session, now)
+    return {
+        "eligible": len(eligible),
+        "queued": 0 if dry_run else len(eligible),
+        "skipped": skipped,
+        # More matched than one resend may queue; run it again for the rest.
+        "capped": capped,
+        "max": MAX_BULK_RESEND,
+        "attempts_max": MAX_DELIVERY_ATTEMPTS,
+        # Sending is paused: queued rows wait for the provider's reset.
+        "paused_until": held.isoformat() if held else None,
+    }
+

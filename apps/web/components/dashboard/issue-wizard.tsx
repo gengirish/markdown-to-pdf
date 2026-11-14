@@ -23,6 +23,7 @@ import {
   buttonClass,
   inputClass,
 } from "./ui";
+import { ResendFailedButton, describeQueued } from "./resend-failed";
 
 /**
  * Bulk issuance as a four-step wizard: upload, review, sign, report.
@@ -456,7 +457,16 @@ export function IssueWizard({ slug, onIssued }: { slug: string; onIssued: () => 
 
       {step === 4 && batch ? (
         <StepReport
+          slug={slug}
           batch={batch}
+          onRefresh={() => {
+            api
+              .getBatch(slug, batch.id)
+              .then(setBatch)
+              .catch(() => {
+                // The report keeps its last numbers; the notice already says what was queued.
+              });
+          }}
           heldBackCount={heldBackCount}
           flaggedTotal={flagged.length}
           onResolveFlagged={() => goTo(2)}
@@ -1021,19 +1031,25 @@ function ChecklistItem({ done, children }: { done: boolean; children: React.Reac
 // ── Step 4 — Report ──────────────────────────────────────────────────────────
 
 function StepReport({
+  slug,
   batch,
+  onRefresh,
   heldBackCount,
   flaggedTotal,
   onResolveFlagged,
   onStartOver,
 }: {
+  slug: string;
   batch: BatchStatus;
+  /** Re-read the batch after a resend, so its delivery line moves. */
+  onRefresh: () => void;
   heldBackCount: number;
   flaggedTotal: number;
   onResolveFlagged: () => void;
   onStartOver: () => void;
 }) {
   const failed = batch.status === "failed";
+  const [resendNotice, setResendNotice] = useState<string | null>(null);
   const durationSec =
     batch.completed_at && batch.created_at
       ? Math.max(
@@ -1093,6 +1109,23 @@ function StepReport({
             <Eyebrow>Delivery</Eyebrow>
           </div>
           <DeliveryLine delivery={batch.delivery} />
+          {(batch.delivery?.failed ?? 0) > 0 ? (
+            <div className="mt-3">
+              <ResendFailedButton
+                slug={slug}
+                scope={{ batchId: batch.id }}
+                onQueued={(result) => {
+                  setResendNotice(describeQueued(result));
+                  onRefresh();
+                }}
+              />
+            </div>
+          ) : null}
+          {resendNotice ? (
+            <p className="mt-2 text-xs text-accent" aria-live="polite">
+              {resendNotice}
+            </p>
+          ) : null}
         </div>
       </div>
 

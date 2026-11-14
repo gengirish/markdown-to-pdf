@@ -10,6 +10,7 @@ import {
   type DeliveryStatus,
 } from "@/lib/api";
 import { useCertForge } from "@/lib/use-api";
+import { ResendFailedButton, describeQueued } from "./resend-failed";
 import { EmptyNote, ErrorNote, Skeleton, StatusTag, buttonClass, formatDate, inputClass } from "./ui";
 
 /** Every credential the org has issued: searchable, filterable, and each row
@@ -83,6 +84,9 @@ export function CredentialsCard({
   const [notice, setNotice] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
   const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);
   const [revoking, setRevoking] = useState<CredentialSummary | null>(null);
+  // Bumped after a bulk resend so the list re-reads: queued rows leave the
+  // "Email failed" filter and show as scheduled.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -130,7 +134,7 @@ export function CredentialsCard({
         setError(toApiError(err).message);
       });
     return () => controller.abort();
-  }, [api, slug, filters, refreshToken]);
+  }, [api, slug, filters, refreshToken, reloadKey]);
 
   async function loadMore() {
     if (!cursor) return;
@@ -266,15 +270,34 @@ export function CredentialsCard({
             </select>
           </label>
         ) : null}
-        <label className="flex items-center gap-2 text-sm text-muted sm:col-span-3">
-          <input
-            type="checkbox"
-            checked={filters.hideTest}
-            onChange={(event) => setFilters({ ...filters, hideTest: event.target.checked })}
-            className="h-4 w-4 accent-[var(--cf-accent)]"
-          />
-          Hide test credentials
-        </label>
+        <div className="flex flex-wrap items-center justify-between gap-3 sm:col-span-3">
+          <label className="flex items-center gap-2 text-sm text-muted">
+            <input
+              type="checkbox"
+              checked={filters.hideTest}
+              onChange={(event) => setFilters({ ...filters, hideTest: event.target.checked })}
+              className="h-4 w-4 accent-[var(--cf-accent)]"
+            />
+            Hide test credentials
+          </label>
+          {/* Offered only on the "Email failed" view, so what it acts on is
+              exactly the list on screen: the same search, template and test
+              filters go to the server, which counts before anyone confirms. */}
+          {filters.status === "email_failed" && items && total > 0 ? (
+            <ResendFailedButton
+              slug={slug}
+              scope={{
+                q: filters.q.trim() || undefined,
+                templateId: filters.templateId || undefined,
+                test: filters.hideTest ? "exclude" : undefined,
+              }}
+              onQueued={(result) => {
+                setNotice({ tone: "ok", text: describeQueued(result) });
+                setReloadKey((n) => n + 1);
+              }}
+            />
+          ) : null}
+        </div>
       </div>
 
       <div aria-live="polite">

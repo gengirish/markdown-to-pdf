@@ -24,9 +24,9 @@ from api.core.envelope import ApiException, ApiResponse
 from api.core.principal import Principal, require_org_access, resolve_principal
 from api.core.rate_limit import rate_limit
 from api.models import get_db
-from api.models.credential import DELIVERY_STATUSES, Credential
+from api.models.credential import DELIVERY_FAILED, DELIVERY_STATUSES, Credential
 from api.models.organization import Organization
-from api.services.delivery import delivery_state
+from api.services.delivery import delivery_state, queue_failed_resends
 from api.services.issuance import (
     UNLIMITED,
     IssuanceError,
@@ -181,34 +181,11 @@ def list_credentials(
     batch_uuid = _parse_uuid(batch_id, "batch_id")
 
     with get_db() as session:
-        base = session.query(Credential).filter_by(org_id=org_id)
-        if status:
-            base = base.filter(Credential.status == status)
-        if delivery_status:
-            base = base.filter(Credential.delivery_status == delivery_status)
-        if template_uuid:
-            base = base.filter(Credential.template_id == template_uuid)
-        if batch_uuid:
-            base = base.filter(Credential.batch_id == batch_uuid)
-        needle = (q or "").strip()
-        if needle:
-            # LIKE's own wildcards are escaped, so a search for "50%" means
-            # the text, not "starts with 50".
-            pattern = _like_contains(needle)
-            base = base.filter(
-                or_(
-                    Credential.recipient_name.ilike(pattern, escape=LIKE_ESCAPE),
-                    Credential.recipient_email.ilike(pattern, escape=LIKE_ESCAPE),
-                    Credential.title.ilike(pattern, escape=LIKE_ESCAPE),
-                )
-            )
-        if test:
-            # The marker issue_credential writes for a cf_test_ key. Missing
-            # reads as NULL, which is a live credential.
-            flag = Credential.metadata_["_test"].as_boolean()
-            base = base.filter(
-                flag.is_(True) if test == "only" else or_(flag.is_(None), flag.is_(False))
-            )
+        base = _filtered(
+            session.query(Credential).filter_by(org_id=org_id),
+            status=status, delivery_status=delivery_status,
+            template_uuid=template_uuid, batch_uuid=batch_uuid, q=q, test=test,
+        )
 
         total = base.count()
         query = base.order_by(Credential.issued_at.desc(), Credential.public_id.desc())
@@ -370,6 +347,102 @@ def resend(
         if exc.error_type:
             raise ApiException(exc.code, exc.message, error_type=exc.error_type)
         raise HTTPException(status_code=exc.code, detail=exc.message)
+
+
+def _filtered(base, *, status=None, delivery_status=None, template_uuid=None,
+              batch_uuid=None, q=None, test=None):
+    """The list's filters, applied to `base`.
+
+    One implementation, because bulk resend acts on "the failed emails you are
+    looking at": if it filtered differently from the list, the count in its
+    confirmation dialog would describe rows the person cannot see.
+    """
+    if status:
+        base = base.filter(Credential.status == status)
+    if delivery_status:
+        base = base.filter(Credential.delivery_status == delivery_status)
+    if template_uuid:
+        base = base.filter(Credential.template_id == template_uuid)
+    if batch_uuid:
+        base = base.filter(Credential.batch_id == batch_uuid)
+    needle = (q or "").strip()
+    if needle:
+        # LIKE's own wildcards are escaped, so a search for "50%" means
+        # the text, not "starts with 50".
+        pattern = _like_contains(needle)
+        base = base.filter(
+            or_(
+                Credential.recipient_name.ilike(pattern, escape=LIKE_ESCAPE),
+                Credential.recipient_email.ilike(pattern, escape=LIKE_ESCAPE),
+                Credential.title.ilike(pattern, escape=LIKE_ESCAPE),
+            )
+        )
+    if test:
+        # The marker issue_credential writes for a cf_test_ key. Missing
+        # reads as NULL, which is a live credential.
+        flag = Credential.metadata_["_test"].as_boolean()
+        base = base.filter(
+            flag.is_(True) if test == "only" else or_(flag.is_(None), flag.is_(False))
+        )
+    return base
+
+
+class ResendFailedRequest(BaseModel):
+    """Which failed emails to resend: the list's own filters, minus `status`
+    and `delivery_status` (always `failed`). Empty means every failed email
+    the org has, which the dialog states as a number before anyone confirms."""
+
+    batch_id: Optional[str] = None
+    template_id: Optional[str] = None
+    q: Optional[str] = Field(None, max_length=200)
+    test: Optional[str] = Field(None, pattern="^(only|exclude)$")
+    #: Count only. The dashboard calls this first to fill its confirmation
+    #: dialog, so the number a person confirms is the server's, not a guess
+    #: from the rows on screen.
+    dry_run: bool = False
+
+
+@router.post(
+    "/resend-failed",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(rate_limit())],
+)
+def resend_failed(
+    slug: str,
+    payload: ResendFailedRequest,
+    principal: Principal = Depends(resolve_principal),
+):
+    """Queue every failed email matching the filters for another send.
+
+    Queued, not sent here: each row becomes `deferred`, due now, and the
+    once-a-minute sweep sends them oldest first through the same sender as
+    everything else. That is what makes a bulk resend respect the provider's
+    daily limit — the first refusal closes the gate and the rest wait for the
+    reset — instead of a request that sends in a loop and spends the day's
+    allowance mid-click.
+
+    Owner and admin only: this mails many people at once. Issuers keep the
+    single-row resend.
+    """
+    org_id = _authorise(slug, principal, roles=("owner", "admin"))
+    template_uuid = _parse_uuid(payload.template_id, "template_id")
+    batch_uuid = _parse_uuid(payload.batch_id, "batch_id")
+    actor = (
+        f"api_key:{principal.api_key_id}" if principal.is_api_key
+        else principal.clerk_user_id or "unknown"
+    )
+
+    with get_db() as session:
+        failed = _filtered(
+            session.query(Credential).filter_by(org_id=org_id),
+            delivery_status=DELIVERY_FAILED,
+            template_uuid=template_uuid, batch_uuid=batch_uuid,
+            q=payload.q, test=payload.test,
+        )
+        outcome = queue_failed_resends(
+            session, failed, actor=actor, dry_run=payload.dry_run,
+        )
+    return ApiResponse.ok(outcome)
 
 
 def _parse_uuid(value: Optional[str], name: str) -> Optional[uuid.UUID]:
